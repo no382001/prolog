@@ -5,7 +5,7 @@
 % concat_list/3 is same as append/3
 concat_lists([],List,List).
 concat_lists([X|Xs],List,[X|Ys])
-    :- concat_lists(Xs,List,Ys).
+    :- concat_lists(Xs,List,Ys). %when Xs runs out List gets list gets matched
 
 isthreelist(List) :- length(List,X), X = 3.
 % likewise, used with a number in place of X, and an unused variable,
@@ -47,6 +47,8 @@ second argument position. Example:
     Yes  
 
 */
+% \+ is true if it cannot be proven
+
 remove_duplicates([], []).
 remove_duplicates([X|Xs], [X|Ys]) :-
     \+ member(X, Xs),
@@ -56,13 +58,25 @@ remove_duplicates([X|Xs], Ys) :-
     remove_duplicates(Xs, Ys).
 
 % returns the list backwards, but is one function
-% '(' is a subgoal?
+% '(' is a subgoal? its basically if then else
 rd2([], []).
 rd2([X|Xs], UniqueList) :-
     rd2(Xs, List),
     (   member(X, List)
     ->  UniqueList = List
     ;   UniqueList = [X|List]
+    ).
+
+% this does not reverse the order
+remove_duplicates_acc_ver(Input, Output) :-
+    remove_duplicates_acc(Input, [], ReversedOutput),
+    reverse(ReversedOutput, Output).
+
+remove_duplicates_acc([], Acc, Acc).
+remove_duplicates_acc([X|Xs], Acc, Output) :-
+    (   member(X, Acc)
+    ->  remove_duplicates_acc(Xs, Acc, Output)
+    ;   remove_duplicates_acc(Xs, [X|Acc], Output)
     ).
 
 
@@ -108,10 +122,24 @@ argument). Example:
     Yes
 */
 
-replace([],_,_,_).
+replace([],_,_,[]).
 
-replace([Value|Xs],Value,Subst,_) :-
-    replace(Xs,Value,Subst,[Subst|Xs]).
-    
-replace([X|Xs],Value,Subst,_) :-
-    replace(Xs,Value,Subst,[X|Xs]). % pass over
+replace([Value|Xs],Value,Subst,[Subst|Ys]) :-
+    replace(Xs, Value, Subst, Ys).
+
+replace([X|Xs], Value, Subst, [X|Ys]) :-
+    X \= Value,                           % if this line is removed, on ; it gives each list as it gets replaced
+    replace(Xs, Value, Subst, Ys).
+
+/* Exercise 2.8. Prolog lists without duplicates can be interpreted as sets. Write a
+program that given such a list computes the corresponding power set. Recall that the
+power set of a set S is the set of all subsets of S. This includes the empty set as well as
+the set S itself.
+Define a predicate power/2 such that, if the first argument is instantiated with a
+list, the corresponding power set (i.e., a list of lists) is returned in the second position.
+Example:
+    ?- power([a, b, c], P).
+    P = [[a, b, c], [a, b], [a, c], [a], [b, c], [b], [c], []]
+    Yes
+
+*/
