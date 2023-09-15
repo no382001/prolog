@@ -60,3 +60,18 @@ fib(N,Res) :-
     ; N1 is N - 1, N2 is N - 2, 
     fib(N1,Res1),fib(N2,Res2),
     Res is Res1 + Res2).
+
+
+/*
+Exercise 3.4. Write a Prolog predicate element_at/3 that, given a list and a natural
+number n, will return the nth element of that list. Examples:
+?- element_at([tiger, dog, teddy_bear, horse, cow], 3, X).
+X = teddy_bear
+Yes
+?- element_at([a, b, c, d], 27, X).
+No
+*/
+
+element_at([],_,_) :- fail.
+element_at([X|Xs],N,Res) :- 
+    (N =:= 1 -> Res = X ; Nn is N - 1, element_at(Xs,Nn,Res)).
