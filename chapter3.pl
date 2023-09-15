@@ -75,3 +75,19 @@ No
 element_at([],_,_) :- fail.
 element_at([X|Xs],N,Res) :- 
     (N =:= 1 -> Res = X ; Nn is N - 1, element_at(Xs,Nn,Res)).
+
+/*
+Exercise 3.5. Write a Prolog predicate mean/2 to compute the arithmetic mean of a
+given list of numbers. Example:
+?- mean([1, 2, 3, 4], X).
+X = 2.5
+Yes
+*/
+sum([],0).
+sum([H|T], S) :- sum(T,X), S is H + X.
+
+count([],0).
+count([_|T], Ss) :- count(T,S), Ss is 1 + S.
+
+mean([],_) :- fail.
+mean(List,X) :- sum(List,Total), count(List,N), X is Total / N. 
