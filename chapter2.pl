@@ -128,8 +128,23 @@ replace([Value|Xs],Value,Subst,[Subst|Ys]) :-
     replace(Xs, Value, Subst, Ys).
 
 replace([X|Xs], Value, Subst, [X|Ys]) :-
-    X \= Value,                           % if this line is removed, on ; it gives each list as it gets replaced
+    X \= Value,
     replace(Xs, Value, Subst, Ys).
+
+
+replace_one_body([], _, _, []).
+
+replace_one_body([X|Xs], Value, Subst, [Y|Ys]) :-
+    (X = Value
+    -> Y = Subst
+    ; Y = X),
+    replace_one_body(Xs, Value, Subst, Ys).
+
+/*
+if 'X \= Value,' is removed, Prolog will explore the variations in which something can be replaced,
+it loses the ability to tell what should be replaced
+*/
+
 
 /* Exercise 2.8. Prolog lists without duplicates can be interpreted as sets. Write a
 program that given such a list computes the corresponding power set. Recall that the
@@ -141,5 +156,22 @@ Example:
     ?- power([a, b, c], P).
     P = [[a, b, c], [a, b], [a, c], [a], [b, c], [b], [c], []]
     Yes
+Note: The order of the sub-lists in your result doesn’t matter.
+*/
 
+powerset([], []).
+powerset([H|T], [H|P]) :- powerset(T,P).
+powerset([_|T], P) :- powerset(T,P).
+
+/*
+[trace]  ?- powerset([a,b,c],L).
+   Call: (10) powerset([a, b, c], _240) ? creep
+   Call: (11) powerset([b, c], _642) ? creep
+   Call: (12) powerset([c], _692) ? creep
+   Call: (13) powerset([], _742) ? creep
+   Exit: (13) powerset([], []) ? creep
+   Exit: (12) powerset([c], [c]) ? creep
+   Exit: (11) powerset([b, c], [b, c]) ? creep
+   Exit: (10) powerset([a, b, c], [a, b, c]) ? creep
+L = [a, b, c] .
 */
