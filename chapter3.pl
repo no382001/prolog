@@ -91,3 +91,26 @@ count([_|T], Ss) :- count(T,S), Ss is 1 + S.
 
 mean([],_) :- fail.
 mean(List,X) :- sum(List,Total), count(List,N), X is Total / N. 
+
+/*
+Exercise 3.6. Write a predicate range/3 to generate all integers between a given lower
+and a given upper bound. The lower bound should be given as the first argument, the
+upper bound as the second. The result should be a list of integers, which is returned in
+the third argument position. If the upper bound specified is lower than the given lower
+bound, the empty list should be returned. Examples:
+
+?- range(3, 11, X).
+X = [3, 4, 5, 6, 7, 8, 9, 10, 11]
+Yes
+?- range(7, 4, X).
+X = []
+Yes
+*/
+
+range1(P,Q,[]) :- P > Q.
+range1(P,Q,[P|X]) :- Pp is P + 1, range1(Pp,Q,X). 
+% thinks there could be more matches, why?
+% there is a conditional somewhere
+
+range(P,Q,[]) :- P > Q, !. % add ! to prevent backtracking, but i dont think this is the solution
+range(P,Q,[P|X]) :- Pp is P + 1, range(Pp,Q,X). 
