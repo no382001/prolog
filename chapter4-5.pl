@@ -111,3 +111,25 @@ solutions. Example:
 occurrences(_,[],0). % base case
 occurrences(X,[X|Es],Nn) :- occurrences(X,Es,N), Nn is N + 1, !.
 occurrences(_,[_|Es],N) :- occurrences(_,Es,N). % pass over 
+
+
+/* Exercise 5.5.
+Write a Prolog predicate divisors/2 to compute the list of all divisors
+for a given natural number. Example:
+    
+    ?- divisors(30, X).
+    X = [1, 2, 3, 5, 6, 10, 15, 30]
+    Yes
+
+Make sure your program doesn’t give any wrong alternative solutions and doesn’t fall
+into an infinite loop when the user presses the semicolon key. */
+
+divisor(_, 1).
+
+divisor(N, I) :-
+    I > 1,
+    N mod I =:= 0.
+
+divisors(N, Divisors) :-
+    N > 0,
+    findall(I, (between(1, N, I), divisor(N, I)), Divisors).
