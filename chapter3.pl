@@ -114,3 +114,32 @@ range1(P,Q,[P|X]) :- Pp is P + 1, range1(Pp,Q,X).
 
 range(P,Q,[]) :- P > Q, !. % add ! to prevent backtracking, but i dont think this is the solution
 range(P,Q,[P|X]) :- Pp is P + 1, range(Pp,Q,X). 
+
+/*
+Exercise 3.7. Polynomials can be represented as lists of pairs of coefficients and ex-
+ponents. For example the polynomial
+
+4x5 + 2x3 − x + 27
+
+can be represented as the following Prolog list:
+
+[(4,5), (2,3), (-1,1), (27,0)]
+
+Write a Prolog predicate poly_sum/3 for adding two polynomials using that representa-
+tion. Try to find a solution that is independent of the ordering of pairs inside the two
+given lists. Likewise, your output doesn’t have to be ordered. Examples:
+
+?- poly_sum([(5,3), (1,2)], [(1,3)], Sum).
+Sum = [(6,3), (1,2)]
+Yes
+?- poly_sum([(2,2), (3,1), (5,0)], [(5,3), (1,1), (10,0)], X).
+X = [(4,1), (15,0), (2,2), (5,3)]
+Yes
+
+Hints: Before you even start thinking about how to do this in Prolog, recall how the
+sum of two polynomials is actually computed. A rather simple solution is possible using
+the built-in predicate select/3. Note that the list representation of the sum of two
+polynomials that don’t share any exponents is simply the concatenation of the two lists
+representing the arguments.
+*/
+

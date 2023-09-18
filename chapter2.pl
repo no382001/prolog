@@ -67,7 +67,6 @@ rd2([X|Xs], UniqueList) :-
     ;   UniqueList = [X|List]
     ).
 
-% this does not reverse the order
 remove_duplicates_acc_ver(Input, Output) :-
     remove_duplicates_acc(Input, [], ReversedOutput),
     reverse(ReversedOutput, Output).
@@ -125,7 +124,7 @@ argument). Example:
 replace([],_,_,[]).
 
 replace([Value|Xs],Value,Subst,[Subst|Ys]) :-
-    replace(Xs, Value, Subst, Ys).
+    replace(Xs, Value, Subst, Ys), !.
 
 replace([X|Xs], Value, Subst, [X|Ys]) :-
     X \= Value,
@@ -163,15 +162,10 @@ powerset([], []).
 powerset([H|T], [H|P]) :- powerset(T,P).
 powerset([_|T], P) :- powerset(T,P).
 
-/*
-[trace]  ?- powerset([a,b,c],L).
-   Call: (10) powerset([a, b, c], _240) ? creep
-   Call: (11) powerset([b, c], _642) ? creep
-   Call: (12) powerset([c], _692) ? creep
-   Call: (13) powerset([], _742) ? creep
-   Exit: (13) powerset([], []) ? creep
-   Exit: (12) powerset([c], [c]) ? creep
-   Exit: (11) powerset([b, c], [b, c]) ? creep
-   Exit: (10) powerset([a, b, c], [a, b, c]) ? creep
-L = [a, b, c] .
-*/
+
+powerset_(Input, Result) :-
+    findall(Sub, subset(Input, Sub), Result).
+
+subset([], []).
+subset([H|T], [H|P]) :- subset(T, P).
+subset([_|T], P) :- subset(T, P).
