@@ -34,9 +34,10 @@ analyse_list([X|Xs])
 /* Exercise 2.2. Write a Prolog predicate membership/2 that works like the built-in
 predicate member/2 (without using member/2).
 */
-membership(X,[X|_]).
+membership(_,[]) :- fail.
 membership(X,[_|Ys])
     :- membership(X,Ys).
+membership(X,[X|_]).
 
 /* Exercise 2.3. Implement a Prolog predicate remove_duplicates/2 that removes all
 duplicate elements from a list given in the first argument and returns the result in the
@@ -66,6 +67,12 @@ rd2([X|Xs], UniqueList) :-
     ->  UniqueList = List
     ;   UniqueList = [X|List]
     ).
+
+% a better more declarative version
+rd3([], []).
+rd3([X|Xs], List) :- rd3(Xs, List), member(X, List), !.
+rd3([X|Xs], [X|List]) :- rd3(Xs, List).
+
 
 remove_duplicates_acc_ver(Input, Output) :-
     remove_duplicates_acc(Input, [], ReversedOutput),
@@ -102,7 +109,7 @@ recursion and the head/tail-pattern for lists.
 recursion. */
 
 %(a)
-last1([X],X).
+last1([_],_).
 last1([_|Xs],Last) :-
     last1(Xs,Last).
 
@@ -120,19 +127,19 @@ argument). Example:
     List = [1, 2, x, 4, x, 5, 6, x]
     Yes
 */
+% simplest
+replace2([],_,_,[]).
+replace2([X|Xs],X,S,[S|Ys]) :-
+    replace2(Xs,X,S,Ys).
 
 replace([],_,_,[]).
-
 replace([Value|Xs],Value,Subst,[Subst|Ys]) :-
     replace(Xs, Value, Subst, Ys), !.
-
 replace([X|Xs], Value, Subst, [X|Ys]) :-
     X \= Value,
     replace(Xs, Value, Subst, Ys).
 
-
 replace_one_body([], _, _, []).
-
 replace_one_body([X|Xs], Value, Subst, [Y|Ys]) :-
     (X = Value
     -> Y = Subst

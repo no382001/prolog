@@ -46,6 +46,23 @@ square(N,C) :-
         -> print(C), nl
         ; print(C))).
 
+square2(N, C) :-
+    between(1, N, _),
+    print_line(N, C),
+    nl,
+    fail.
+square2(_, _).
+
+print_line(0, _).
+print_line(N, C) :-
+    N > 0,
+    print(C),
+    write(' '),
+    M is N - 1,
+    print_line(M, C).
+
+
+
 /*
 Exercise 3.3. Write a Prolog predicate fibonacci/2 to compute the nth Fibonacci
 number. The Fibonacci sequence is defined as follows:
@@ -61,7 +78,11 @@ fib(N,Res) :-
     fib(N1,Res1),fib(N2,Res2),
     Res is Res1 + Res2).
 
-
+fib2(N,Res) :- N < 2, Res = 1.
+fib2(N,Res) :-
+    N1 is N - 1, N2 is N - 2, 
+    fib(N1,Res1),fib(N2,Res2),
+    Res is Res1 + Res2.
 /*
 Exercise 3.4. Write a Prolog predicate element_at/3 that, given a list and a natural
 number n, will return the nth element of that list. Examples:
@@ -74,7 +95,13 @@ No
 
 element_at([],_,_) :- fail.
 element_at([X|Xs],N,Res) :- 
-    (N =:= 1 -> Res = X ; Nn is N - 1, element_at(Xs,Nn,Res)).
+    (N =:= 1 
+    -> Res = X
+    ; Nn is N - 1, element_at(Xs,Nn,Res)).
+
+element_at2(_,_,_) :- fail.
+element_at2([X|_],1,X) :- !. % the min index
+element_at2([_|Xs],N,Res) :- Nn is N - 1, element_at(Xs,Nn,Res). 
 
 /*
 Exercise 3.5. Write a Prolog predicate mean/2 to compute the arithmetic mean of a

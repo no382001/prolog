@@ -46,7 +46,9 @@ define relations:
 */
 father(Of,To) :- male(Of), parent(Of,To).
 
-% why does it yield true twice tho?
-sister(X,Y) :- female(X), parent(Z,X), parent(Z,X), X \= Y. 
+sister(X,Y) :- 
+    female(X), 
+    parent(Z,X), parent(Z,Y), 
+    X \= Y, !. 
 
 grandmother(X,Y) :- female(X), parent(Z,Y), parent(X,Z).

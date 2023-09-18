@@ -133,3 +133,9 @@ divisor(N, I) :-
 divisors(N, Divisors) :-
     N > 0,
     findall(I, (between(1, N, I), divisor(N, I)), Divisors).
+
+/* Exercise 5.6.
+Check some of your old Prolog programs to see whether they produce
+wrong alternative solutions or even fall into a loop when the user presses ; (semicolon).
+Fix any problems you encounter using cuts (one will often be enough).
+*/
