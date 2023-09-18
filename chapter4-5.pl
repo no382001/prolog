@@ -98,3 +98,16 @@ gcd(X,Y,Res) :-
 % gcd(56, 28, X). %28
 
 % why cant i return true on semicolon?
+
+/*
+Exercise 5.4. Implement a Prolog predicate occurrences/3 to count the number of
+occurrences of a given element in a given list. Make sure there are no wrong alternative
+solutions. Example:
+    ?- occurrences(dog, [dog, frog, cat, dog, dog, tiger], N).
+    N = 3
+    Yes
+*/
+
+occurrences(_,[],0). % base case
+occurrences(X,[X|Es],Nn) :- occurrences(X,Es,N), Nn is N + 1, !.
+occurrences(_,[_|Es],N) :- occurrences(_,Es,N). % pass over 
