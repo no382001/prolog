@@ -1,9 +1,13 @@
 :- use_module(library(pio)).
 :- use_module(library(dcg/basics)).
 
-% translated to swi from sictus
+% - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+% --> translated to swi from sictus
 % https://web.archive.org/web/20230103115618/http://aszt.inf.elte.hu/~asvanyi/pp/dcgs1p3.pdf
-% DCGS FOR PARSING AND ERROR HANDLING : TIBOR ASVANYI
+%   DCGS FOR PARSING AND ERROR HANDLING : TIBOR ASVANYI
+%
+% 3.2. Adding context-dependent, syntactical information.
+% - - - - - - - - - - - - - - - - - - - - - - - - - - - -
 
 % Bs is the list of constant identifiers defined up till now.
 % C is the identifier of the first constant described
@@ -46,7 +50,7 @@ id_code(K) :-
     ; K == 0
     ).
 
-% numbers in id dont work
+% symbols in id dont work
 main :-
     constants([ a,=,1,+,1,.,
                 aa,=,a,-,1,.,
