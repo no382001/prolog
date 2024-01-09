@@ -18,26 +18,66 @@ constants(Constants) -->
 % defined up to this point -- in reversed order, and
 % C is the semantics of the actual constant.
 constants(Bs,Cs) --> constdef(Bs,C), !, constants([C|Bs],Cs).
+constants(Bs,Cs) -->
+    nonempty(Tokens), !, { Cs = [error(constants,Tokens)|Bs] }.
 constants(Bs,Bs) --> [].
 
-constdef(Bs,Id=Val) -->
-    const(Bs,Id), [=], expr(Bs,Expr), ['.'],
-    { catch( Val is Expr, _, fail ) }.
-    % In case of zero divisor or arithmetic overflow,
-    % this rule must fail.
+nonempty([T|Ts]) --> [T], anything(Ts).
+anything([T|Ts]) --> [T], !, anything(Ts).
+anything([]) --> [].
+
+% atom(Id) :- Id is not an error term, constant
+% if Exp has an error term, exception
+constdef(Bs,C) -->
+    const(Bs,Id), [=], expr(Bs,Expr), ['.'], !,
+    { atom(Id), catch( Val is Expr, _, fail ) -> 
+        C = (Id=Val)
+    ; atom(Id) -> C = error(expression,Id=Expr)
+    ; catch( Val is Expr, _, fail ) ->
+        C = error(constant,Id=Val)
+    ; C = error(constant_and_expression,Id=Expr)
+    }.
+
+% Basic problem with the constant definition
+constdef(_,error(constdef_syntax,Ts)) -->
+    constdef_error(Ts).
+
+constdef_error(['.']) --> ['.'], !.
+constdef_error([X|Xs]) --> [X], constdef_error(Xs).
 
 expr(Bs,Expr), ['.'] -->
-    operand(Bs,X), operator(Op), operand(Bs,Y), ['.'],
-    { Expr =.. [Op,X,Y] }. % weird operator here  Exp =.. [+,1,2]. %Exp = 1+2. wowo
-    % X and Y are the values of the operands.
+    operand(Bs,X), operator(Op), operand(Bs,Y), ['.'], !,
+    { atom(Op) -> Expr =.. [Op,X,Y] % Op is a legal operator
+    ; Expr = [X,Op,Y] % Op is not a legal operator
+    }.
 
-operator(Op) --> [Op], { op(Op) }.
+% Basic problem with the struct of the expression:
+expr(_,error(expression_syntax,Ts)) -->
+    expression_error(Ts).
+
+expression_error([]), ['.'] --> ['.'], !.
+expression_error([X|Xs]) --> [X], !, expression_error(Xs).
+expression_error([]) --> [].
+
+operator(Operator) --> [Op],
+    { op(Op) -> Operator = Op
+    ; Operator = error(operator,Op)
+    }.
+
 op(+). op(-). op(*). op(//). op(mod).
 
 operand(_,X) --> [Y], { integer(Y), !, X = Y }.
-operand(Bs,X) --> id(Y), { member(Y=Z,Bs) -> X = Z }.
+operand(Bs,X) --> id(Y), !,
+    { member(Y=Z,Bs) -> X = Z
+    ; X = error(undefined,Y)
+    }.
+operand(_,X) --> [Y], { X = error(operand_syntax,Y) }.
 
-const(Bs,Id) --> id(Id), { \+member(Id=_,Bs) }.
+const(Bs,Id) --> id(Y), !,
+    { member(Y=_,Bs) -> Id = error(redefined,Y)
+    ; Id = Y
+    }.
+const(_,error(non_id_constant_symbol,X)) --> [X].
 
 id(Id) --> [Id], { is_id(Id) }.
 
@@ -62,7 +102,12 @@ main :-
                 d,=,b,mod,4,.],[]),
     R1 = [a=2, aa=1, b=6, cc=3, d=2],
 
-  \+constants(_,[ a,=,a,+,1,.],[]), % depends on undefined constant
-  \+constants(_,[ a,=,1,+,1,.,      % redefined constant
+    constants(R2,[ a,=,a,+,1,.],[]), % depends on undefined constant
+    R2 = [error(expression, a=error(undefined, a)+1)],
+
+    constants(R3,[ a,=,1,+,1,.,      % redefined constant
                 a,=,1,+,2,.],[]),
-  \+constants(_,[ a,=,0,//,0,.],[]).% zero div
+    R3 = [a=2, error(constant, error(redefined, a)=3)],
+
+    constants(R4,[ a,=,0,//,0,.],[]),% zero div
+    R4 = [error(expression, a=0//0)].
