@@ -18,7 +18,7 @@ symbol([A|As]) -->
     [A], { memberchk(A, [+,/,-,*,>,<,=]) ; char_type(A, alpha) }, symbolr(As).
 
 symbolr([A|As]) -->
-    [A], { char_type(A, alnum) }, symbolr(As).
+    [A], { memberchk(A, [+,/,-,*,>,<,=]) ; char_type(A, alnum) }, symbolr(As).
 symbolr([]) --> [].
 
 
