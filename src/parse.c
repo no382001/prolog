@@ -31,8 +31,17 @@ bool parse_has_error(prolog_ctx_t *ctx) { return ctx->error.has_error; }
 void parse_error_print(prolog_ctx_t *ctx) {
   if (!ctx->error.has_error)
     return;
-  fprintf(stderr, "Parse error at line %d, column %d: %s\n", ctx->error.line,
-          ctx->error.column, ctx->error.message);
+
+  if (ctx->input_start && ctx->error.column > 0) {
+    // show the offending line and point to the error
+    fprintf(stderr, "  %s\n", ctx->input_start);
+    fprintf(stderr, "  %*s^\n", ctx->error.column - 1, "");
+    fprintf(stderr, "error: %s\n", ctx->error.message);
+  } else {
+    // fallback for non-interactive / no context
+    fprintf(stderr, "error: line %d, column %d: %s\n", 
+            ctx->error.line, ctx->error.column, ctx->error.message);
+  }
 }
 
 void skip_ws(prolog_ctx_t *ctx) {
@@ -44,74 +53,61 @@ void skip_ws(prolog_ctx_t *ctx) {
 
 static term_t *parse_primary(prolog_ctx_t *ctx);
 static term_t *parse_infix(prolog_ctx_t *ctx, term_t *left, int min_prec);
+static const op_prec_t precedence_table[] = {
+    {"*", 40},   {"/", 40},   {"mod", 40}, {"+", 30},   {"-", 30},
+    {"<", 20},   {">", 20},   {"=<", 20},  {">=", 20},  {"=:=", 20},
+    {"=\\=", 20}, {"is", 10}, {"=", 10},   {"\\=", 10},
+    {NULL, 0}
+};
 
-// operator precedence (higher = binds tighter)
+// ordered longest-first to avoid prefix conflicts
+static const op_pattern_t op_patterns[] = {
+    {"=:=", 3, false},
+    {"=\\=", 3, false},
+    {"mod", 3, true},
+    {"\\=", 2, false},
+    {"=<", 2, false},
+    {">=", 2, false},
+    {"is", 2, true},
+    {"+", 1, false},
+    {"*", 1, false},
+    {"/", 1, false},
+    {"<", 1, false},
+    {">", 1, false},
+    {"=", 1, false},
+    {"-", 1, false}, // special handling needed
+    {NULL, 0, false}
+};
+
 static int get_precedence(const char *op) {
-  if (strcmp(op, "*") == 0 || strcmp(op, "/") == 0 || strcmp(op, "mod") == 0)
-    return 40;
-  if (strcmp(op, "+") == 0 || strcmp(op, "-") == 0)
-    return 30;
-  if (strcmp(op, "<") == 0 || strcmp(op, ">") == 0 || strcmp(op, "=<") == 0 ||
-      strcmp(op, ">=") == 0 || strcmp(op, "=:=") == 0 ||
-      strcmp(op, "=\\=") == 0)
-    return 20;
-  if (strcmp(op, "is") == 0)
-    return 10;
-  if (strcmp(op, "=") == 0 || strcmp(op, "\\=") == 0)
-    return 10;
+  for (const op_prec_t *p = precedence_table; p->op; p++) {
+    if (strcmp(op, p->op) == 0)
+      return p->precedence;
+  }
   return 0;
 }
 
-// len = 0 is a failed parse
 static int try_parse_op(prolog_ctx_t *ctx, char *op_out, int max_len) {
   char *p = ctx->input_ptr;
 
-  // three-char operators
-  if (p[0] == '=' && p[1] == ':' && p[2] == '=') {
-    strncpy(op_out, "=:=", max_len);
-    return 3;
-  }
-  if (p[0] == '=' && p[1] == '\\' && p[2] == '=') {
-    strncpy(op_out, "=\\=", max_len);
-    return 3;
-  }
-  if (p[0] == '\\' && p[1] == '=' && p[2] != '=') {
-    strncpy(op_out, "\\=", max_len);
-    return 2;
-  }
+  for (const op_pattern_t *pat = op_patterns; pat->text; pat++) {
+    if (strncmp(p, pat->text, pat->len) != 0)
+      continue;
 
-  // two-char operators
-  if (p[0] == '=' && p[1] == '<') {
-    strncpy(op_out, "=<", max_len);
-    return 2;
-  }
-  if (p[0] == '>' && p[1] == '=') {
-    strncpy(op_out, ">=", max_len);
-    return 2;
-  }
+    // keyword operators need non-alnum after
+    if (pat->is_keyword) {
+      char next = p[pat->len];
+      if (isalnum(next) || next == '_')
+        continue;
+    }
 
-  // keyword operators
-  if (strncmp(p, "is", 2) == 0 && !isalnum(p[2]) && p[2] != '_') {
-    strncpy(op_out, "is", max_len);
-    return 2;
-  }
-  if (strncmp(p, "mod", 3) == 0 && !isalnum(p[3]) && p[3] != '_') {
-    strncpy(op_out, "mod", max_len);
-    return 3;
-  }
+    // special case: minus before digit is negative number, not operator
+    if (pat->text[0] == '-' && pat->len == 1 && isdigit(p[1]))
+      continue;
 
-  // single-char operators
-  if (p[0] == '+' || p[0] == '*' || p[0] == '/' || p[0] == '<' || p[0] == '>' ||
-      p[0] == '=') {
-    op_out[0] = p[0];
-    op_out[1] = '\0';
-    return 1;
-  }
-
-  if (p[0] == '-' && !isdigit(p[1])) {
-    op_out[0] = '-';
-    op_out[1] = '\0';
-    return 1;
+    strncpy(op_out, pat->text, max_len);
+    op_out[max_len - 1] = '\0';
+    return pat->len;
   }
 
   return 0;

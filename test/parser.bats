@@ -235,10 +235,12 @@ setup() {
     [[ "$output" == *"cannot open file"* ]]
 }
 
-@test "error: reports column" {
+@test "error: caret points to error location" {
     run bash -c "echo '?- foo(a, @bad)' | $PROLOG 2>&1"
     [ "$status" -eq 0 ]
-    [[ "$output" == *"column"* ]]
+    [[ "$output" == *"@bad"* ]]
+    [[ "$output" == *"^"* ]]
+    [[ "$output" == *"error:"* ]]
 }
 
 # --- recovery ---
