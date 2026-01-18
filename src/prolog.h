@@ -56,11 +56,6 @@ typedef struct {
 } parse_error_t;
 
 typedef struct {
-  const char *op;
-  int precedence;
-} op_prec_t;
-
-typedef struct {
   clause_t database[MAX_CLAUSES];
   int db_count;
   int var_counter;

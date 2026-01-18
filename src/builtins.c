@@ -2,6 +2,26 @@
 #include <stdlib.h>
 #include <string.h>
 
+typedef struct {
+  const char *op;
+  int (*fn)(int, int);
+} arith_op_t;
+
+static int arith_add(int a, int b) { return a + b; }
+static int arith_sub(int a, int b) { return a - b; }
+static int arith_mul(int a, int b) { return a * b; }
+static int arith_div(int a, int b) { return b ? a / b : 0; }
+static int arith_mod(int a, int b) { return b ? a % b : 0; }
+
+static const arith_op_t arith_ops[] = {
+  {"+",   arith_add},
+  {"-",   arith_sub},
+  {"*",   arith_mul},
+  {"/",   arith_div},
+  {"mod", arith_mod},
+  {NULL, NULL}
+};
+
 static bool eval_arith(prolog_ctx_t *ctx, term_t *t, env_t *env, int *result) {
   t = deref(env, t);
 
@@ -22,25 +42,11 @@ static bool eval_arith(prolog_ctx_t *ctx, term_t *t, env_t *env, int *result) {
     if (!eval_arith(ctx, t->args[1], env, &right))
       return false;
 
-    if (strcmp(t->name, "+") == 0) {
-      *result = left + right;
-      return true;
-    }
-    if (strcmp(t->name, "-") == 0) {
-      *result = left - right;
-      return true;
-    }
-    if (strcmp(t->name, "*") == 0) {
-      *result = left * right;
-      return true;
-    }
-    if (strcmp(t->name, "/") == 0) {
-      *result = right ? left / right : 0;
-      return true;
-    }
-    if (strcmp(t->name, "mod") == 0) {
-      *result = right ? left % right : 0;
-      return true;
+    for (const arith_op_t *op = arith_ops; op->op; op++) {
+      if (strcmp(t->name, op->op) == 0) {
+        *result = op->fn(left, right);
+        return true;
+      }
     }
   }
 

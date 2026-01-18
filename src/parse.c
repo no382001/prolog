@@ -57,6 +57,11 @@ typedef struct {
   bool is_keyword; // needs non-alnum check after
 } op_pattern_t;
 
+typedef struct {
+  const char *op;
+  int precedence;
+} op_prec_t;
+
 static term_t *parse_primary(prolog_ctx_t *ctx);
 static term_t *parse_infix(prolog_ctx_t *ctx, term_t *left, int min_prec);
 static const op_prec_t precedence_table[] = {
