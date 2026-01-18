@@ -47,70 +47,117 @@ static bool eval_arith(prolog_ctx_t *ctx, term_t *t, env_t *env, int *result) {
   return false;
 }
 
+typedef struct {
+  const char *name;
+  int arity;          // -1 means any arity, 0 for CONST
+  int (*handler)(prolog_ctx_t *ctx, term_t *goal, env_t *env);
+} builtin_t;
+
+static int builtin_true(prolog_ctx_t *ctx, term_t *goal, env_t *env) {
+  (void)ctx; (void)goal; (void)env;
+  return 1;
+}
+
+static int builtin_fail(prolog_ctx_t *ctx, term_t *goal, env_t *env) {
+  (void)ctx; (void)goal; (void)env;
+  return -1;
+}
+
+static int builtin_is(prolog_ctx_t *ctx, term_t *goal, env_t *env) {
+  int result;
+  if (!eval_arith(ctx, goal->args[1], env, &result))
+    return -1;
+  char buf[32];
+  snprintf(buf, sizeof(buf), "%d", result);
+  term_t *result_term = make_const(ctx, buf);
+  return unify(ctx, goal->args[0], result_term, env) ? 1 : -1;
+}
+
+static int builtin_unify(prolog_ctx_t *ctx, term_t *goal, env_t *env) {
+  return unify(ctx, goal->args[0], goal->args[1], env) ? 1 : -1;
+}
+
+static int builtin_not_unify(prolog_ctx_t *ctx, term_t *goal, env_t *env) {
+  int old_count = env->count;
+  bool unified = unify(ctx, goal->args[0], goal->args[1], env);
+  env->count = old_count;
+  return unified ? -1 : 1;
+}
+
+static int builtin_lt(prolog_ctx_t *ctx, term_t *goal, env_t *env) {
+  int left, right;
+  if (!eval_arith(ctx, goal->args[0], env, &left)) return 0;
+  if (!eval_arith(ctx, goal->args[1], env, &right)) return 0;
+  return left < right ? 1 : -1;
+}
+
+static int builtin_gt(prolog_ctx_t *ctx, term_t *goal, env_t *env) {
+  int left, right;
+  if (!eval_arith(ctx, goal->args[0], env, &left)) return 0;
+  if (!eval_arith(ctx, goal->args[1], env, &right)) return 0;
+  return left > right ? 1 : -1;
+}
+
+static int builtin_le(prolog_ctx_t *ctx, term_t *goal, env_t *env) {
+  int left, right;
+  if (!eval_arith(ctx, goal->args[0], env, &left)) return 0;
+  if (!eval_arith(ctx, goal->args[1], env, &right)) return 0;
+  return left <= right ? 1 : -1;
+}
+
+static int builtin_ge(prolog_ctx_t *ctx, term_t *goal, env_t *env) {
+  int left, right;
+  if (!eval_arith(ctx, goal->args[0], env, &left)) return 0;
+  if (!eval_arith(ctx, goal->args[1], env, &right)) return 0;
+  return left >= right ? 1 : -1;
+}
+
+static int builtin_arith_eq(prolog_ctx_t *ctx, term_t *goal, env_t *env) {
+  int left, right;
+  if (!eval_arith(ctx, goal->args[0], env, &left)) return 0;
+  if (!eval_arith(ctx, goal->args[1], env, &right)) return 0;
+  return left == right ? 1 : -1;
+}
+
+static int builtin_arith_ne(prolog_ctx_t *ctx, term_t *goal, env_t *env) {
+  int left, right;
+  if (!eval_arith(ctx, goal->args[0], env, &left)) return 0;
+  if (!eval_arith(ctx, goal->args[1], env, &right)) return 0;
+  return left != right ? 1 : -1;
+}
+
+static const builtin_t builtins[] = {
+  // 0-arity (CONST)
+  {"true",  0, builtin_true},
+  {"fail",  0, builtin_fail},
+  // 2-arity
+  {"is",    2, builtin_is},
+  {"=",     2, builtin_unify},
+  {"\\=",   2, builtin_not_unify},
+  {"<",     2, builtin_lt},
+  {">",     2, builtin_gt},
+  {"=<",    2, builtin_le},
+  {">=",    2, builtin_ge},
+  {"=:=",   2, builtin_arith_eq},
+  {"=\\=",  2, builtin_arith_ne},
+  {NULL, 0, NULL}
+};
+
 int try_builtin(prolog_ctx_t *ctx, term_t *goal, env_t *env) {
   goal = deref(env, goal);
 
-  // handle 0-arity builtins (parsed as CONST)
-  if (goal->type == CONST) {
-    if (strcmp(goal->name, "true") == 0) {
-      return 1;
-    }
-    if (strcmp(goal->name, "fail") == 0) {
-      return -1;
-    }
-    return 0; // not a builtin constant
-  }
+  const char *name = goal->name;
+  int arity = (goal->type == CONST) ? 0 : 
+              (goal->type == FUNC) ? goal->arity : -1;
 
-  if (goal->type != FUNC)
+  if (arity < 0)
     return 0;
 
-  // is(X, Expr) - arithmetic evaluation
-  if (strcmp(goal->name, "is") == 0 && goal->arity == 2) {
-    int result;
-    if (!eval_arith(ctx, goal->args[1], env, &result))
-      return -1;
-
-    char buf[32];
-    snprintf(buf, sizeof(buf), "%d", result);
-    term_t *result_term = make_const(ctx, buf);
-
-    return unify(ctx, goal->args[0], result_term, env) ? 1 : -1;
-  }
-
-  // comparison operators
-  if (goal->arity == 2) {
-    int left, right;
-    bool have_left = eval_arith(ctx, goal->args[0], env, &left);
-    bool have_right = eval_arith(ctx, goal->args[1], env, &right);
-
-    if (have_left && have_right) {
-      if (strcmp(goal->name, "<") == 0)
-        return left < right ? 1 : -1;
-      if (strcmp(goal->name, ">") == 0)
-        return left > right ? 1 : -1;
-      if (strcmp(goal->name, "=<") == 0)
-        return left <= right ? 1 : -1;
-      if (strcmp(goal->name, ">=") == 0)
-        return left >= right ? 1 : -1;
-      if (strcmp(goal->name, "=:=") == 0)
-        return left == right ? 1 : -1;
-      if (strcmp(goal->name, "=\\=") == 0)
-        return left != right ? 1 : -1;
+  for (const builtin_t *b = builtins; b->name; b++) {
+    if (strcmp(name, b->name) == 0 && arity == b->arity) {
+      return b->handler(ctx, goal, env);
     }
   }
 
-  // =/2 - unification
-  if (strcmp(goal->name, "=") == 0 && goal->arity == 2) {
-    return unify(ctx, goal->args[0], goal->args[1], env) ? 1 : -1;
-  }
-
-  // \=/2 - not unifiable
-  if (strcmp(goal->name, "\\=") == 0 && goal->arity == 2) {
-    int old_count = env->count;
-    bool unified = unify(ctx, goal->args[0], goal->args[1], env);
-    env->count = old_count;
-    return unified ? -1 : 1;
-  }
-
-  return 0; // not a builtin
+  return 0;
 }

@@ -61,12 +61,6 @@ typedef struct {
 } op_prec_t;
 
 typedef struct {
-  const char *text;
-  int len;
-  bool is_keyword; // needs non-alnum check after
-} op_pattern_t;
-
-typedef struct {
   clause_t database[MAX_CLAUSES];
   int db_count;
   int var_counter;
