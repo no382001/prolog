@@ -132,10 +132,16 @@ static int builtin_arith_ne(prolog_ctx_t *ctx, term_t *goal, env_t *env) {
   return left != right ? 1 : -1;
 }
 
+static int builtin_cut(prolog_ctx_t *ctx, term_t *goal, env_t *env) {
+  (void)ctx; (void)goal; (void)env;
+  return 2;
+}
+
 static const builtin_t builtins[] = {
-  // 0-arity (CONST)
+  // 0-arity
   {"true",  0, builtin_true},
   {"fail",  0, builtin_fail},
+  {"!",     0, builtin_cut},
   // 2-arity
   {"is",    2, builtin_is},
   {"=",     2, builtin_unify},

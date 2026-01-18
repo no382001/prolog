@@ -46,6 +46,7 @@ typedef struct {
   goal_stmt_t goals;
   int clause_index;
   int env_mark;
+  int cut_point; // stack pointer to cut back to
 } frame_t;
 
 typedef struct {

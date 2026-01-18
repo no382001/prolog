@@ -1,6 +1,7 @@
 #include "prolog.h"
 #include <assert.h>
 #include <stdio.h>
+#include <string.h>
 
 bool son(prolog_ctx_t *ctx, goal_stmt_t *cn, int *clause_idx, env_t *env,
          int env_mark, goal_stmt_t *resolvent) {
@@ -105,10 +106,12 @@ bool solve(prolog_ctx_t *ctx, goal_stmt_t *initial_goals, env_t *env) {
   stack[sp].goals = cn;
   stack[sp].clause_index = 0;
   stack[sp].env_mark = env->count;
+  stack[sp].cut_point = 0;  // initial cut point
   sp++;
 
   int clause_idx;
   int env_mark;
+  int cut_point = 0;  // current cut point
 
 A:
   if (ctx->debug_enabled) {
@@ -123,6 +126,21 @@ A:
   if (cn.count == 0) {
     debug(ctx, "*** SUCCESS! ***\n");
     return true;
+  }
+
+  term_t *first_goal = deref(env, cn.goals[0]);
+  if (first_goal->type == CONST && strcmp(first_goal->name, "!") == 0) {
+    debug(ctx, "*** CUT executed, pruning stack to %d ***\n", cut_point);
+    
+    sp = cut_point + 1;  // keep the frame at cut_point
+    
+    // remove the cut from goals and continue
+    goal_stmt_t new_cn = {0};
+    for (int i = 1; i < cn.count; i++) {
+      new_cn.goals[new_cn.count++] = cn.goals[i];
+    }
+    cn = new_cn;
+    goto A;
   }
 
   clause_idx = 0;
@@ -140,7 +158,12 @@ B:
       stack[sp].goals = cn;
       stack[sp].clause_index = clause_idx;
       stack[sp].env_mark = env_mark;
+      stack[sp].cut_point = cut_point;  // save current cut point
       sp++;
+
+      // set new cut point for the clause we just entered
+      // this is the frame to cut back to if ! is executed in this clause
+      cut_point = sp - 1;
 
       cn = resolvent;
       goto A;
@@ -163,12 +186,13 @@ C:
   cn = stack[sp].goals;
   clause_idx = stack[sp].clause_index;
   env_mark = stack[sp].env_mark;
+  cut_point = stack[sp].cut_point;  // restore cut point
 
   assert(env_mark >= 0 && env_mark <= env->count &&
          "Invalid env_mark from stack");
   env->count = env_mark;
 
-  debug(ctx, "*** Restored: clause_idx=%d, env_mark=%d ***\n", clause_idx,
-        env_mark);
+  debug(ctx, "*** Restored: clause_idx=%d, env_mark=%d, cut_point=%d ***\n", 
+        clause_idx, env_mark, cut_point);
   goto B;
 }
