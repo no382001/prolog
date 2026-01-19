@@ -2,6 +2,7 @@
 
 #include <stdbool.h>
 #include <stdio.h>
+#include <stdarg.h>
 
 #define MAX_NAME 64
 #define MAX_ARGS 8
@@ -12,24 +13,43 @@
 #define MAX_TERMS 4096
 #define MAX_ERROR_MSG 256
 
+typedef struct prolog_ctx prolog_ctx_t;
+typedef struct term term_t;
+typedef struct env env_t;
+
+typedef void (*io_write_callback_t)(prolog_ctx_t *ctx, const char *str, void *userdata);
+typedef void (*io_write_term_callback_t)(prolog_ctx_t *ctx, term_t *t, env_t *env, void *userdata);
+typedef void (*io_writef_callback_t)(prolog_ctx_t *ctx, const char *fmt, va_list args, void *userdata);
+typedef int (*io_read_char_callback_t)(prolog_ctx_t *ctx, void *userdata);
+typedef char* (*io_read_line_callback_t)(prolog_ctx_t *ctx, char *buf, int size, void *userdata);
+
+typedef struct {
+  io_write_callback_t write_str;
+  io_write_term_callback_t write_term;
+  io_writef_callback_t writef;
+  io_read_char_callback_t read_char;
+  io_read_line_callback_t read_line;
+  void *userdata;
+} io_hooks_t;
+
 typedef enum { CONST, VAR, FUNC } term_type;
 
-typedef struct term {
+struct term {
   term_type type;
   char name[MAX_NAME];
   struct term *args[MAX_ARGS];
   int arity;
-} term_t;
+};
 
 typedef struct {
   char name[MAX_NAME];
   term_t *value;
 } binding_t;
 
-typedef struct {
+struct env {
   binding_t bindings[MAX_BINDINGS];
   int count;
-} env_t;
+};
 
 typedef struct {
   term_t *head;
@@ -56,7 +76,7 @@ typedef struct {
   int column;
 } parse_error_t;
 
-typedef struct {
+struct prolog_ctx {
   clause_t database[MAX_CLAUSES];
   int db_count;
   int var_counter;
@@ -69,7 +89,9 @@ typedef struct {
   int term_count;
 
   parse_error_t error;
-} prolog_ctx_t;
+  
+  io_hooks_t io_hooks;  // I/O hooks for custom I/O handling
+};
 
 void ctx_reset_terms(prolog_ctx_t *ctx);
 term_t *ctx_alloc_term(prolog_ctx_t *ctx);
@@ -109,7 +131,7 @@ bool solve(prolog_ctx_t *ctx, goal_stmt_t *initial_goals, env_t *env);
 bool solve_all(prolog_ctx_t *ctx, goal_stmt_t *initial_goals, env_t *env,
                solution_callback_t callback, void *userdata);
 
-void print_term(term_t *t, env_t *env);
+void print_term(prolog_ctx_t *ctx, term_t *t, env_t *env);
 
 void parse_error(prolog_ctx_t *ctx, const char *fmt, ...);
 void parse_error_clear(prolog_ctx_t *ctx);
@@ -117,3 +139,14 @@ bool parse_has_error(prolog_ctx_t *ctx);
 void parse_error_print(prolog_ctx_t *ctx);
 
 int try_builtin(prolog_ctx_t *ctx, term_t *goal, env_t *env);
+
+// I/O hook management
+void io_hooks_init_default(prolog_ctx_t *ctx);
+void io_hooks_set(prolog_ctx_t *ctx, io_hooks_t *hooks);
+
+// I/O functions (use hooks internally)
+void io_write_str(prolog_ctx_t *ctx, const char *str);
+void io_write_term(prolog_ctx_t *ctx, term_t *t, env_t *env);
+void io_writef(prolog_ctx_t *ctx, const char *fmt, ...);
+int io_read_char(prolog_ctx_t *ctx);
+char* io_read_line(prolog_ctx_t *ctx, char *buf, int size);

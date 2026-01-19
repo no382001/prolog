@@ -94,7 +94,7 @@ static void process_line(prolog_ctx_t *ctx, char *line, bool *should_exit) {
         if (printed)
           printf(", ");
         printf("%s = ", name);
-        print_term(env.bindings[i].value, &env);
+        print_term(ctx, env.bindings[i].value, &env);
         printed = true;
       }
       if (!printed)
@@ -132,6 +132,8 @@ static bool load_file(prolog_ctx_t *ctx, const char *filename) {
 int main(int argc, char *argv[]) {
   prolog_ctx_t context = {0};
   prolog_ctx_t *ctx = &context;
+  
+  io_hooks_init_default(ctx);
 
   const char *input_file = NULL;
   const char *expression = NULL;

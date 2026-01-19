@@ -48,4 +48,4 @@ debug: $(TARGET)
 
 .PHONY: test
 test: $(TARGET)
-	bats test/*
+	bats test/*.sh

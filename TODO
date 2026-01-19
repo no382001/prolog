@@ -1,4 +1,2 @@
-add findall and bagof
 define an ffi
-hook every i/o function
 add a standalone mode without main.c and shit, decouple it entirely

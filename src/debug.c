@@ -8,7 +8,9 @@ void debug(prolog_ctx_t *ctx, const char *fmt, ...) {
     return;
   va_list args;
   va_start(args, fmt);
-  vprintf(fmt, args);
+  if (ctx->io_hooks.writef) {
+    ctx->io_hooks.writef(ctx, fmt, args, ctx->io_hooks.userdata);
+  }
   va_end(args);
 }
 
