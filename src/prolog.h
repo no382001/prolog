@@ -44,6 +44,7 @@ typedef __builtin_va_list va_list;
 #define MAX_TERMS 4096
 #define MAX_ERROR_MSG 256
 #define MAX_CUSTOM_BUILTINS 64
+#define MAX_STRING_POOL 65536
 
 typedef struct prolog_ctx prolog_ctx_t;
 typedef struct term term_t;
@@ -73,13 +74,14 @@ typedef struct {
   void *userdata;
 } io_hooks_t;
 
-typedef enum { CONST, VAR, FUNC } term_type;
+typedef enum { CONST, VAR, FUNC, STRING } term_type;
 
 struct term {
   term_type type;
   char name[MAX_NAME];
   struct term *args[MAX_ARGS];
   int arity;
+  char *string_data;
 };
 
 typedef struct {
@@ -129,6 +131,9 @@ struct prolog_ctx {
   term_t term_pool[MAX_TERMS];
   int term_count;
 
+  char string_pool[MAX_STRING_POOL];
+  int string_pool_offset;
+
   parse_error_t error;
   
   io_hooks_t io_hooks;  // I/O hooks for custom I/O handling
@@ -151,6 +156,7 @@ term_t *make_const(prolog_ctx_t *ctx, const char *name);
 term_t *make_var(prolog_ctx_t *ctx, const char *name);
 term_t *make_func(prolog_ctx_t *ctx, const char *name, term_t **args,
                   int arity);
+term_t *make_string(prolog_ctx_t *ctx, const char *str);
 
 void skip_ws(prolog_ctx_t *ctx);
 term_t *parse_term(prolog_ctx_t *ctx);

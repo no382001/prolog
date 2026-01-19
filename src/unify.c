@@ -38,6 +38,13 @@ bool unify(prolog_ctx_t *ctx, term_t *a, term_t *b, env_t *env) {
     return result;
   }
 
+  if (a->type == STRING && b->type == STRING) {
+    bool result = strcmp(a->string_data, b->string_data) == 0;
+    debug(ctx, "  -> %s (string=\"%s\" vs \"%s\")\n", result ? "OK" : "FAIL", 
+          a->string_data, b->string_data);
+    return result;
+  }
+
   if (a->type == FUNC && b->type == FUNC) {
     if (strcmp(a->name, b->name) != 0 || a->arity != b->arity) {
       debug(ctx, "  -> FAIL (func mismatch: %s/%d vs %s/%d)\n", a->name,

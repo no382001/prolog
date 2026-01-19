@@ -50,6 +50,9 @@ term_t *substitute(prolog_ctx_t *ctx, env_t *env, term_t *t) {
     return NULL;
   t = deref(env, t);
 
+  if (t->type == CONST || t->type == VAR || t->type == STRING)
+    return t;
+
   if (t->type != FUNC)
     return t;
 

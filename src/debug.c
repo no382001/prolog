@@ -24,6 +24,9 @@ void print_term_raw(term_t *t) {
   case VAR:
     printf("VAR(%s)", t->name);
     break;
+  case STRING:
+    printf("STRING(\"%s\")", t->string_data);
+    break;
   case FUNC:
     printf("FUNC(%s,%d,[", t->name, t->arity);
     for (int i = 0; i < t->arity; i++) {

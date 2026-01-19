@@ -32,6 +32,13 @@ void print_term(prolog_ctx_t *ctx, term_t *t, env_t *env) {
     return;
   }
 
+  if (t->type == STRING) {
+    io_write_str(ctx, "\"");
+    io_write_str(ctx, t->string_data);
+    io_write_str(ctx, "\"");
+    return;
+  }
+
   io_write_str(ctx, t->name);
   if (t->type == FUNC && t->arity > 0) {
     io_write_str(ctx, "(");
