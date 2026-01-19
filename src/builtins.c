@@ -267,6 +267,16 @@ int try_builtin(prolog_ctx_t *ctx, term_t *goal, env_t *env) {
   if (arity < 0)
     return 0;
 
+  // First try custom builtins (FFI)
+  for (int i = 0; i < ctx->custom_builtin_count; i++) {
+    custom_builtin_t *cb = &ctx->custom_builtins[i];
+    if (strcmp(name, cb->name) == 0 && 
+        (cb->arity == -1 || arity == cb->arity)) {
+      return cb->handler(ctx, goal, env);
+    }
+  }
+
+  // Then try built-in builtins
   for (const builtin_t *b = builtins; b->name; b++) {
     if (strcmp(name, b->name) == 0 && arity == b->arity) {
       return b->handler(ctx, goal, env);

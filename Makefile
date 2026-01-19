@@ -10,12 +10,20 @@ LDFLAGS += -fsanitize=address
 
 TARGET := prolog
 BUILD_DIR := _build
+EXAMPLES_DIR := examples
 
 SRCS := $(wildcard src/*.c)
 HDRS := $(wildcard src/*.h)
 OBJS := $(SRCS:src/%.c=$(BUILD_DIR)/%.o)
 
-all: $(TARGET)
+# Filter out main.o for examples that have their own main
+LIB_OBJS := $(filter-out $(BUILD_DIR)/main.o,$(OBJS))
+
+# Examples
+EXAMPLE_SRCS := $(wildcard $(EXAMPLES_DIR)/*.c)
+EXAMPLE_BINS := $(EXAMPLE_SRCS:$(EXAMPLES_DIR)/%.c=$(BUILD_DIR)/%)
+
+all: $(TARGET) $(EXAMPLE_BINS)
 
 $(TARGET): $(OBJS)
 	$(CC) $(LDFLAGS) $(OBJS) -o $@
@@ -23,12 +31,19 @@ $(TARGET): $(OBJS)
 $(BUILD_DIR)/%.o: src/%.c $(HDRS) | $(BUILD_DIR)
 	$(CC) $(CFLAGS) -c $< -o $@
 
+# Build examples
+$(BUILD_DIR)/%: $(EXAMPLES_DIR)/%.c $(LIB_OBJS) $(HDRS) | $(BUILD_DIR)
+	$(CC) $(CFLAGS) $< $(LIB_OBJS) $(LDFLAGS) -o $@
+
 $(BUILD_DIR):
 	mkdir -p $@
 
 .PHONY: clean
 clean:
 	rm -rf $(BUILD_DIR) $(TARGET)
+
+.PHONY: examples
+examples: $(EXAMPLE_BINS)
 
 .PHONY: format
 format:

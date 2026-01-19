@@ -12,10 +12,20 @@
 #define MAX_STACK 256
 #define MAX_TERMS 4096
 #define MAX_ERROR_MSG 256
+#define MAX_CUSTOM_BUILTINS 64
 
 typedef struct prolog_ctx prolog_ctx_t;
 typedef struct term term_t;
 typedef struct env env_t;
+
+typedef int (*builtin_handler_t)(prolog_ctx_t *ctx, term_t *goal, env_t *env);
+
+typedef struct {
+  char name[MAX_NAME];
+  int arity;
+  builtin_handler_t handler;
+  void *userdata;
+} custom_builtin_t;
 
 typedef void (*io_write_callback_t)(prolog_ctx_t *ctx, const char *str, void *userdata);
 typedef void (*io_write_term_callback_t)(prolog_ctx_t *ctx, term_t *t, env_t *env, void *userdata);
@@ -91,6 +101,10 @@ struct prolog_ctx {
   parse_error_t error;
   
   io_hooks_t io_hooks;  // I/O hooks for custom I/O handling
+  
+  // FFI: Custom builtins
+  custom_builtin_t custom_builtins[MAX_CUSTOM_BUILTINS];
+  int custom_builtin_count;
 };
 
 void ctx_reset_terms(prolog_ctx_t *ctx);
@@ -150,3 +164,9 @@ void io_write_term(prolog_ctx_t *ctx, term_t *t, env_t *env);
 void io_writef(prolog_ctx_t *ctx, const char *fmt, ...);
 int io_read_char(prolog_ctx_t *ctx);
 char* io_read_line(prolog_ctx_t *ctx, char *buf, int size);
+
+// FFI: Register custom builtins
+bool ffi_register_builtin(prolog_ctx_t *ctx, const char *name, int arity, 
+                          builtin_handler_t handler, void *userdata);
+void ffi_clear_builtins(prolog_ctx_t *ctx);
+custom_builtin_t* ffi_get_builtin_userdata(prolog_ctx_t *ctx, term_t *goal);
