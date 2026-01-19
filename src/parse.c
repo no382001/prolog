@@ -407,6 +407,15 @@ void parse_clause(prolog_ctx_t *ctx, char *line) {
     } while (*ctx->input_ptr == ',' && ctx->input_ptr++);
   }
 
+  // terminating dot
+  skip_ws(ctx);
+  if (*ctx->input_ptr != '.') {
+    parse_error(ctx, "expected '.' at end of clause");
+    parse_error_print(ctx);
+    return;
+  }
+  ctx->input_ptr++;
+
   ctx->db_count++;
 
   if (ctx->debug_enabled) {
