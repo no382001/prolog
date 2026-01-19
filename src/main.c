@@ -32,6 +32,10 @@ static void process_line(prolog_ctx_t *ctx, char *line, bool *should_exit) {
   ctx->input_line++;
 
   if (strncmp(line, "?-", 2) == 0) {
+    // mark pools
+    int term_mark = ctx->term_count;
+    int string_mark = ctx->string_pool_offset;
+
     ctx->input_ptr = line + 2;
     ctx->input_start = line;
 
@@ -99,6 +103,10 @@ static void process_line(prolog_ctx_t *ctx, char *line, bool *should_exit) {
     } else {
       printf("false\n");
     }
+
+    // restore pools
+    ctx->term_count = term_mark;
+    ctx->string_pool_offset = string_mark;
   } else {
     parse_clause(ctx, line);
   }
@@ -128,7 +136,7 @@ static bool load_file(prolog_ctx_t *ctx, const char *filename) {
 int main(int argc, char *argv[]) {
   prolog_ctx_t context = {0};
   prolog_ctx_t *ctx = &context;
-  
+
   io_hooks_init_default(ctx);
 
   const char *input_file = NULL;

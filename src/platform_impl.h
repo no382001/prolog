@@ -1,9 +1,9 @@
 #include "prolog.h"
 
 #ifndef PROLOG_FREESTANDING
-#include <string.h>
+#include <assert.h>
 #include <ctype.h>
 #include <stdio.h>
 #include <stdlib.h>
-#include <assert.h>
+#include <string.h>
 #endif

@@ -148,6 +148,18 @@ static int builtin_cut(prolog_ctx_t *ctx, term_t *goal, env_t *env) {
   return 2;
 }
 
+static int builtin_stats(prolog_ctx_t *ctx, term_t *goal, env_t *env) {
+  io_writef(ctx,"terms: %d allocated, %d peak, %d current\n",
+         ctx->stats.terms_allocated, ctx->stats.terms_peak, ctx->term_count);
+  io_writef(ctx,"unify: %d calls, %d fails\n", ctx->stats.unify_calls,
+         ctx->stats.unify_fails);
+  io_writef(ctx,"solve: %d son calls, %d backtracks\n", ctx->stats.son_calls,
+         ctx->stats.backtracks);
+  return 1;
+
+  return 2;
+}
+
 typedef struct {
   prolog_ctx_t *ctx;
   term_t *template;
@@ -239,6 +251,7 @@ static const builtin_t builtins[] = {
     {"true", 0, builtin_true},
     {"fail", 0, builtin_fail},
     {"!", 0, builtin_cut},
+    {"stats", 0, builtin_stats},
     // 2-arity
     {"is", 2, builtin_is},
     {"=", 2, builtin_unify},
@@ -265,16 +278,14 @@ int try_builtin(prolog_ctx_t *ctx, term_t *goal, env_t *env) {
   if (arity < 0)
     return 0;
 
-  // First try custom builtins (FFI)
   for (int i = 0; i < ctx->custom_builtin_count; i++) {
     custom_builtin_t *cb = &ctx->custom_builtins[i];
-    if (strcmp(name, cb->name) == 0 && 
+    if (strcmp(name, cb->name) == 0 &&
         (cb->arity == -1 || arity == cb->arity)) {
       return cb->handler(ctx, goal, env);
     }
   }
 
-  // Then try built-in builtins
   for (const builtin_t *b = builtins; b->name; b++) {
     if (strcmp(name, b->name) == 0 && arity == b->arity) {
       return b->handler(ctx, goal, env);

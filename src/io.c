@@ -1,17 +1,20 @@
 #include "platform_impl.h"
 
-static void default_write_str(prolog_ctx_t *ctx, const char *str, void *userdata) {
+static void default_write_str(prolog_ctx_t *ctx, const char *str,
+                              void *userdata) {
   (void)ctx;
   (void)userdata;
   printf("%s", str);
 }
 
-static void default_write_term(prolog_ctx_t *ctx, term_t *t, env_t *env, void *userdata) {
+static void default_write_term(prolog_ctx_t *ctx, term_t *t, env_t *env,
+                               void *userdata) {
   (void)userdata;
   print_term(ctx, t, env);
 }
 
-static void default_writef(prolog_ctx_t *ctx, const char *fmt, va_list args, void *userdata) {
+static void default_writef(prolog_ctx_t *ctx, const char *fmt, va_list args,
+                           void *userdata) {
   (void)ctx;
   (void)userdata;
   vprintf(fmt, args);
@@ -23,7 +26,8 @@ static int default_read_char(prolog_ctx_t *ctx, void *userdata) {
   return getchar();
 }
 
-static char* default_read_line(prolog_ctx_t *ctx, char *buf, int size, void *userdata) {
+static char *default_read_line(prolog_ctx_t *ctx, char *buf, int size,
+                               void *userdata) {
   (void)ctx;
   (void)userdata;
   return fgets(buf, size, stdin);
@@ -50,7 +54,7 @@ void io_hooks_set(prolog_ctx_t *ctx, io_hooks_t *hooks) {
   if (hooks->read_line)
     ctx->io_hooks.read_line = hooks->read_line;
 
-    ctx->io_hooks.userdata = hooks->userdata;
+  ctx->io_hooks.userdata = hooks->userdata;
 }
 
 void io_write_str(prolog_ctx_t *ctx, const char *str) {
@@ -81,7 +85,7 @@ int io_read_char(prolog_ctx_t *ctx) {
   return EOF;
 }
 
-char* io_read_line(prolog_ctx_t *ctx, char *buf, int size) {
+char *io_read_line(prolog_ctx_t *ctx, char *buf, int size) {
   if (ctx->io_hooks.read_line) {
     return ctx->io_hooks.read_line(ctx, buf, size, ctx->io_hooks.userdata);
   }

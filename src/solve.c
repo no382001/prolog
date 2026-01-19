@@ -9,6 +9,7 @@ bool son(prolog_ctx_t *ctx, goal_stmt_t *cn, int *clause_idx, env_t *env,
   assert(resolvent != NULL && "Resolvent is NULL");
   assert(env_mark >= 0 && env_mark <= env->count && "Invalid env_mark");
 
+  ctx->stats.son_calls++;
   if (cn->count == 0)
     return false;
 
@@ -179,6 +180,7 @@ B:
   }
 
 C:
+  ctx->stats.backtracks++;
   debug(ctx, "\n*** LABEL C: backtracking, sp=%d ***\n", sp);
   sp--;
   if (sp <= 0) {

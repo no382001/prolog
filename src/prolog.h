@@ -1,11 +1,11 @@
 #pragma once
 
-// freestanding mode: user must provide these macros before including this header
-// hosted mode: we use stdlib normally
+// freestanding mode: user must provide these macros before including this
+// header hosted mode: we use stdlib normally
 #ifndef PROLOG_FREESTANDING
 
-#include <stdbool.h>
 #include <stdarg.h>
+#include <stdbool.h>
 
 #else // PROLOG_FREESTANDING
 
@@ -24,7 +24,7 @@ typedef __builtin_va_list va_list;
 #endif
 
 #ifndef NULL
-#define NULL ((void*)0)
+#define NULL ((void *)0)
 #endif
 
 // user must define these as macros pointing to their implementations:
@@ -59,11 +59,15 @@ typedef struct {
   void *userdata;
 } custom_builtin_t;
 
-typedef void (*io_write_callback_t)(prolog_ctx_t *ctx, const char *str, void *userdata);
-typedef void (*io_write_term_callback_t)(prolog_ctx_t *ctx, term_t *t, env_t *env, void *userdata);
-typedef void (*io_writef_callback_t)(prolog_ctx_t *ctx, const char *fmt, va_list args, void *userdata);
+typedef void (*io_write_callback_t)(prolog_ctx_t *ctx, const char *str,
+                                    void *userdata);
+typedef void (*io_write_term_callback_t)(prolog_ctx_t *ctx, term_t *t,
+                                         env_t *env, void *userdata);
+typedef void (*io_writef_callback_t)(prolog_ctx_t *ctx, const char *fmt,
+                                     va_list args, void *userdata);
 typedef int (*io_read_char_callback_t)(prolog_ctx_t *ctx, void *userdata);
-typedef char* (*io_read_line_callback_t)(prolog_ctx_t *ctx, char *buf, int size, void *userdata);
+typedef char *(*io_read_line_callback_t)(prolog_ctx_t *ctx, char *buf, int size,
+                                         void *userdata);
 
 typedef struct {
   io_write_callback_t write_str;
@@ -135,12 +139,20 @@ struct prolog_ctx {
   int string_pool_offset;
 
   parse_error_t error;
-  
-  io_hooks_t io_hooks;  // I/O hooks for custom I/O handling
-  
-  // FFI: Custom builtins
+
+  io_hooks_t io_hooks;
+
   custom_builtin_t custom_builtins[MAX_CUSTOM_BUILTINS];
   int custom_builtin_count;
+
+  struct {
+    int terms_allocated;
+    int terms_peak;
+    int unify_calls;
+    int unify_fails;
+    int son_calls;
+    int backtracks;
+  } stats;
 };
 
 void ctx_reset_terms(prolog_ctx_t *ctx);
@@ -200,10 +212,10 @@ void io_write_str(prolog_ctx_t *ctx, const char *str);
 void io_write_term(prolog_ctx_t *ctx, term_t *t, env_t *env);
 void io_writef(prolog_ctx_t *ctx, const char *fmt, ...);
 int io_read_char(prolog_ctx_t *ctx);
-char* io_read_line(prolog_ctx_t *ctx, char *buf, int size);
+char *io_read_line(prolog_ctx_t *ctx, char *buf, int size);
 
 // FFI: Register custom builtins
-bool ffi_register_builtin(prolog_ctx_t *ctx, const char *name, int arity, 
+bool ffi_register_builtin(prolog_ctx_t *ctx, const char *name, int arity,
                           builtin_handler_t handler, void *userdata);
 void ffi_clear_builtins(prolog_ctx_t *ctx);
-custom_builtin_t* ffi_get_builtin_userdata(prolog_ctx_t *ctx, term_t *goal);
+custom_builtin_t *ffi_get_builtin_userdata(prolog_ctx_t *ctx, term_t *goal);

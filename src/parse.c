@@ -219,40 +219,53 @@ static term_t *parse_primary(prolog_ctx_t *ctx) {
     return parse_list(ctx);
 
   if (*ctx->input_ptr == '\"') {
-    ctx->input_ptr++; // skip opening quote
+    ctx->input_ptr++;           // skip opening quote
     char str_buf[MAX_NAME * 4]; // allow longer strings
     int i = 0;
-    
+
     while (*ctx->input_ptr && *ctx->input_ptr != '\"') {
       if (i >= sizeof(str_buf) - 1) {
-        parse_error(ctx, "string too long (max %d chars)", (int)sizeof(str_buf) - 1);
+        parse_error(ctx, "string too long (max %d chars)",
+                    (int)sizeof(str_buf) - 1);
         return NULL;
       }
-      
+
       // escape sequences
       if (*ctx->input_ptr == '\\\\' && ctx->input_ptr[1]) {
         ctx->input_ptr++;
         switch (*ctx->input_ptr) {
-          case 'n': str_buf[i++] = '\\n'; break;
-          case 't': str_buf[i++] = '\\t'; break;
-          case 'r': str_buf[i++] = '\\r'; break;
-          case '\\\\': str_buf[i++] = '\\\\'; break;
-          case '\"': str_buf[i++] = '\"'; break;
-          default: str_buf[i++] = *ctx->input_ptr; break;
+        case 'n':
+          str_buf[i++] = '\\n';
+          break;
+        case 't':
+          str_buf[i++] = '\\t';
+          break;
+        case 'r':
+          str_buf[i++] = '\\r';
+          break;
+        case '\\\\':
+          str_buf[i++] = '\\\\';
+          break;
+        case '\"':
+          str_buf[i++] = '\"';
+          break;
+        default:
+          str_buf[i++] = *ctx->input_ptr;
+          break;
         }
         ctx->input_ptr++;
       } else {
         str_buf[i++] = *ctx->input_ptr++;
       }
     }
-    
+
     if (*ctx->input_ptr != '\"') {
       parse_error(ctx, "unterminated string literal");
       return NULL;
     }
     ctx->input_ptr++; // skip closing quote
     str_buf[i] = '\0';
-    
+
     return make_string(ctx, str_buf);
   }
 

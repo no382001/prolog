@@ -4,6 +4,8 @@ bool unify(prolog_ctx_t *ctx, term_t *a, term_t *b, env_t *env) {
   assert(ctx != NULL && "Context is NULL");
   assert(env != NULL && "Environment is NULL");
 
+  ctx->stats.unify_calls++;
+
   a = deref(env, a);
   b = deref(env, b);
 
@@ -17,6 +19,7 @@ bool unify(prolog_ctx_t *ctx, term_t *a, term_t *b, env_t *env) {
 
   if (!a || !b) {
     debug(ctx, "  -> FAIL (null)\n");
+    ctx->stats.unify_fails++;
     return false;
   }
 
@@ -40,7 +43,7 @@ bool unify(prolog_ctx_t *ctx, term_t *a, term_t *b, env_t *env) {
 
   if (a->type == STRING && b->type == STRING) {
     bool result = strcmp(a->string_data, b->string_data) == 0;
-    debug(ctx, "  -> %s (string=\"%s\" vs \"%s\")\n", result ? "OK" : "FAIL", 
+    debug(ctx, "  -> %s (string=\"%s\" vs \"%s\")\n", result ? "OK" : "FAIL",
           a->string_data, b->string_data);
     return result;
   }
@@ -49,12 +52,14 @@ bool unify(prolog_ctx_t *ctx, term_t *a, term_t *b, env_t *env) {
     if (strcmp(a->name, b->name) != 0 || a->arity != b->arity) {
       debug(ctx, "  -> FAIL (func mismatch: %s/%d vs %s/%d)\n", a->name,
             a->arity, b->name, b->arity);
+      ctx->stats.unify_fails++;
       return false;
     }
     debug(ctx, "  -> checking %d args of %s\n", a->arity, a->name);
     for (int i = 0; i < a->arity; i++) {
       if (!unify(ctx, a->args[i], b->args[i], env)) {
         debug(ctx, "  -> FAIL at arg %d\n", i);
+        ctx->stats.unify_fails++;
         return false;
       }
     }
@@ -63,5 +68,6 @@ bool unify(prolog_ctx_t *ctx, term_t *a, term_t *b, env_t *env) {
   }
 
   debug(ctx, "  -> FAIL (type mismatch: %d vs %d)\n", a->type, b->type);
+  ctx->stats.unify_fails++;
   return false;
 }

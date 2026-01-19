@@ -1,12 +1,17 @@
 #include "platform_impl.h"
 
-void ctx_reset_terms(prolog_ctx_t *ctx) { 
+void ctx_reset_terms(prolog_ctx_t *ctx) {
   ctx->term_count = 0;
   ctx->string_pool_offset = 0;
 }
 
 term_t *ctx_alloc_term(prolog_ctx_t *ctx) {
   assert(ctx->term_count < MAX_TERMS && "Term pool exhausted");
+
+  ctx->stats.terms_allocated++;
+  if (ctx->term_count > ctx->stats.terms_peak)
+    ctx->stats.terms_peak = ctx->term_count;
+
   term_t *t = &ctx->term_pool[ctx->term_count++];
   memset(t, 0, sizeof(term_t));
   return t;
@@ -17,7 +22,8 @@ term_t *make_term(prolog_ctx_t *ctx, term_type type, const char *name,
   assert(ctx != NULL && "Context is NULL");
   assert(name != NULL && "Term name cannot be NULL");
   assert(arity >= 0 && arity <= MAX_ARGS && "Invalid arity");
-  assert((type == CONST || type == VAR || type == FUNC || type == STRING) && "Invalid term type");
+  assert((type == CONST || type == VAR || type == FUNC || type == STRING) &&
+         "Invalid term type");
 
   term_t *t = ctx_alloc_term(ctx);
 
@@ -51,19 +57,20 @@ term_t *make_func(prolog_ctx_t *ctx, const char *name, term_t **args,
 term_t *make_string(prolog_ctx_t *ctx, const char *str) {
   assert(ctx != NULL && "Context is NULL");
   assert(str != NULL && "String cannot be NULL");
-  
+
   term_t *t = ctx_alloc_term(ctx);
   t->type = STRING;
   t->name[0] = '\0';
   t->arity = 0;
-  
+
   int len = strlen(str);
-  assert(ctx->string_pool_offset + len + 1 <= MAX_STRING_POOL && "String pool exhausted");
-  
+  assert(ctx->string_pool_offset + len + 1 <= MAX_STRING_POOL &&
+         "String pool exhausted");
+
   t->string_data = &ctx->string_pool[ctx->string_pool_offset];
   strcpy(t->string_data, str);
   ctx->string_pool_offset += len + 1;
-  
+
   return t;
 }
 
