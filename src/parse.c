@@ -39,8 +39,8 @@ void parse_error_print(prolog_ctx_t *ctx) {
     fprintf(stderr, "error: %s\n", ctx->error.message);
   } else {
     // fallback for non-interactive / no context
-    fprintf(stderr, "error: line %d, column %d: %s\n", 
-            ctx->error.line, ctx->error.column, ctx->error.message);
+    fprintf(stderr, "error: line %d, column %d: %s\n", ctx->error.line,
+            ctx->error.column, ctx->error.message);
   }
 }
 
@@ -65,30 +65,17 @@ typedef struct {
 static term_t *parse_primary(prolog_ctx_t *ctx);
 static term_t *parse_infix(prolog_ctx_t *ctx, term_t *left, int min_prec);
 static const op_prec_t precedence_table[] = {
-    {"*", 40},   {"/", 40},   {"mod", 40}, {"+", 30},   {"-", 30},
-    {"<", 20},   {">", 20},   {"=<", 20},  {">=", 20},  {"=:=", 20},
-    {"=\\=", 20}, {"is", 10}, {"=", 10},   {"\\=", 10},
-    {NULL, 0}
-};
+    {"*", 40},    {"/", 40},  {"mod", 40}, {"+", 30},   {"-", 30},
+    {"<", 20},    {">", 20},  {"=<", 20},  {">=", 20},  {"=:=", 20},
+    {"=\\=", 20}, {"is", 10}, {"=", 10},   {"\\=", 10}, {NULL, 0}};
 
 // ordered longest-first to avoid prefix conflicts
 static const op_pattern_t op_patterns[] = {
-    {"=:=", 3, false},
-    {"=\\=", 3, false},
-    {"mod", 3, true},
-    {"\\=", 2, false},
-    {"=<", 2, false},
-    {">=", 2, false},
-    {"is", 2, true},
-    {"+", 1, false},
-    {"*", 1, false},
-    {"/", 1, false},
-    {"<", 1, false},
-    {">", 1, false},
-    {"=", 1, false},
-    {"-", 1, false}, // special handling needed
-    {NULL, 0, false}
-};
+    {"=:=", 3, false}, {"=\\=", 3, false}, {"mod", 3, true}, {"\\=", 2, false},
+    {"=<", 2, false},  {">=", 2, false},   {"is", 2, true},  {"+", 1, false},
+    {"*", 1, false},   {"/", 1, false},    {"<", 1, false},  {">", 1, false},
+    {"=", 1, false},   {"-", 1, false}, // special handling needed
+    {NULL, 0, false}};
 
 static int get_precedence(const char *op) {
   for (const op_prec_t *p = precedence_table; p->op; p++) {

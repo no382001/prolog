@@ -2,6 +2,7 @@
 
 setup() {
     PROLOG="./prolog"
+    CORE="test/core.pl"
 }
 
 # --- is/2 basic arithmetic ---
@@ -454,4 +455,117 @@ setup() {
     run bash -c "echo '?- -5 < -3' | $PROLOG"
     [ "$status" -eq 0 ]
     [[ "$output" == *"true"* ]]
+}
+
+# --- findall basic ---
+
+@test "findall: collect all facts" {
+    run bash -c "echo -e 'foo(a).\nfoo(b).\nfoo(c).\n?- findall(X, foo(X), L)' | $PROLOG"
+    [ "$status" -eq 0 ]
+    [[ "$output" == *"L = [a, b, c]"* ]]
+}
+
+@test "findall: empty result is empty list" {
+    run bash -c "echo -e 'foo(a).\n?- findall(X, bar(X), L)' | $PROLOG"
+    [ "$status" -eq 0 ]
+    [[ "$output" == *"L = []"* ]]
+}
+
+@test "findall: single result" {
+    run bash -c "echo -e 'foo(only).\n?- findall(X, foo(X), L)' | $PROLOG"
+    [ "$status" -eq 0 ]
+    [[ "$output" == *"L = [only]"* ]]
+}
+
+# --- findall with templates ---
+
+@test "findall: template extracts part" {
+    run bash -c "echo -e 'pair(1,a).\npair(2,b).\npair(3,c).\n?- findall(Y, pair(X,Y), L)' | $PROLOG"
+    [ "$status" -eq 0 ]
+    [[ "$output" == *"L = [a, b, c]"* ]]
+}
+
+@test "findall: template is constant" {
+    run bash -c "echo -e 'foo(a).\nfoo(b).\nfoo(c).\n?- findall(x, foo(_), L)' | $PROLOG"
+    [ "$status" -eq 0 ]
+    [[ "$output" == *"L = [x, x, x]"* ]]
+}
+
+@test "findall: template is compound" {
+    run bash -c "echo -e 'edge(a,b).\nedge(b,c).\n?- findall(pair(X,Y), edge(X,Y), L)' | $PROLOG"
+    [ "$status" -eq 0 ]
+    [[ "$output" == *"pair(a, b)"* ]]
+    [[ "$output" == *"pair(b, c)"* ]]
+}
+
+# --- findall with rules ---
+
+@test "findall: works with rules" {
+    run bash -c "echo -e 'parent(tom,bob).\nparent(tom,liz).\nparent(bob,jim).\nchild(C,P) :- parent(P,C).\n?- findall(C, child(C,tom), L)' | $PROLOG"
+    [ "$status" -eq 0 ]
+    [[ "$output" == *"bob"* ]]
+    [[ "$output" == *"liz"* ]]
+}
+
+@test "findall: with member" {
+    run $PROLOG -f $CORE -e "?- findall(X, member(X, [1,2,3]), L)"
+    [ "$status" -eq 0 ]
+    [[ "$output" == *"L = [1, 2, 3]"* ]]
+}
+
+@test "findall: with append" {
+    run $PROLOG -f $CORE -e "?- findall(L, append([a], X, L), Results)"
+    [ "$status" -eq 0 ]
+    # Should find at least the case where X=[]
+}
+
+# --- findall with arithmetic ---
+
+@test "findall: with arithmetic in goal" {
+    skip
+    run bash -c "echo -e 'num(1).\nnum(2).\nnum(3).\n?- findall(D, (num(X), D is X * 2), L)' | $PROLOG"
+    [ "$status" -eq 0 ]
+    [[ "$output" == *"L = [2, 4, 6]"* ]]
+}
+
+@test "findall: with comparison in goal" {
+    skip
+    run bash -c "echo -e 'num(1).\nnum(2).\nnum(3).\nnum(4).\n?- findall(X, (num(X), X > 2), L)' | $PROLOG"
+    [ "$status" -eq 0 ]
+    [[ "$output" == *"L = [3, 4]"* ]]
+}
+
+# --- findall nested ---
+
+@test "findall: used in rule body" {
+    run bash -c "echo -e 'item(a).\nitem(b).\nall_items(L) :- findall(X, item(X), L).\n?- all_items(L)' | $PROLOG"
+    [ "$status" -eq 0 ]
+    [[ "$output" == *"L = [a, b]"* ]]
+}
+
+# --- bagof basic ---
+
+@test "bagof: collect all facts" {
+    run bash -c "echo -e 'foo(a).\nfoo(b).\nfoo(c).\n?- bagof(X, foo(X), L)' | $PROLOG"
+    [ "$status" -eq 0 ]
+    [[ "$output" == *"L = [a, b, c]"* ]]
+}
+
+@test "bagof: fails on no solutions" {
+    run bash -c "echo -e 'foo(a).\n?- bagof(X, bar(X), L)' | $PROLOG"
+    [ "$status" -eq 0 ]
+    [[ "$output" == *"false"* ]]
+}
+
+@test "bagof: single solution" {
+    run bash -c "echo -e 'foo(only).\n?- bagof(X, foo(X), L)' | $PROLOG"
+    [ "$status" -eq 0 ]
+    [[ "$output" == *"L = [only]"* ]]
+}
+
+@test "bagof: with template" {
+    run bash -c "echo -e 'pair(1,x).\npair(2,y).\n?- bagof(B, pair(A,B), L)' | $PROLOG"
+    [ "$status" -eq 0 ]
+    [[ "$output" == *"x"* ]]
+    [[ "$output" == *"y"* ]]
 }

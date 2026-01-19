@@ -2,10 +2,3 @@ add findall and bagof
 define an ffi
 hook every i/o function
 add a standalone mode without main.c and shit, decouple it entirely
-
-   \+(X) :- call(X), !, fail.
-   \+(X).
-
-add cuts and migrate project
-
-change shit into table driven dispathces

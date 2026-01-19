@@ -13,14 +13,9 @@ static int arith_mul(int a, int b) { return a * b; }
 static int arith_div(int a, int b) { return b ? a / b : 0; }
 static int arith_mod(int a, int b) { return b ? a % b : 0; }
 
-static const arith_op_t arith_ops[] = {
-  {"+",   arith_add},
-  {"-",   arith_sub},
-  {"*",   arith_mul},
-  {"/",   arith_div},
-  {"mod", arith_mod},
-  {NULL, NULL}
-};
+static const arith_op_t arith_ops[] = {{"+", arith_add},   {"-", arith_sub},
+                                       {"*", arith_mul},   {"/", arith_div},
+                                       {"mod", arith_mod}, {NULL, NULL}};
 
 static bool eval_arith(prolog_ctx_t *ctx, term_t *t, env_t *env, int *result) {
   t = deref(env, t);
@@ -55,17 +50,21 @@ static bool eval_arith(prolog_ctx_t *ctx, term_t *t, env_t *env, int *result) {
 
 typedef struct {
   const char *name;
-  int arity;          // -1 means any arity, 0 for CONST
+  int arity; // -1 means any arity, 0 for CONST
   int (*handler)(prolog_ctx_t *ctx, term_t *goal, env_t *env);
 } builtin_t;
 
 static int builtin_true(prolog_ctx_t *ctx, term_t *goal, env_t *env) {
-  (void)ctx; (void)goal; (void)env;
+  (void)ctx;
+  (void)goal;
+  (void)env;
   return 1;
 }
 
 static int builtin_fail(prolog_ctx_t *ctx, term_t *goal, env_t *env) {
-  (void)ctx; (void)goal; (void)env;
+  (void)ctx;
+  (void)goal;
+  (void)env;
   return -1;
 }
 
@@ -92,75 +91,178 @@ static int builtin_not_unify(prolog_ctx_t *ctx, term_t *goal, env_t *env) {
 
 static int builtin_lt(prolog_ctx_t *ctx, term_t *goal, env_t *env) {
   int left, right;
-  if (!eval_arith(ctx, goal->args[0], env, &left)) return 0;
-  if (!eval_arith(ctx, goal->args[1], env, &right)) return 0;
+  if (!eval_arith(ctx, goal->args[0], env, &left))
+    return 0;
+  if (!eval_arith(ctx, goal->args[1], env, &right))
+    return 0;
   return left < right ? 1 : -1;
 }
 
 static int builtin_gt(prolog_ctx_t *ctx, term_t *goal, env_t *env) {
   int left, right;
-  if (!eval_arith(ctx, goal->args[0], env, &left)) return 0;
-  if (!eval_arith(ctx, goal->args[1], env, &right)) return 0;
+  if (!eval_arith(ctx, goal->args[0], env, &left))
+    return 0;
+  if (!eval_arith(ctx, goal->args[1], env, &right))
+    return 0;
   return left > right ? 1 : -1;
 }
 
 static int builtin_le(prolog_ctx_t *ctx, term_t *goal, env_t *env) {
   int left, right;
-  if (!eval_arith(ctx, goal->args[0], env, &left)) return 0;
-  if (!eval_arith(ctx, goal->args[1], env, &right)) return 0;
+  if (!eval_arith(ctx, goal->args[0], env, &left))
+    return 0;
+  if (!eval_arith(ctx, goal->args[1], env, &right))
+    return 0;
   return left <= right ? 1 : -1;
 }
 
 static int builtin_ge(prolog_ctx_t *ctx, term_t *goal, env_t *env) {
   int left, right;
-  if (!eval_arith(ctx, goal->args[0], env, &left)) return 0;
-  if (!eval_arith(ctx, goal->args[1], env, &right)) return 0;
+  if (!eval_arith(ctx, goal->args[0], env, &left))
+    return 0;
+  if (!eval_arith(ctx, goal->args[1], env, &right))
+    return 0;
   return left >= right ? 1 : -1;
 }
 
 static int builtin_arith_eq(prolog_ctx_t *ctx, term_t *goal, env_t *env) {
   int left, right;
-  if (!eval_arith(ctx, goal->args[0], env, &left)) return 0;
-  if (!eval_arith(ctx, goal->args[1], env, &right)) return 0;
+  if (!eval_arith(ctx, goal->args[0], env, &left))
+    return 0;
+  if (!eval_arith(ctx, goal->args[1], env, &right))
+    return 0;
   return left == right ? 1 : -1;
 }
 
 static int builtin_arith_ne(prolog_ctx_t *ctx, term_t *goal, env_t *env) {
   int left, right;
-  if (!eval_arith(ctx, goal->args[0], env, &left)) return 0;
-  if (!eval_arith(ctx, goal->args[1], env, &right)) return 0;
+  if (!eval_arith(ctx, goal->args[0], env, &left))
+    return 0;
+  if (!eval_arith(ctx, goal->args[1], env, &right))
+    return 0;
   return left != right ? 1 : -1;
 }
 
 static int builtin_cut(prolog_ctx_t *ctx, term_t *goal, env_t *env) {
-  (void)ctx; (void)goal; (void)env;
+  (void)ctx;
+  (void)goal;
+  (void)env;
   return 2;
 }
 
+typedef struct {
+  prolog_ctx_t *ctx;
+  term_t *template;
+  term_t **results;
+  int count;
+  int max;
+} findall_state_t;
+
+static bool findall_callback(prolog_ctx_t *ctx, env_t *env, void *userdata) {
+  findall_state_t *state = (findall_state_t *)userdata;
+
+  if (state->count < state->max) {
+    state->results[state->count++] = substitute(ctx, env, state->template);
+  }
+
+  return true; // continue finding more
+}
+
+static term_t *build_list(prolog_ctx_t *ctx, term_t **items, int count) {
+  term_t *list = make_const(ctx, "[]");
+  for (int i = count - 1; i >= 0; i--) {
+    term_t *args[2] = {items[i], list};
+    list = make_func(ctx, ".", args, 2);
+  }
+  return list;
+}
+
+static int builtin_findall(prolog_ctx_t *ctx, term_t *goal, env_t *env) {
+  term_t *template = deref(env, goal->args[0]);
+  term_t *query = deref(env, goal->args[1]);
+  term_t *result_list = goal->args[2];
+
+  // rename variables to avoid conflicts
+  int id = ++ctx->var_counter;
+  template = rename_vars(ctx, template, id);
+  query = rename_vars(ctx, query, id);
+
+  // build goal statement
+  goal_stmt_t goals = {0};
+  goals.goals[goals.count++] = query;
+
+  // collect solutions
+  term_t *results[MAX_TERMS];
+  findall_state_t state = {.ctx = ctx,
+                           .template = template,
+                           .results = results,
+                           .count = 0,
+                           .max = MAX_TERMS};
+
+  env_t query_env = {0};
+  solve_all(ctx, &goals, &query_env, findall_callback, &state);
+
+  term_t *list = build_list(ctx, results, state.count);
+  return unify(ctx, result_list, list, env) ? 1 : -1;
+}
+
+static int builtin_bagof(prolog_ctx_t *ctx, term_t *goal, env_t *env) {
+  term_t *template = deref(env, goal->args[0]);
+  term_t *query = deref(env, goal->args[1]);
+  term_t *result_list = goal->args[2];
+
+  int id = ++ctx->var_counter;
+  template = rename_vars(ctx, template, id);
+  query = rename_vars(ctx, query, id);
+
+  goal_stmt_t goals = {0};
+  goals.goals[goals.count++] = query;
+
+  term_t *results[MAX_TERMS];
+  findall_state_t state = {.ctx = ctx,
+                           .template = template,
+                           .results = results,
+                           .count = 0,
+                           .max = MAX_TERMS};
+
+  env_t query_env = {0};
+  solve_all(ctx, &goals, &query_env, findall_callback, &state);
+
+  // bagof fails if no solutions
+  if (state.count == 0)
+    return -1;
+
+  term_t *list = build_list(ctx, results, state.count);
+  return unify(ctx, result_list, list, env) ? 1 : -1;
+}
+
 static const builtin_t builtins[] = {
-  // 0-arity
-  {"true",  0, builtin_true},
-  {"fail",  0, builtin_fail},
-  {"!",     0, builtin_cut},
-  // 2-arity
-  {"is",    2, builtin_is},
-  {"=",     2, builtin_unify},
-  {"\\=",   2, builtin_not_unify},
-  {"<",     2, builtin_lt},
-  {">",     2, builtin_gt},
-  {"=<",    2, builtin_le},
-  {">=",    2, builtin_ge},
-  {"=:=",   2, builtin_arith_eq},
-  {"=\\=",  2, builtin_arith_ne},
-  {NULL, 0, NULL}
-};
+    // 0-arity
+    {"true", 0, builtin_true},
+    {"fail", 0, builtin_fail},
+    {"!", 0, builtin_cut},
+    // 2-arity
+    {"is", 2, builtin_is},
+    {"=", 2, builtin_unify},
+    {"\\=", 2, builtin_not_unify},
+    {"<", 2, builtin_lt},
+    {">", 2, builtin_gt},
+    {"=<", 2, builtin_le},
+    {">=", 2, builtin_ge},
+    {"=:=", 2, builtin_arith_eq},
+    {"=\\=", 2, builtin_arith_ne},
+    // 3-arity
+    {"findall", 3, builtin_findall},
+    {"bagof", 3, builtin_bagof},
+    {NULL, 0, NULL}};
 
 int try_builtin(prolog_ctx_t *ctx, term_t *goal, env_t *env) {
   goal = deref(env, goal);
 
   const char *name = goal->name;
-  int arity = (goal->type == CONST) ? 0 : 
-              (goal->type == FUNC) ? goal->arity : -1;
+  int arity = (goal->type == CONST)  ? 0
+              : (goal->type == FUNC) ? goal->arity
+                                     : -1;
 
   if (arity < 0)
     return 0;

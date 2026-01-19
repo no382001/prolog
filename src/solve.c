@@ -93,7 +93,8 @@ bool son(prolog_ctx_t *ctx, goal_stmt_t *cn, int *clause_idx, env_t *env,
   return false;
 }
 
-bool solve(prolog_ctx_t *ctx, goal_stmt_t *initial_goals, env_t *env) {
+bool solve_all(prolog_ctx_t *ctx, goal_stmt_t *initial_goals, env_t *env,
+               solution_callback_t callback, void *userdata) {
   assert(ctx != NULL && "Context is NULL");
   assert(initial_goals != NULL && "Initial goals is NULL");
   assert(env != NULL && "Environment is NULL");
@@ -106,12 +107,13 @@ bool solve(prolog_ctx_t *ctx, goal_stmt_t *initial_goals, env_t *env) {
   stack[sp].goals = cn;
   stack[sp].clause_index = 0;
   stack[sp].env_mark = env->count;
-  stack[sp].cut_point = 0;  // initial cut point
+  stack[sp].cut_point = 0;
   sp++;
 
   int clause_idx;
   int env_mark;
-  int cut_point = 0;  // current cut point
+  int cut_point = 0;
+  bool found_any = false;
 
 A:
   if (ctx->debug_enabled) {
@@ -124,17 +126,26 @@ A:
   }
 
   if (cn.count == 0) {
-    debug(ctx, "*** SUCCESS! ***\n");
-    return true;
+    debug(ctx, "*** SOLUTION FOUND ***\n");
+    found_any = true;
+
+    if (callback) {
+      if (!callback(ctx, env, userdata)) {
+        // callback says stop
+        return true;
+      }
+    } else {
+      // no callback, just return first solution
+      return true;
+    }
+    // continue to find more solutions
+    goto C;
   }
 
   term_t *first_goal = deref(env, cn.goals[0]);
   if (first_goal->type == CONST && strcmp(first_goal->name, "!") == 0) {
     debug(ctx, "*** CUT executed, pruning stack to %d ***\n", cut_point);
-    
-    sp = cut_point + 1;  // keep the frame at cut_point
-    
-    // remove the cut from goals and continue
+    sp = cut_point + 1;
     goal_stmt_t new_cn = {0};
     for (int i = 1; i < cn.count; i++) {
       new_cn.goals[new_cn.count++] = cn.goals[i];
@@ -158,13 +169,10 @@ B:
       stack[sp].goals = cn;
       stack[sp].clause_index = clause_idx;
       stack[sp].env_mark = env_mark;
-      stack[sp].cut_point = cut_point;  // save current cut point
+      stack[sp].cut_point = cut_point;
       sp++;
 
-      // set new cut point for the clause we just entered
-      // this is the frame to cut back to if ! is executed in this clause
       cut_point = sp - 1;
-
       cn = resolvent;
       goto A;
     } else {
@@ -177,8 +185,8 @@ C:
   debug(ctx, "\n*** LABEL C: backtracking, sp=%d ***\n", sp);
   sp--;
   if (sp <= 0) {
-    debug(ctx, "*** FAILURE: stack empty ***\n");
-    return false;
+    debug(ctx, "*** NO MORE SOLUTIONS ***\n");
+    return found_any;
   }
 
   assert(sp > 0 && sp < MAX_STACK && "Invalid stack pointer");
@@ -186,13 +194,17 @@ C:
   cn = stack[sp].goals;
   clause_idx = stack[sp].clause_index;
   env_mark = stack[sp].env_mark;
-  cut_point = stack[sp].cut_point;  // restore cut point
+  cut_point = stack[sp].cut_point;
 
   assert(env_mark >= 0 && env_mark <= env->count &&
          "Invalid env_mark from stack");
   env->count = env_mark;
 
-  debug(ctx, "*** Restored: clause_idx=%d, env_mark=%d, cut_point=%d ***\n", 
+  debug(ctx, "*** Restored: clause_idx=%d, env_mark=%d, cut_point=%d ***\n",
         clause_idx, env_mark, cut_point);
   goto B;
+}
+
+bool solve(prolog_ctx_t *ctx, goal_stmt_t *initial_goals, env_t *env) {
+  return solve_all(ctx, initial_goals, env, NULL, NULL);
 }

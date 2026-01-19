@@ -101,7 +101,13 @@ term_t *rename_vars(prolog_ctx_t *ctx, term_t *t, int id);
 
 bool son(prolog_ctx_t *ctx, goal_stmt_t *cn, int *clause_idx, env_t *env,
          int env_mark, goal_stmt_t *resolvent);
+
+typedef bool (*solution_callback_t)(prolog_ctx_t *ctx, env_t *env,
+                                    void *userdata);
+
 bool solve(prolog_ctx_t *ctx, goal_stmt_t *initial_goals, env_t *env);
+bool solve_all(prolog_ctx_t *ctx, goal_stmt_t *initial_goals, env_t *env,
+               solution_callback_t callback, void *userdata);
 
 void print_term(term_t *t, env_t *env);
 
