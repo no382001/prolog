@@ -1,8 +1,39 @@
 #pragma once
 
+// freestanding mode: user must provide these macros before including this header
+// hosted mode: we use stdlib normally
+#ifndef PROLOG_FREESTANDING
+
 #include <stdbool.h>
-#include <stdio.h>
 #include <stdarg.h>
+
+#else // PROLOG_FREESTANDING
+
+#ifndef bool
+typedef _Bool bool;
+#define true 1
+#define false 0
+#endif
+
+#ifndef _VA_LIST_DEFINED
+typedef __builtin_va_list va_list;
+#define va_start __builtin_va_start
+#define va_end __builtin_va_end
+#define va_arg __builtin_va_arg
+#define _VA_LIST_DEFINED
+#endif
+
+#ifndef NULL
+#define NULL ((void*)0)
+#endif
+
+// user must define these as macros pointing to their implementations:
+// strcmp, strncmp, strlen, strchr, strcspn, strncpy
+// isspace, isdigit, isalpha, isalnum
+// vsnprintf, snprintf
+// assert (or define NDEBUG to disable)
+
+#endif // PROLOG_FREESTANDING
 
 #define MAX_NAME 64
 #define MAX_ARGS 8

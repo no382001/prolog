@@ -1,7 +1,4 @@
-#include "prolog.h"
-#include <assert.h>
-#include <stdio.h>
-#include <string.h>
+#include "platform_impl.h"
 
 bool unify(prolog_ctx_t *ctx, term_t *a, term_t *b, env_t *env) {
   assert(ctx != NULL && "Context is NULL");

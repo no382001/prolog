@@ -1,7 +1,4 @@
-#include "prolog.h"
-#include <assert.h>
-#include <stdio.h>
-#include <string.h>
+#include "platform_impl.h"
 
 bool son(prolog_ctx_t *ctx, goal_stmt_t *cn, int *clause_idx, env_t *env,
          int env_mark, goal_stmt_t *resolvent) {

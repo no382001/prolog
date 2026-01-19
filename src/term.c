@@ -1,7 +1,4 @@
-#include "prolog.h"
-#include <assert.h>
-#include <stdlib.h>
-#include <string.h>
+#include "platform_impl.h"
 
 void ctx_reset_terms(prolog_ctx_t *ctx) { ctx->term_count = 0; }
 

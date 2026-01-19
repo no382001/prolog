@@ -1,6 +1,4 @@
-#include "prolog.h"
-#include <stdlib.h>
-#include <string.h>
+#include "platform_impl.h"
 
 typedef struct {
   const char *op;

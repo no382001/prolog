@@ -1,2 +1,1 @@
-define an ffi
-add a standalone mode without main.c and shit, decouple it entirely
+add strings

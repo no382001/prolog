@@ -1,10 +1,7 @@
-#include "prolog.h"
-#include <assert.h>
-#include <stdio.h>
-#include <string.h>
+#include "platform_impl.h"
 
 void print_term(prolog_ctx_t *ctx, term_t *t, env_t *env) {
-  assert(env != NULL && "Environment is NULL");
+  assert(env != ((void*)0) && "Environment is NULL");
 
   if (!t) {
     io_write_str(ctx, "NULL");

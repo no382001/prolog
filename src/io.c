@@ -1,7 +1,4 @@
-#include "prolog.h"
-#include <stdio.h>
-#include <stdarg.h>
-#include <string.h>
+#include "platform_impl.h"
 
 static void default_write_str(prolog_ctx_t *ctx, const char *str, void *userdata) {
   (void)ctx;

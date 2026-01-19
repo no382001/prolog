@@ -1,9 +1,4 @@
-#include "prolog.h"
-#include <assert.h>
-#include <ctype.h>
-#include <stdarg.h>
-#include <stdio.h>
-#include <string.h>
+#include "platform_impl.h"
 
 void parse_error(prolog_ctx_t *ctx, const char *fmt, ...) {
   if (ctx->error.has_error)

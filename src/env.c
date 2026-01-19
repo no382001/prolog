@@ -1,7 +1,4 @@
-#include "prolog.h"
-#include <assert.h>
-#include <stdio.h>
-#include <string.h>
+#include "platform_impl.h"
 
 term_t *lookup(env_t *env, const char *name) {
   assert(env != NULL && "Environment is NULL");

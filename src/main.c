@@ -1,9 +1,5 @@
-#include "prolog.h"
-#include <assert.h>
-#include <ctype.h>
+#include "platform_impl.h"
 #include <getopt.h>
-#include <stdio.h>
-#include <string.h>
 #include <unistd.h>
 
 static void print_usage(const char *prog) {

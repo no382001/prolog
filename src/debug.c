@@ -1,7 +1,4 @@
-#include "prolog.h"
-#include <assert.h>
-#include <stdarg.h>
-#include <stdio.h>
+#include "platform_impl.h"
 
 void debug(prolog_ctx_t *ctx, const char *fmt, ...) {
   if (!ctx->debug_enabled)

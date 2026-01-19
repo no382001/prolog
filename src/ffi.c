@@ -1,5 +1,4 @@
-#include "prolog.h"
-#include <string.h>
+#include "platform_impl.h"
 
 bool ffi_register_builtin(prolog_ctx_t *ctx, const char *name, int arity, 
                           builtin_handler_t handler, void *userdata) {
