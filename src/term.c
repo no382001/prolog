@@ -79,10 +79,10 @@ term_t *rename_vars(prolog_ctx_t *ctx, term_t *t, int id) {
     return NULL;
 
   if (t->type == CONST)
-    return make_const(ctx, t->name);
+    return t;
 
   if (t->type == STRING)
-    return make_string(ctx, t->string_data);
+    return t;
 
   if (t->type == VAR) {
     char new_name[MAX_NAME];
