@@ -38,7 +38,6 @@ static void process_line(prolog_ctx_t *ctx, char *line, bool *should_exit) {
   }
 }
 
-
 static bool load_file(prolog_ctx_t *ctx, const char *filename) {
   return prolog_load_file(ctx, filename);
 }

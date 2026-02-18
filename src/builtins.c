@@ -149,12 +149,12 @@ static int builtin_cut(prolog_ctx_t *ctx, term_t *goal, env_t *env) {
 }
 
 static int builtin_stats(prolog_ctx_t *ctx, term_t *goal, env_t *env) {
-  io_writef(ctx,"terms: %d allocated, %d peak, %d current\n",
-         ctx->stats.terms_allocated, ctx->stats.terms_peak, ctx->term_count);
-  io_writef(ctx,"unify: %d calls, %d fails\n", ctx->stats.unify_calls,
-         ctx->stats.unify_fails);
-  io_writef(ctx,"solve: %d son calls, %d backtracks\n", ctx->stats.son_calls,
-         ctx->stats.backtracks);
+  io_writef(ctx, "terms: %d allocated, %d peak, %d current\n",
+            ctx->stats.terms_allocated, ctx->stats.terms_peak, ctx->term_count);
+  io_writef(ctx, "unify: %d calls, %d fails\n", ctx->stats.unify_calls,
+            ctx->stats.unify_fails);
+  io_writef(ctx, "solve: %d son calls, %d backtracks\n", ctx->stats.son_calls,
+            ctx->stats.backtracks);
   return 1;
 
   return 2;

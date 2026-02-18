@@ -23,7 +23,7 @@ LIB_OBJS := $(filter-out $(BUILD_DIR)/main.o,$(OBJS))
 EXAMPLE_SRCS := $(wildcard $(EXAMPLES_DIR)/*.c)
 EXAMPLE_BINS := $(EXAMPLE_SRCS:$(EXAMPLES_DIR)/%.c=$(BUILD_DIR)/%)
 
-all: $(TARGET) $(EXAMPLE_BINS)
+all: format $(TARGET) $(EXAMPLE_BINS)
 
 $(TARGET): $(OBJS)
 	$(CC) $(LDFLAGS) $(OBJS) -o $@
