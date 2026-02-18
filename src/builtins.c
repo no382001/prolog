@@ -246,6 +246,26 @@ static int builtin_bagof(prolog_ctx_t *ctx, term_t *goal, env_t *env) {
   return unify(ctx, result_list, list, env) ? 1 : -1;
 }
 
+static int builtin_include(prolog_ctx_t *ctx, term_t *goal, env_t *env) {
+  term_t *arg = deref(env, goal->args[0]);
+  const char *filename = NULL;
+  if (arg->type == STRING)
+    filename = arg->string_data;
+  else if (arg->type == CONST)
+    filename = arg->name;
+  else
+    return -1;
+
+  // resolve relative paths against the directory of the file being loaded
+  char resolved[MAX_FILE_PATH];
+  if (filename[0] != '/' && ctx->load_dir[0] != '\0') {
+    snprintf(resolved, sizeof(resolved), "%s/%s", ctx->load_dir, filename);
+    filename = resolved;
+  }
+
+  return prolog_load_file(ctx, filename) ? 1 : -1;
+}
+
 static const builtin_t builtins[] = {
     // 0-arity
     {"true", 0, builtin_true},
@@ -262,6 +282,8 @@ static const builtin_t builtins[] = {
     {">=", 2, builtin_ge},
     {"=:=", 2, builtin_arith_eq},
     {"=\\=", 2, builtin_arith_ne},
+    // 1-arity
+    {"include", 1, builtin_include},
     // 3-arity
     {"findall", 3, builtin_findall},
     {"bagof", 3, builtin_bagof},

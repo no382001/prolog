@@ -48,6 +48,7 @@ bool son(prolog_ctx_t *ctx, goal_stmt_t *cn, int *clause_idx, env_t *env,
     env->count = env_mark;
 
     int id = ++ctx->var_counter;
+    int term_save = ctx->term_count; // reclaim on failed unification
     term_t *renamed_head = rename_vars(ctx, c->head, id);
     assert(renamed_head != NULL && "Failed to rename clause head");
 
@@ -83,6 +84,7 @@ bool son(prolog_ctx_t *ctx, goal_stmt_t *cn, int *clause_idx, env_t *env,
       *clause_idx = i + 1;
       return true;
     }
+    ctx->term_count = term_save;
     debug(ctx, "--- Clause %d failed ---\n", i);
   }
 

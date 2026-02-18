@@ -250,3 +250,85 @@ setup() {
     [ "$status" -eq 0 ]
     [[ "$output" == *"X = a"* ]]
 }
+
+# --- multiline file loading ---
+
+@test "parse file: rule body split across lines" {
+    local tmpfile
+    tmpfile=$(mktemp /tmp/prolog_test_XXXXXX.pl)
+    printf 'parent(tom, bob).\nancestor(X, Y) :-\n  parent(X, Y).\n' > "$tmpfile"
+    run $PROLOG -f "$tmpfile" -e '?- ancestor(tom, bob)'
+    rm -f "$tmpfile"
+    [ "$status" -eq 0 ]
+    [[ "$output" == *"true"* ]]
+}
+
+@test "parse file: fact args split across lines" {
+    local tmpfile
+    tmpfile=$(mktemp /tmp/prolog_test_XXXXXX.pl)
+    printf 'foo(\n  a,\n  b,\n  c\n).\n' > "$tmpfile"
+    run $PROLOG -f "$tmpfile" -e '?- foo(a, b, c)'
+    rm -f "$tmpfile"
+    [ "$status" -eq 0 ]
+    [[ "$output" == *"true"* ]]
+}
+
+@test "parse file: body goals each on own line" {
+    local tmpfile
+    tmpfile=$(mktemp /tmp/prolog_test_XXXXXX.pl)
+    printf 'a(x).\nb(x).\nc(X) :-\n  a(X),\n  b(X).\n' > "$tmpfile"
+    run $PROLOG -f "$tmpfile" -e '?- c(X)'
+    rm -f "$tmpfile"
+    [ "$status" -eq 0 ]
+    [[ "$output" == *"X = x"* ]]
+}
+
+@test "parse file: percent comment on its own line" {
+    local tmpfile
+    tmpfile=$(mktemp /tmp/prolog_test_XXXXXX.pl)
+    printf '%% full-line comment\nfoo(a).\n' > "$tmpfile"
+    run $PROLOG -f "$tmpfile" -e '?- foo(a)'
+    rm -f "$tmpfile"
+    [ "$status" -eq 0 ]
+    [[ "$output" == *"true"* ]]
+}
+
+@test "parse file: inline percent comment" {
+    local tmpfile
+    tmpfile=$(mktemp /tmp/prolog_test_XXXXXX.pl)
+    printf 'foo(a). %% this is ignored\n' > "$tmpfile"
+    run $PROLOG -f "$tmpfile" -e '?- foo(a)'
+    rm -f "$tmpfile"
+    [ "$status" -eq 0 ]
+    [[ "$output" == *"true"* ]]
+}
+
+@test "parse file: blank lines between clauses" {
+    local tmpfile
+    tmpfile=$(mktemp /tmp/prolog_test_XXXXXX.pl)
+    printf 'foo(a).\n\n\nbar(b).\n' > "$tmpfile"
+    run $PROLOG -f "$tmpfile" -e '?- foo(a), bar(b)'
+    rm -f "$tmpfile"
+    [ "$status" -eq 0 ]
+    [[ "$output" == *"true"* ]]
+}
+
+@test "parse file: dot inside string does not end clause" {
+    local tmpfile
+    tmpfile=$(mktemp /tmp/prolog_test_XXXXXX.pl)
+    printf 'greeting("hello.world").\n' > "$tmpfile"
+    run $PROLOG -f "$tmpfile" -e '?- greeting(X)'
+    rm -f "$tmpfile"
+    [ "$status" -eq 0 ]
+    [[ "$output" == *"hello.world"* ]]
+}
+
+@test "parse file: multiple clauses loaded" {
+    local tmpfile
+    tmpfile=$(mktemp /tmp/prolog_test_XXXXXX.pl)
+    printf 'color(red).\ncolor(green).\ncolor(blue).\n' > "$tmpfile"
+    run $PROLOG -f "$tmpfile" -e '?- color(green)'
+    rm -f "$tmpfile"
+    [ "$status" -eq 0 ]
+    [[ "$output" == *"true"* ]]
+}

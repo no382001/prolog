@@ -45,6 +45,7 @@ typedef __builtin_va_list va_list;
 #define MAX_ERROR_MSG 256
 #define MAX_CUSTOM_BUILTINS 64
 #define MAX_STRING_POOL 65536
+#define MAX_FILE_PATH 512
 
 typedef struct prolog_ctx prolog_ctx_t;
 typedef struct term term_t;
@@ -145,6 +146,8 @@ struct prolog_ctx {
   custom_builtin_t custom_builtins[MAX_CUSTOM_BUILTINS];
   int custom_builtin_count;
 
+  char load_dir[MAX_FILE_PATH]; // directory of the file currently being loaded
+
   struct {
     int terms_allocated;
     int terms_peak;
@@ -174,6 +177,7 @@ void skip_ws(prolog_ctx_t *ctx);
 term_t *parse_term(prolog_ctx_t *ctx);
 term_t *parse_list(prolog_ctx_t *ctx);
 void parse_clause(prolog_ctx_t *ctx, char *line);
+bool prolog_load_file(prolog_ctx_t *ctx, const char *filename);
 
 term_t *lookup(env_t *env, const char *name);
 void bind(prolog_ctx_t *ctx, env_t *env, const char *name, term_t *value);
@@ -193,6 +197,8 @@ typedef bool (*solution_callback_t)(prolog_ctx_t *ctx, env_t *env,
 bool solve(prolog_ctx_t *ctx, goal_stmt_t *initial_goals, env_t *env);
 bool solve_all(prolog_ctx_t *ctx, goal_stmt_t *initial_goals, env_t *env,
                solution_callback_t callback, void *userdata);
+
+bool prolog_exec_query(prolog_ctx_t *ctx, char *query);
 
 void print_term(prolog_ctx_t *ctx, term_t *t, env_t *env);
 

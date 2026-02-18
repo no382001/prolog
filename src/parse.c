@@ -402,6 +402,181 @@ term_t *parse_term(prolog_ctx_t *ctx) {
   return parse_infix(ctx, left, 0);
 }
 
+static void strip_line_comment(char *line) {
+  bool in_string = false;
+  for (char *p = line; *p; p++) {
+    if (in_string) {
+      if (*p == '\\' && *(p + 1))
+        p++;
+      else if (*p == '"')
+        in_string = false;
+    } else {
+      if (*p == '"')
+        in_string = true;
+      else if (*p == '%') {
+        *p = '\0';
+        break;
+      }
+    }
+  }
+}
+
+static bool has_complete_clause(const char *buf) {
+  bool in_string = false;
+  int depth = 0;
+  for (const char *p = buf; *p; p++) {
+    if (in_string) {
+      if (*p == '\\' && *(p + 1))
+        p++;
+      else if (*p == '"')
+        in_string = false;
+    } else {
+      if (*p == '"') {
+        in_string = true;
+      } else if (*p == '(' || *p == '[') {
+        depth++;
+      } else if (*p == ')' || *p == ']') {
+        depth--;
+      } else if (*p == '.' && depth == 0) {
+        char next = *(p + 1);
+        if (next == '\0' || isspace((unsigned char)next))
+          return true;
+      }
+    }
+  }
+  return false;
+}
+
+bool prolog_exec_query(prolog_ctx_t *ctx, char *query) {
+  parse_error_clear(ctx);
+  ctx->input_ptr = query;
+  ctx->input_start = query;
+
+  int term_mark = ctx->term_count;
+  int string_mark = ctx->string_pool_offset;
+  int db_mark = ctx->db_count;
+
+  goal_stmt_t goals = {0};
+  do {
+    skip_ws(ctx);
+    term_t *g = parse_term(ctx);
+    if (!g) {
+      if (parse_has_error(ctx)) {
+        parse_error_print(ctx);
+        return false;
+      }
+      break;
+    }
+    if (goals.count < MAX_GOALS)
+      goals.goals[goals.count++] = g;
+    skip_ws(ctx);
+  } while (*ctx->input_ptr == ',' && ctx->input_ptr++);
+
+  if (goals.count == 0) {
+    fprintf(stderr, "Error: empty query\n");
+    return false;
+  }
+
+  env_t env = {0};
+  bool ok = solve(ctx, &goals, &env);
+  if (ok) {
+    bool printed = false;
+    for (int i = 0; i < env.count; i++) {
+      char *name = env.bindings[i].name;
+      if (strchr(name, '#'))
+        continue;
+      if (name[0] == '_')
+        continue;
+      if (printed)
+        io_write_str(ctx, ", ");
+      io_writef(ctx, "%s = ", name);
+      io_write_term(ctx, env.bindings[i].value, &env);
+      printed = true;
+    }
+    if (!printed)
+      io_write_str(ctx, "true");
+    io_write_str(ctx, "\n");
+  } else {
+    io_write_str(ctx, "false\n");
+  }
+
+  // restore pools if no new clauses were added
+  // (clauses added via include must keep their terms)
+  if (ctx->db_count == db_mark) {
+    ctx->term_count = term_mark;
+    ctx->string_pool_offset = string_mark;
+  }
+
+  return ok;
+}
+
+static void exec_directive(prolog_ctx_t *ctx, char *buf) {
+  prolog_exec_query(ctx, buf + 2); // skip "?-"
+}
+
+bool prolog_load_file(prolog_ctx_t *ctx, const char *filename) {
+  FILE *f = fopen(filename, "r");
+  if (!f) {
+    fprintf(stderr, "Error: cannot open file '%s'\n", filename);
+    return false;
+  }
+
+  // set load_dir to this file's directory so nested includes resolve correctly
+  char old_load_dir[MAX_FILE_PATH];
+  strncpy(old_load_dir, ctx->load_dir, sizeof(old_load_dir) - 1);
+  old_load_dir[sizeof(old_load_dir) - 1] = '\0';
+  const char *last_slash = strrchr(filename, '/');
+  if (last_slash) {
+    size_t len = (size_t)(last_slash - filename);
+    if (len >= sizeof(ctx->load_dir))
+      len = sizeof(ctx->load_dir) - 1;
+    strncpy(ctx->load_dir, filename, len);
+    ctx->load_dir[len] = '\0';
+  }
+
+  char line[1024];
+  char clause[16384] = {0};
+
+  while (fgets(line, sizeof(line), f)) {
+    line[strcspn(line, "\n")] = 0;
+    strip_line_comment(line);
+
+    char *trimmed = line;
+    while (isspace((unsigned char)*trimmed))
+      trimmed++;
+
+    if (*trimmed == '\0' && clause[0] == '\0')
+      continue;
+
+    if (clause[0] != '\0' && *trimmed != '\0')
+      strncat(clause, " ", sizeof(clause) - strlen(clause) - 1);
+    strncat(clause, trimmed, sizeof(clause) - strlen(clause) - 1);
+
+    if (has_complete_clause(clause)) {
+      ctx->input_line++;
+      if (strncmp(clause, "?-", 2) == 0)
+        exec_directive(ctx, clause);
+      else
+        parse_clause(ctx, clause);
+      clause[0] = '\0';
+      if (parse_has_error(ctx)) {
+        fclose(f);
+        return false;
+      }
+    }
+  }
+
+  char *p = clause;
+  while (isspace((unsigned char)*p))
+    p++;
+  if (*p != '\0')
+    fprintf(stderr, "Warning: unterminated clause at end of '%s'\n", filename);
+
+  strncpy(ctx->load_dir, old_load_dir, sizeof(ctx->load_dir) - 1);
+  fclose(f);
+  return true;
+}
+
 void parse_clause(prolog_ctx_t *ctx, char *line) {
   assert(ctx != NULL && "Context is NULL");
   assert(line != NULL && "Line cannot be NULL");

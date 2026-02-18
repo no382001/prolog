@@ -569,3 +569,51 @@ setup() {
     [[ "$output" == *"x"* ]]
     [[ "$output" == *"y"* ]]
 }
+
+# --- include/1 ---
+
+@test "include: loads facts from file" {
+    local tmpfile
+    tmpfile=$(mktemp /tmp/prolog_test_XXXXXX.pl)
+    printf 'animal(cat).\nanimal(dog).\n' > "$tmpfile"
+    run bash -c "printf '?- include(\"%s\")\n?- animal(cat)\n' \"$tmpfile\" | $PROLOG"
+    rm -f "$tmpfile"
+    [ "$status" -eq 0 ]
+    [[ "$output" == *"true"* ]]
+}
+
+@test "include: fails on nonexistent file" {
+    run bash -c "echo '?- include(\"/nonexistent/does_not_exist.pl\")' | $PROLOG 2>&1"
+    [ "$status" -eq 0 ]
+    [[ "$output" == *"false"* ]]
+}
+
+@test "include: loads multiline rules" {
+    local tmpfile
+    tmpfile=$(mktemp /tmp/prolog_test_XXXXXX.pl)
+    printf 'parent(tom, bob).\nancestor(X, Y) :-\n  parent(X, Y).\n' > "$tmpfile"
+    run bash -c "printf '?- include(\"%s\")\n?- ancestor(tom, bob)\n' \"$tmpfile\" | $PROLOG"
+    rm -f "$tmpfile"
+    [ "$status" -eq 0 ]
+    [[ "$output" == *"true"* ]]
+}
+
+@test "include: all clauses from file are accessible" {
+    local tmpfile
+    tmpfile=$(mktemp /tmp/prolog_test_XXXXXX.pl)
+    printf 'color(red).\ncolor(green).\ncolor(blue).\n' > "$tmpfile"
+    run bash -c "printf '?- include(\"%s\")\n?- color(red), color(blue)\n' \"$tmpfile\" | $PROLOG"
+    rm -f "$tmpfile"
+    [ "$status" -eq 0 ]
+    [[ "$output" == *"true"* ]]
+}
+
+@test "include: works in rule body" {
+    local tmpfile
+    tmpfile=$(mktemp /tmp/prolog_test_XXXXXX.pl)
+    printf 'foo(a).\n' > "$tmpfile"
+    run bash -c "printf 'load(F) :- include(F).\n?- load(\"%s\"), foo(a)\n' \"$tmpfile\" | $PROLOG"
+    rm -f "$tmpfile"
+    [ "$status" -eq 0 ]
+    [[ "$output" == *"true"* ]]
+}
