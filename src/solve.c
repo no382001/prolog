@@ -91,6 +91,22 @@ bool son(prolog_ctx_t *ctx, goal_stmt_t *cn, int *clause_idx, env_t *env,
   return false;
 }
 
+static bool has_more_alternatives(prolog_ctx_t *ctx, term_t *goal, 
+                                   env_t *env, int from_clause) {
+    goal = deref(env, goal);
+    for (int i = from_clause; i < ctx->db_count; i++) {
+        clause_t *c = &ctx->database[i];
+        // cheap arity/name check before trying unify
+        int goal_arity = (goal->type == FUNC) ? goal->arity : 0;
+        int head_arity = (c->head->type == FUNC) ? c->head->arity : 0;
+        if (strcmp(goal->name, c->head->name) == 0 && 
+            goal_arity == head_arity) {
+            return true;
+        }
+    }
+    return false;
+}
+
 bool solve_all(prolog_ctx_t *ctx, goal_stmt_t *initial_goals, env_t *env,
                solution_callback_t callback, void *userdata) {
   assert(ctx != NULL && "Context is NULL");
@@ -164,13 +180,16 @@ B:
       assert(sp < MAX_STACK && "Stack overflow");
       debug(ctx, "*** SON succeeded, pushing frame, sp=%d ***\n", sp);
 
-      stack[sp].goals = cn;
-      stack[sp].clause_index = clause_idx;
-      stack[sp].env_mark = env_mark;
-      stack[sp].cut_point = cut_point;
-      sp++;
+      if (has_more_alternatives(ctx, cn.goals[0], env, clause_idx)) {
+        assert(sp < MAX_STACK && "Stack overflow");
+        stack[sp].goals = cn;
+        stack[sp].clause_index = clause_idx;
+        stack[sp].env_mark = env_mark;
+        stack[sp].cut_point = cut_point;
+        sp++;
+        cut_point = sp - 1;
+      } // else reuse the stack frame
 
-      cut_point = sp - 1;
       cn = resolvent;
       goto A;
     } else {

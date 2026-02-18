@@ -2,7 +2,7 @@ multiline statements
 
 streaming findall solutions
 lazy list
-
+int ids instead of string names, this will increase the string pool
 
 ?- findall(X, member(X, [1,2,3]), All).
 ?- stats.
