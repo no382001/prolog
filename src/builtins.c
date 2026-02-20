@@ -246,6 +246,24 @@ static int builtin_bagof(prolog_ctx_t *ctx, term_t *goal, env_t *env) {
   return unify(ctx, result_list, list, env) ? 1 : -1;
 }
 
+static int builtin_nl(prolog_ctx_t *ctx, term_t *goal, env_t *env) {
+  (void)goal;
+  (void)env;
+  io_write_str(ctx, "\n");
+  return 1;
+}
+
+static int builtin_write(prolog_ctx_t *ctx, term_t *goal, env_t *env) {
+  io_write_term(ctx, deref(env, goal->args[0]), env);
+  return 1;
+}
+
+static int builtin_writeln(prolog_ctx_t *ctx, term_t *goal, env_t *env) {
+  io_write_term(ctx, deref(env, goal->args[0]), env);
+  io_write_str(ctx, "\n");
+  return 1;
+}
+
 static int builtin_include(prolog_ctx_t *ctx, term_t *goal, env_t *env) {
   term_t *arg = deref(env, goal->args[0]);
   const char *filename = NULL;
@@ -283,6 +301,9 @@ static const builtin_t builtins[] = {
     {"=:=", 2, builtin_arith_eq},
     {"=\\=", 2, builtin_arith_ne},
     // 1-arity
+    {"nl", 0, builtin_nl},
+    {"write", 1, builtin_write},
+    {"writeln", 1, builtin_writeln},
     {"include", 1, builtin_include},
     // 3-arity
     {"findall", 3, builtin_findall},

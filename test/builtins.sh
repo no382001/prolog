@@ -617,3 +617,84 @@ setup() {
     [ "$status" -eq 0 ]
     [[ "$output" == *"true"* ]]
 }
+
+# --- nl/0 ---
+
+@test "nl: succeeds" {
+    run bash -c "echo '?- nl' | $PROLOG"
+    [ "$status" -eq 0 ]
+    [[ "$output" == *"true"* ]]
+}
+
+@test "nl: outputs a newline" {
+    run bash -c "echo '?- nl' | $PROLOG"
+    [ "$status" -eq 0 ]
+    # output contains a blank line (the newline from nl)
+    [[ "$output" == *$'\n'* ]]
+}
+
+# --- write/1 ---
+
+@test "write: prints an atom" {
+    run bash -c "echo '?- write(hello)' | $PROLOG"
+    [ "$status" -eq 0 ]
+    [[ "$output" == *"hello"* ]]
+}
+
+@test "write: prints a number" {
+    run bash -c "echo '?- write(42)' | $PROLOG"
+    [ "$status" -eq 0 ]
+    [[ "$output" == *"42"* ]]
+}
+
+@test "write: prints a compound term" {
+    run bash -c "echo '?- write(foo(a, b))' | $PROLOG"
+    [ "$status" -eq 0 ]
+    [[ "$output" == *"foo"* ]]
+    [[ "$output" == *"a"* ]]
+    [[ "$output" == *"b"* ]]
+}
+
+@test "write: prints a bound variable" {
+    run bash -c "echo '?- X = hello, write(X)' | $PROLOG"
+    [ "$status" -eq 0 ]
+    [[ "$output" == *"hello"* ]]
+}
+
+@test "write: succeeds" {
+    run bash -c "echo '?- write(anything)' | $PROLOG"
+    [ "$status" -eq 0 ]
+    [[ "$output" == *"true"* ]]
+}
+
+@test "write: works in rule body" {
+    run bash -c "echo -e 'greet :- write(hi).\n?- greet' | $PROLOG"
+    [ "$status" -eq 0 ]
+    [[ "$output" == *"hi"* ]]
+}
+
+# --- writeln/1 ---
+
+@test "writeln: prints an atom" {
+    run bash -c "echo '?- writeln(hello)' | $PROLOG"
+    [ "$status" -eq 0 ]
+    [[ "$output" == *"hello"* ]]
+}
+
+@test "writeln: prints a number" {
+    run bash -c "echo '?- writeln(99)' | $PROLOG"
+    [ "$status" -eq 0 ]
+    [[ "$output" == *"99"* ]]
+}
+
+@test "writeln: succeeds" {
+    run bash -c "echo '?- writeln(anything)' | $PROLOG"
+    [ "$status" -eq 0 ]
+    [[ "$output" == *"true"* ]]
+}
+
+@test "writeln: works in rule body" {
+    run bash -c "echo -e 'announce(X) :- writeln(X).\n?- announce(done)' | $PROLOG"
+    [ "$status" -eq 0 ]
+    [[ "$output" == *"done"* ]]
+}

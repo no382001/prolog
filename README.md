@@ -48,6 +48,9 @@ A lightweight, embeddable Prolog interpreter written in C11.
 | `X >= Y` | arithmetic greater-or-equal |
 | `X =:= Y` | arithmetic equal |
 | `X =\= Y` | arithmetic not-equal |
+| `nl` | print a newline |
+| `write(Term)` | print `Term` |
+| `writeln(Term)` | print `Term` followed by a newline |
 | `findall(T, Goal, List)` | collect all `T` for which `Goal` succeeds into `List` |
 | `bagof(T, Goal, List)` | like `findall` but fails if there are no solutions |
 | `include(File)` | load and assert clauses from `File` |
