@@ -19,6 +19,14 @@ perm([H|T], P) :- perm(T, PT), insert(H, PT, P).
 insert(X, L, [X|L]).
 insert(X, [H|T], [H|R]) :- insert(X, T, R).
 
+between(Low, High, Low) :- Low =< High.
+between(Low, High, X) :- Low < High, Low1 is Low + 1, between(Low1, High, X).
+
+once(Goal) :- call(Goal), !.
+
+forall_fail(Cond, Action) :- call(Cond), \+ call(Action).
+forall(Cond, Action) :- \+ forall_fail(Cond, Action).
+
 fib(0, 0).
 fib(1, 1).
 fib(N, F) :-

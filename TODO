@@ -1,22 +1,10 @@
-multiline statements
-
 streaming findall solutions
 lazy list
 int ids instead of string names, this will increase the string pool
 
-prio:
-- repl binding display: print X = 1, Y = foo after each query; enumerate top-level env vars
-- [x] \+/1: negation as failure
-- [x] call/1: meta-call, needed for higher-order predicates
 - assert/1, assertz/1, asserta/1, retract/1: dynamic database modification
-
-not that much:
-- [x] var/1, nonvar/1, atom/1, integer/1, is_list/1: type checking
 - functor/3, arg/3, =../2: structural term decomposition
 - copy_term/2: copy term with fresh variables
-
-meh:
-- once/1, between/3, forall/2: common control predicates
 - arithmetic: unary minus, abs/1, min/2, max/2, bitwise ops (>>, <<, \/, /\)
 - atom ops: atom_length/2, atom_concat/3, atom_chars/2, number_chars/2
 - readline/history in repl

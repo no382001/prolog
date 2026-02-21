@@ -253,6 +253,13 @@ static bool not_found_callback(prolog_ctx_t *ctx, env_t *env, void *userdata) {
   return false;
 }
 
+static int builtin_once(prolog_ctx_t *ctx, term_t *goal, env_t *env) {
+  term_t *inner = deref(env, goal->args[0]);
+  goal_stmt_t goals = {0};
+  goals.goals[goals.count++] = inner;
+  return solve(ctx, &goals, env) ? 1 : -1;
+}
+
 static int builtin_not(prolog_ctx_t *ctx, term_t *goal, env_t *env) {
   term_t *inner = deref(env, goal->args[0]);
   goal_stmt_t goals = {0};
@@ -360,6 +367,7 @@ static const builtin_t builtins[] = {
     {"=:=", 2, builtin_arith_eq},
     {"=\\=", 2, builtin_arith_ne},
     // 1-arity
+    {"once", 1, builtin_once},
     {"\\+", 1, builtin_not},
     {"var", 1, builtin_var},
     {"nonvar", 1, builtin_nonvar},
