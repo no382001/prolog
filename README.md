@@ -50,6 +50,11 @@ A lightweight, embeddable Prolog interpreter written in C11.
 | `X =\= Y` | arithmetic not-equal |
 | `\+ Goal` | negation as failure — succeeds if `Goal` fails |
 | `call(Goal)` | execute `Goal` as a goal; supports backtracking |
+| `var(X)` | succeed if `X` is an unbound variable |
+| `nonvar(X)` | succeed if `X` is not an unbound variable |
+| `atom(X)` | succeed if `X` is an atom (non-numeric constant) |
+| `integer(X)` | succeed if `X` is an integer |
+| `is_list(X)` | succeed if `X` is a proper list |
 | `nl` | print a newline |
 | `write(Term)` | print `Term` |
 | `writeln(Term)` | print `Term` followed by a newline |

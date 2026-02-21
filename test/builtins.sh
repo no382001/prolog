@@ -804,3 +804,169 @@ setup() {
     [ "$status" -eq 0 ]
     [[ "$output" == *"true"* ]]
 }
+
+# --- var/1 ---
+
+@test "var: unbound variable" {
+    run bash -c "echo '?- var(X)' | $PROLOG"
+    [ "$status" -eq 0 ]
+    [[ "$output" == *"true"* ]]
+}
+
+@test "var: bound variable fails" {
+    run bash -c "echo '?- X = a, var(X)' | $PROLOG"
+    [ "$status" -eq 0 ]
+    [[ "$output" == *"false"* ]]
+}
+
+@test "var: atom fails" {
+    run bash -c "echo '?- var(foo)' | $PROLOG"
+    [ "$status" -eq 0 ]
+    [[ "$output" == *"false"* ]]
+}
+
+@test "var: integer fails" {
+    run bash -c "echo '?- var(42)' | $PROLOG"
+    [ "$status" -eq 0 ]
+    [[ "$output" == *"false"* ]]
+}
+
+# --- nonvar/1 ---
+
+@test "nonvar: atom succeeds" {
+    run bash -c "echo '?- nonvar(foo)' | $PROLOG"
+    [ "$status" -eq 0 ]
+    [[ "$output" == *"true"* ]]
+}
+
+@test "nonvar: integer succeeds" {
+    run bash -c "echo '?- nonvar(42)' | $PROLOG"
+    [ "$status" -eq 0 ]
+    [[ "$output" == *"true"* ]]
+}
+
+@test "nonvar: compound succeeds" {
+    run bash -c "echo '?- nonvar(f(x))' | $PROLOG"
+    [ "$status" -eq 0 ]
+    [[ "$output" == *"true"* ]]
+}
+
+@test "nonvar: bound variable succeeds" {
+    run bash -c "echo '?- X = a, nonvar(X)' | $PROLOG"
+    [ "$status" -eq 0 ]
+    [[ "$output" == *"X = a"* ]]
+}
+
+@test "nonvar: unbound variable fails" {
+    run bash -c "echo '?- nonvar(X)' | $PROLOG"
+    [ "$status" -eq 0 ]
+    [[ "$output" == *"false"* ]]
+}
+
+# --- atom/1 ---
+
+@test "atom: atom succeeds" {
+    run bash -c "echo '?- atom(foo)' | $PROLOG"
+    [ "$status" -eq 0 ]
+    [[ "$output" == *"true"* ]]
+}
+
+@test "atom: empty list is atom" {
+    run bash -c "echo '?- atom([])' | $PROLOG"
+    [ "$status" -eq 0 ]
+    [[ "$output" == *"true"* ]]
+}
+
+@test "atom: integer fails" {
+    run bash -c "echo '?- atom(42)' | $PROLOG"
+    [ "$status" -eq 0 ]
+    [[ "$output" == *"false"* ]]
+}
+
+@test "atom: compound fails" {
+    run bash -c "echo '?- atom(f(x))' | $PROLOG"
+    [ "$status" -eq 0 ]
+    [[ "$output" == *"false"* ]]
+}
+
+@test "atom: variable fails" {
+    run bash -c "echo '?- atom(X)' | $PROLOG"
+    [ "$status" -eq 0 ]
+    [[ "$output" == *"false"* ]]
+}
+
+# --- integer/1 ---
+
+@test "integer: integer succeeds" {
+    run bash -c "echo '?- integer(42)' | $PROLOG"
+    [ "$status" -eq 0 ]
+    [[ "$output" == *"true"* ]]
+}
+
+@test "integer: zero succeeds" {
+    run bash -c "echo '?- integer(0)' | $PROLOG"
+    [ "$status" -eq 0 ]
+    [[ "$output" == *"true"* ]]
+}
+
+@test "integer: negative integer succeeds" {
+    run bash -c "echo '?- integer(-3)' | $PROLOG"
+    [ "$status" -eq 0 ]
+    [[ "$output" == *"true"* ]]
+}
+
+@test "integer: atom fails" {
+    run bash -c "echo '?- integer(foo)' | $PROLOG"
+    [ "$status" -eq 0 ]
+    [[ "$output" == *"false"* ]]
+}
+
+@test "integer: variable fails" {
+    run bash -c "echo '?- integer(X)' | $PROLOG"
+    [ "$status" -eq 0 ]
+    [[ "$output" == *"false"* ]]
+}
+
+@test "integer: result of is/2 is integer" {
+    run bash -c "echo '?- X is 2 + 3, integer(X)' | $PROLOG"
+    [ "$status" -eq 0 ]
+    [[ "$output" == *"X = 5"* ]]
+}
+
+# --- is_list/1 ---
+
+@test "is_list: empty list" {
+    run bash -c "echo '?- is_list([])' | $PROLOG"
+    [ "$status" -eq 0 ]
+    [[ "$output" == *"true"* ]]
+}
+
+@test "is_list: proper list" {
+    run bash -c "echo '?- is_list([1,2,3])' | $PROLOG"
+    [ "$status" -eq 0 ]
+    [[ "$output" == *"true"* ]]
+}
+
+@test "is_list: singleton list" {
+    run bash -c "echo '?- is_list([a])' | $PROLOG"
+    [ "$status" -eq 0 ]
+    [[ "$output" == *"true"* ]]
+}
+
+@test "is_list: atom fails" {
+    run bash -c "echo '?- is_list(foo)' | $PROLOG"
+    [ "$status" -eq 0 ]
+    [[ "$output" == *"false"* ]]
+}
+
+@test "is_list: partial list fails" {
+    run bash -c "echo '?- is_list([a|b])' | $PROLOG"
+    [ "$status" -eq 0 ]
+    [[ "$output" == *"false"* ]]
+}
+
+@test "is_list: unbound tail fails" {
+    run bash -c "echo '?- is_list([a|_])' | $PROLOG"
+    [ "$status" -eq 0 ]
+    [[ "$output" == *"false"* ]]
+}

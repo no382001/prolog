@@ -264,6 +264,47 @@ static int builtin_not(prolog_ctx_t *ctx, term_t *goal, env_t *env) {
   return found ? -1 : 1;
 }
 
+static bool is_integer_str(const char *s) {
+  if (*s == '-')
+    s++;
+  if (!*s)
+    return false;
+  while (*s)
+    if (!isdigit((unsigned char)*s++))
+      return false;
+  return true;
+}
+
+static int builtin_var(prolog_ctx_t *ctx, term_t *goal, env_t *env) {
+  (void)ctx;
+  return deref(env, goal->args[0])->type == VAR ? 1 : -1;
+}
+
+static int builtin_nonvar(prolog_ctx_t *ctx, term_t *goal, env_t *env) {
+  (void)ctx;
+  return deref(env, goal->args[0])->type != VAR ? 1 : -1;
+}
+
+static int builtin_atom(prolog_ctx_t *ctx, term_t *goal, env_t *env) {
+  (void)ctx;
+  term_t *t = deref(env, goal->args[0]);
+  return (t->type == CONST && !is_integer_str(t->name)) ? 1 : -1;
+}
+
+static int builtin_integer(prolog_ctx_t *ctx, term_t *goal, env_t *env) {
+  (void)ctx;
+  term_t *t = deref(env, goal->args[0]);
+  return (t->type == CONST && is_integer_str(t->name)) ? 1 : -1;
+}
+
+static int builtin_is_list(prolog_ctx_t *ctx, term_t *goal, env_t *env) {
+  (void)ctx;
+  term_t *t = deref(env, goal->args[0]);
+  while (t->type == FUNC && strcmp(t->name, ".") == 0 && t->arity == 2)
+    t = deref(env, t->args[1]);
+  return (t->type == CONST && strcmp(t->name, "[]") == 0) ? 1 : -1;
+}
+
 static int builtin_nl(prolog_ctx_t *ctx, term_t *goal, env_t *env) {
   (void)goal;
   (void)env;
@@ -320,6 +361,11 @@ static const builtin_t builtins[] = {
     {"=\\=", 2, builtin_arith_ne},
     // 1-arity
     {"\\+", 1, builtin_not},
+    {"var", 1, builtin_var},
+    {"nonvar", 1, builtin_nonvar},
+    {"atom", 1, builtin_atom},
+    {"integer", 1, builtin_integer},
+    {"is_list", 1, builtin_is_list},
     {"nl", 0, builtin_nl},
     {"write", 1, builtin_write},
     {"writeln", 1, builtin_writeln},
