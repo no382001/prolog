@@ -698,3 +698,109 @@ setup() {
     [ "$status" -eq 0 ]
     [[ "$output" == *"done"* ]]
 }
+
+# --- \+/1 negation as failure ---
+
+@test "not: \\+ fail succeeds" {
+    run bash -c "echo '?- \\+ fail' | $PROLOG"
+    [ "$status" -eq 0 ]
+    [[ "$output" == *"true"* ]]
+}
+
+@test "not: \\+ true fails" {
+    run bash -c "echo '?- \\+ true' | $PROLOG"
+    [ "$status" -eq 0 ]
+    [[ "$output" == *"false"* ]]
+}
+
+@test "not: \\+ with unmatched fact succeeds" {
+    run bash -c "echo -e 'foo(a).\n?- \\+ foo(b)' | $PROLOG"
+    [ "$status" -eq 0 ]
+    [[ "$output" == *"true"* ]]
+}
+
+@test "not: \\+ with matched fact fails" {
+    run bash -c "echo -e 'foo(a).\n?- \\+ foo(a)' | $PROLOG"
+    [ "$status" -eq 0 ]
+    [[ "$output" == *"false"* ]]
+}
+
+@test "not: \\+ with bound variable" {
+    run bash -c "echo -e 'foo(a).\n?- X = b, \\+ foo(X)' | $PROLOG"
+    [ "$status" -eq 0 ]
+    [[ "$output" == *"X = b"* ]]
+}
+
+@test "not: fails when inner goal can succeed with unbound var" {
+    run bash -c "echo -e 'foo(a).\n?- \\+ foo(X)' | $PROLOG"
+    [ "$status" -eq 0 ]
+    [[ "$output" == *"false"* ]]
+}
+
+@test "not: works in rule body" {
+    run bash -c "echo -e 'foo(a).\nnot_foo(X) :- \\+ foo(X).\n?- not_foo(b)' | $PROLOG"
+    [ "$status" -eq 0 ]
+    [[ "$output" == *"true"* ]]
+}
+
+@test "not: functor form \\+(Goal)" {
+    run bash -c "echo '?- \\+(fail)' | $PROLOG"
+    [ "$status" -eq 0 ]
+    [[ "$output" == *"true"* ]]
+}
+
+# --- call/1 ---
+
+@test "call: call(true) succeeds" {
+    run bash -c "echo '?- call(true)' | $PROLOG"
+    [ "$status" -eq 0 ]
+    [[ "$output" == *"true"* ]]
+}
+
+@test "call: call(fail) fails" {
+    run bash -c "echo '?- call(fail)' | $PROLOG"
+    [ "$status" -eq 0 ]
+    [[ "$output" == *"false"* ]]
+}
+
+@test "call: call with a fact" {
+    run bash -c "echo -e 'foo(a).\n?- call(foo(a))' | $PROLOG"
+    [ "$status" -eq 0 ]
+    [[ "$output" == *"true"* ]]
+}
+
+@test "call: call with a goal variable" {
+    run bash -c "echo -e 'foo(a).\n?- G = foo(a), call(G)' | $PROLOG"
+    [ "$status" -eq 0 ]
+    [[ "$output" == *"foo(a)"* ]]
+}
+
+@test "call: call binds variables" {
+    run bash -c "echo -e 'foo(a).\n?- call(foo(X))' | $PROLOG"
+    [ "$status" -eq 0 ]
+    [[ "$output" == *"X = a"* ]]
+}
+
+@test "call: backtracking through call" {
+    run $PROLOG -f test/core.pl -e "?- findall(X, call(member(X, [1,2,3])), L)"
+    [ "$status" -eq 0 ]
+    [[ "$output" == *"L = [1, 2, 3]"* ]]
+}
+
+@test "call: call in rule body" {
+    run bash -c "echo -e 'apply(G) :- call(G).\nfoo(a).\n?- apply(foo(X))' | $PROLOG"
+    [ "$status" -eq 0 ]
+    [[ "$output" == *"X = a"* ]]
+}
+
+@test "call: \\+ call(G) negates the called goal" {
+    run bash -c "echo -e 'foo(a).\n?- \\+ call(foo(b))' | $PROLOG"
+    [ "$status" -eq 0 ]
+    [[ "$output" == *"true"* ]]
+}
+
+@test "call: nested call(call(G))" {
+    run bash -c "echo '?- call(call(true))' | $PROLOG"
+    [ "$status" -eq 0 ]
+    [[ "$output" == *"true"* ]]
+}

@@ -48,6 +48,8 @@ A lightweight, embeddable Prolog interpreter written in C11.
 | `X >= Y` | arithmetic greater-or-equal |
 | `X =:= Y` | arithmetic equal |
 | `X =\= Y` | arithmetic not-equal |
+| `\+ Goal` | negation as failure — succeeds if `Goal` fails |
+| `call(Goal)` | execute `Goal` as a goal; supports backtracking |
 | `nl` | print a newline |
 | `write(Term)` | print `Term` |
 | `writeln(Term)` | print `Term` followed by a newline |

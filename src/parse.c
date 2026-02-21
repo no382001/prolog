@@ -293,6 +293,16 @@ static term_t *parse_primary(prolog_ctx_t *ctx) {
       }
       name[i++] = *ctx->input_ptr++;
     }
+  } else if (*ctx->input_ptr == '\\' && ctx->input_ptr[1] == '+') {
+    ctx->input_ptr += 2;
+    skip_ws(ctx);
+    term_t *inner = parse_term(ctx);
+    if (!inner) {
+      parse_error(ctx, "expected term after '\\+'");
+      return NULL;
+    }
+    term_t *args[1] = {inner};
+    return make_func(ctx, "\\+", args, 1);
   } else {
     // Not a valid start of term
     return NULL;

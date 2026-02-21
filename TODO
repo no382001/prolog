@@ -6,8 +6,8 @@ int ids instead of string names, this will increase the string pool
 
 prio:
 - repl binding display: print X = 1, Y = foo after each query; enumerate top-level env vars
-- \+/1: negation as failure
-- call/1: meta-call, needed for higher-order predicates
+- [x] \+/1: negation as failure
+- [x] call/1: meta-call, needed for higher-order predicates
 - assert/1, assertz/1, asserta/1, retract/1: dynamic database modification
 
 not that much:

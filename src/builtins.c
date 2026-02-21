@@ -246,6 +246,24 @@ static int builtin_bagof(prolog_ctx_t *ctx, term_t *goal, env_t *env) {
   return unify(ctx, result_list, list, env) ? 1 : -1;
 }
 
+static bool not_found_callback(prolog_ctx_t *ctx, env_t *env, void *userdata) {
+  (void)ctx;
+  (void)env;
+  *(bool *)userdata = true;
+  return false;
+}
+
+static int builtin_not(prolog_ctx_t *ctx, term_t *goal, env_t *env) {
+  term_t *inner = deref(env, goal->args[0]);
+  goal_stmt_t goals = {0};
+  goals.goals[goals.count++] = inner;
+  int env_mark = env->count;
+  bool found = false;
+  solve_all(ctx, &goals, env, not_found_callback, &found);
+  env->count = env_mark;
+  return found ? -1 : 1;
+}
+
 static int builtin_nl(prolog_ctx_t *ctx, term_t *goal, env_t *env) {
   (void)goal;
   (void)env;
@@ -301,6 +319,7 @@ static const builtin_t builtins[] = {
     {"=:=", 2, builtin_arith_eq},
     {"=\\=", 2, builtin_arith_ne},
     // 1-arity
+    {"\\+", 1, builtin_not},
     {"nl", 0, builtin_nl},
     {"write", 1, builtin_write},
     {"writeln", 1, builtin_writeln},

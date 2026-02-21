@@ -169,6 +169,13 @@ A:
     goto A;
   }
 
+  // inline call/1: call(G) → G
+  if (first_goal->type == FUNC && strcmp(first_goal->name, "call") == 0 &&
+      first_goal->arity == 1) {
+    cn.goals[0] = deref(env, first_goal->args[0]);
+    goto A;
+  }
+
   clause_idx = 0;
   env_mark = env->count;
 
