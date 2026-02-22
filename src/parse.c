@@ -218,6 +218,28 @@ static term_t *parse_primary(prolog_ctx_t *ctx) {
   if (*ctx->input_ptr == '[')
     return parse_list(ctx);
 
+  if (*ctx->input_ptr == '\'') {
+    ctx->input_ptr++; // skip opening quote
+    char name[MAX_NAME];
+    int i = 0;
+    while (*ctx->input_ptr) {
+      if (*ctx->input_ptr == '\'') {
+        if (ctx->input_ptr[1] == '\'') { // '' is escaped single-quote
+          ctx->input_ptr += 2;
+          if (i < MAX_NAME - 1) name[i++] = '\'';
+        } else {
+          ctx->input_ptr++; // closing quote
+          break;
+        }
+      } else {
+        if (i < MAX_NAME - 1) name[i++] = *ctx->input_ptr;
+        ctx->input_ptr++;
+      }
+    }
+    name[i] = '\0';
+    return make_const(ctx, name);
+  }
+
   if (*ctx->input_ptr == '\"') {
     ctx->input_ptr++;           // skip opening quote
     char str_buf[MAX_NAME * 4]; // allow longer strings
