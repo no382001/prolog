@@ -28,12 +28,40 @@ static bool eval_arith(prolog_ctx_t *ctx, term_t *t, env_t *env, int *result) {
     return false;
   }
 
+  if (t->type == FUNC && t->arity == 1) {
+    int val;
+    if (!eval_arith(ctx, t->args[0], env, &val))
+      return false;
+    if (strcmp(t->name, "-") == 0) {
+      *result = -val;
+      return true;
+    }
+    if (strcmp(t->name, "abs") == 0) {
+      *result = val < 0 ? -val : val;
+      return true;
+    }
+    return false;
+  }
+
   if (t->type == FUNC && t->arity == 2) {
     int left, right;
     if (!eval_arith(ctx, t->args[0], env, &left))
       return false;
     if (!eval_arith(ctx, t->args[1], env, &right))
       return false;
+
+    if (strcmp(t->name, "max") == 0) {
+      *result = left > right ? left : right;
+      return true;
+    }
+    if (strcmp(t->name, "min") == 0) {
+      *result = left < right ? left : right;
+      return true;
+    }
+    if (strcmp(t->name, "//") == 0) {
+      *result = right ? left / right : 0;
+      return true;
+    }
 
     for (const arith_op_t *op = arith_ops; op->op; op++) {
       if (strcmp(t->name, op->op) == 0) {
@@ -156,8 +184,6 @@ static int builtin_stats(prolog_ctx_t *ctx, term_t *goal, env_t *env) {
   io_writef(ctx, "solve: %d son calls, %d backtracks\n", ctx->stats.son_calls,
             ctx->stats.backtracks);
   return 1;
-
-  return 2;
 }
 
 typedef struct {
@@ -350,6 +376,492 @@ static int builtin_include(prolog_ctx_t *ctx, term_t *goal, env_t *env) {
   return prolog_load_file(ctx, filename) ? 1 : -1;
 }
 
+static const char *term_atom_str(const term_t *t) {
+  if (!t)
+    return NULL;
+  if (t->type == STRING)
+    return t->string_data;
+  if (t->type == CONST)
+    return t->name;
+  return NULL;
+}
+
+static int builtin_compound(prolog_ctx_t *ctx, term_t *goal, env_t *env) {
+  (void)ctx;
+  term_t *t = deref(env, goal->args[0]);
+  return (t->type == FUNC && t->arity > 0) ? 1 : -1;
+}
+static int builtin_callable(prolog_ctx_t *ctx, term_t *goal, env_t *env) {
+  (void)ctx;
+  term_t *t = deref(env, goal->args[0]);
+  return (t->type == CONST || t->type == FUNC) ? 1 : -1;
+}
+static int builtin_number(prolog_ctx_t *ctx, term_t *goal, env_t *env) {
+  (void)ctx;
+  term_t *t = deref(env, goal->args[0]);
+  return (t->type == CONST && is_integer_str(t->name)) ? 1 : -1;
+}
+static int builtin_atomic(prolog_ctx_t *ctx, term_t *goal, env_t *env) {
+  (void)ctx;
+  term_t *t = deref(env, goal->args[0]);
+  return (t->type == CONST || t->type == STRING) ? 1 : -1;
+}
+static int builtin_string(prolog_ctx_t *ctx, term_t *goal, env_t *env) {
+  (void)ctx;
+  term_t *t = deref(env, goal->args[0]);
+  return (t->type == STRING) ? 1 : -1;
+}
+
+static int builtin_atom_length(prolog_ctx_t *ctx, term_t *goal, env_t *env) {
+  const char *s = term_atom_str(deref(env, goal->args[0]));
+  if (!s)
+    return -1;
+  char buf[16];
+  snprintf(buf, sizeof(buf), "%d", (int)strlen(s));
+  return unify(ctx, goal->args[1], make_const(ctx, buf), env) ? 1 : -1;
+}
+
+static int builtin_atom_concat(prolog_ctx_t *ctx, term_t *goal, env_t *env) {
+  term_t *a = deref(env, goal->args[0]);
+  term_t *b = deref(env, goal->args[1]);
+  term_t *c = deref(env, goal->args[2]);
+  const char *sa = term_atom_str(a);
+  const char *sb = term_atom_str(b);
+  const char *sc = term_atom_str(c);
+
+  if (sa && sb) {
+    char buf[MAX_NAME];
+    int r = snprintf(buf, sizeof(buf), "%s%s", sa, sb);
+    if (r < 0 || r >= (int)sizeof(buf))
+      return -1;
+    return unify(ctx, goal->args[2], make_const(ctx, buf), env) ? 1 : -1;
+  }
+  if (sc && sa && b->type == VAR) {
+    size_t la = strlen(sa), lc = strlen(sc);
+    if (lc < la || strncmp(sc, sa, la) != 0)
+      return -1;
+    return unify(ctx, goal->args[1], make_const(ctx, sc + la), env) ? 1 : -1;
+  }
+  if (sc && sb && a->type == VAR) {
+    size_t lb = strlen(sb), lc = strlen(sc);
+    if (lc < lb || strcmp(sc + lc - lb, sb) != 0)
+      return -1;
+    char buf[MAX_NAME];
+    size_t la = lc - lb;
+    if (la >= MAX_NAME)
+      return -1;
+    strncpy(buf, sc, la);
+    buf[la] = '\0';
+    return unify(ctx, goal->args[0], make_const(ctx, buf), env) ? 1 : -1;
+  }
+  return -1;
+}
+
+static int builtin_atom_chars(prolog_ctx_t *ctx, term_t *goal, env_t *env) {
+  term_t *atom = deref(env, goal->args[0]);
+  if (atom->type != VAR) {
+    const char *s = term_atom_str(atom);
+    if (!s)
+      return -1;
+    term_t *list = make_const(ctx, "[]");
+    for (int i = (int)strlen(s) - 1; i >= 0; i--) {
+      char ch[2] = {s[i], '\0'};
+      term_t *args[2] = {make_const(ctx, ch), list};
+      list = make_func(ctx, ".", args, 2);
+    }
+    return unify(ctx, goal->args[1], list, env) ? 1 : -1;
+  }
+  /* chars → atom */
+  char buf[MAX_NAME] = {0};
+  int n = 0;
+  term_t *cur = deref(env, goal->args[1]);
+  while (cur->type == FUNC && strcmp(cur->name, ".") == 0 && cur->arity == 2) {
+    term_t *head = deref(env, cur->args[0]);
+    const char *cs = term_atom_str(head);
+    if (!cs || cs[1] != '\0')
+      return -1;
+    if (n >= MAX_NAME - 1)
+      return -1;
+    buf[n++] = cs[0];
+    cur = deref(env, cur->args[1]);
+  }
+  if (cur->type != CONST || strcmp(cur->name, "[]") != 0)
+    return -1;
+  buf[n] = '\0';
+  return unify(ctx, goal->args[0], make_const(ctx, buf), env) ? 1 : -1;
+}
+
+static int builtin_atom_codes(prolog_ctx_t *ctx, term_t *goal, env_t *env) {
+  term_t *atom = deref(env, goal->args[0]);
+  if (atom->type != VAR) {
+    const char *s = term_atom_str(atom);
+    if (!s)
+      return -1;
+    term_t *list = make_const(ctx, "[]");
+    for (int i = (int)strlen(s) - 1; i >= 0; i--) {
+      char code[8];
+      snprintf(code, sizeof(code), "%d", (unsigned char)s[i]);
+      term_t *args[2] = {make_const(ctx, code), list};
+      list = make_func(ctx, ".", args, 2);
+    }
+    return unify(ctx, goal->args[1], list, env) ? 1 : -1;
+  }
+  /* codes → atom */
+  char buf[MAX_NAME] = {0};
+  int n = 0;
+  term_t *cur = deref(env, goal->args[1]);
+  while (cur->type == FUNC && strcmp(cur->name, ".") == 0 && cur->arity == 2) {
+    term_t *head = deref(env, cur->args[0]);
+    if (head->type != CONST)
+      return -1;
+    char *end;
+    int c = (int)strtol(head->name, &end, 10);
+    if (*end != '\0' || c < 0 || c > 255)
+      return -1;
+    if (n >= MAX_NAME - 1)
+      return -1;
+    buf[n++] = (char)c;
+    cur = deref(env, cur->args[1]);
+  }
+  if (cur->type != CONST || strcmp(cur->name, "[]") != 0)
+    return -1;
+  buf[n] = '\0';
+  return unify(ctx, goal->args[0], make_const(ctx, buf), env) ? 1 : -1;
+}
+
+static int builtin_char_code(prolog_ctx_t *ctx, term_t *goal, env_t *env) {
+  term_t *ch = deref(env, goal->args[0]);
+  term_t *code = deref(env, goal->args[1]);
+  if (ch->type != VAR) {
+    const char *s = term_atom_str(ch);
+    if (!s || s[1] != '\0')
+      return -1;
+    char buf[8];
+    snprintf(buf, sizeof(buf), "%d", (unsigned char)s[0]);
+    return unify(ctx, goal->args[1], make_const(ctx, buf), env) ? 1 : -1;
+  }
+  if (code->type != VAR) {
+    char *end;
+    int c = (int)strtol(code->name, &end, 10);
+    if (*end != '\0' || c < 0 || c > 255)
+      return -1;
+    char buf[2] = {(char)c, '\0'};
+    return unify(ctx, goal->args[0], make_const(ctx, buf), env) ? 1 : -1;
+  }
+  return -1;
+}
+
+static int builtin_atom_number(prolog_ctx_t *ctx, term_t *goal, env_t *env) {
+  term_t *atom = deref(env, goal->args[0]);
+  term_t *num = deref(env, goal->args[1]);
+  if (atom->type != VAR) {
+    const char *s = term_atom_str(atom);
+    if (!s || !is_integer_str(s))
+      return -1;
+    return unify(ctx, goal->args[1], make_const(ctx, s), env) ? 1 : -1;
+  }
+  if (num->type != VAR) {
+    if (!is_integer_str(num->name))
+      return -1;
+    return unify(ctx, goal->args[0], make_const(ctx, num->name), env) ? 1 : -1;
+  }
+  return -1;
+}
+
+static int builtin_number_codes(prolog_ctx_t *ctx, term_t *goal, env_t *env) {
+  term_t *num = deref(env, goal->args[0]);
+  if (num->type != VAR) {
+    if (!is_integer_str(num->name))
+      return -1;
+    const char *s = num->name;
+    term_t *list = make_const(ctx, "[]");
+    for (int i = (int)strlen(s) - 1; i >= 0; i--) {
+      char code[8];
+      snprintf(code, sizeof(code), "%d", (unsigned char)s[i]);
+      term_t *args[2] = {make_const(ctx, code), list};
+      list = make_func(ctx, ".", args, 2);
+    }
+    return unify(ctx, goal->args[1], list, env) ? 1 : -1;
+  }
+  /* codes → number: build string then validate */
+  char buf[MAX_NAME] = {0};
+  int n = 0;
+  term_t *cur = deref(env, goal->args[1]);
+  while (cur->type == FUNC && strcmp(cur->name, ".") == 0 && cur->arity == 2) {
+    term_t *head = deref(env, cur->args[0]);
+    if (head->type != CONST)
+      return -1;
+    char *end;
+    int c = (int)strtol(head->name, &end, 10);
+    if (*end != '\0' || c < 0 || c > 255)
+      return -1;
+    if (n >= MAX_NAME - 1)
+      return -1;
+    buf[n++] = (char)c;
+    cur = deref(env, cur->args[1]);
+  }
+  if (cur->type != CONST || strcmp(cur->name, "[]") != 0)
+    return -1;
+  buf[n] = '\0';
+  if (!is_integer_str(buf))
+    return -1;
+  return unify(ctx, goal->args[0], make_const(ctx, buf), env) ? 1 : -1;
+}
+
+static int builtin_number_chars(prolog_ctx_t *ctx, term_t *goal, env_t *env) {
+  term_t *num = deref(env, goal->args[0]);
+  if (num->type != VAR) {
+    if (!is_integer_str(num->name))
+      return -1;
+    const char *s = num->name;
+    term_t *list = make_const(ctx, "[]");
+    for (int i = (int)strlen(s) - 1; i >= 0; i--) {
+      char ch[2] = {s[i], '\0'};
+      term_t *args[2] = {make_const(ctx, ch), list};
+      list = make_func(ctx, ".", args, 2);
+    }
+    return unify(ctx, goal->args[1], list, env) ? 1 : -1;
+  }
+  /* chars → number */
+  char buf[MAX_NAME] = {0};
+  int n = 0;
+  term_t *cur = deref(env, goal->args[1]);
+  while (cur->type == FUNC && strcmp(cur->name, ".") == 0 && cur->arity == 2) {
+    term_t *head = deref(env, cur->args[0]);
+    const char *cs = term_atom_str(head);
+    if (!cs || cs[1] != '\0')
+      return -1;
+    if (n >= MAX_NAME - 1)
+      return -1;
+    buf[n++] = cs[0];
+    cur = deref(env, cur->args[1]);
+  }
+  if (cur->type != CONST || strcmp(cur->name, "[]") != 0)
+    return -1;
+  buf[n] = '\0';
+  if (!is_integer_str(buf))
+    return -1;
+  return unify(ctx, goal->args[0], make_const(ctx, buf), env) ? 1 : -1;
+}
+
+/* ── term introspection ─────────────────────────────────────────────── */
+static int builtin_functor(prolog_ctx_t *ctx, term_t *goal, env_t *env) {
+  term_t *term = deref(env, goal->args[0]);
+  term_t *name = goal->args[1];
+  term_t *arity = goal->args[2];
+  if (term->type != VAR) {
+    const char *fname;
+    int ar;
+    if (term->type == CONST || term->type == STRING) {
+      fname = term_atom_str(term);
+      ar = 0;
+    } else if (term->type == FUNC) {
+      fname = term->name;
+      ar = term->arity;
+    } else {
+      return -1;
+    }
+    char ar_buf[8];
+    snprintf(ar_buf, sizeof(ar_buf), "%d", ar);
+    return (unify(ctx, name, make_const(ctx, fname), env) &&
+            unify(ctx, arity, make_const(ctx, ar_buf), env))
+               ? 1
+               : -1;
+  }
+  /* compose */
+  term_t *n = deref(env, name);
+  term_t *a = deref(env, arity);
+  if (n->type == VAR || a->type == VAR)
+    return -1;
+  const char *fname = term_atom_str(n);
+  if (!fname)
+    return -1;
+  char *end;
+  int ar = (int)strtol(a->name, &end, 10);
+  if (*end != '\0' || ar < 0 || ar > MAX_ARGS)
+    return -1;
+  term_t *t;
+  if (ar == 0) {
+    t = make_const(ctx, fname);
+  } else {
+    term_t *args[MAX_ARGS];
+    for (int i = 0; i < ar; i++) {
+      char vname[MAX_NAME];
+      snprintf(vname, sizeof(vname), "_F%d_%d", i, ++ctx->var_counter);
+      args[i] = make_var(ctx, vname);
+    }
+    t = make_func(ctx, fname, args, ar);
+  }
+  return unify(ctx, goal->args[0], t, env) ? 1 : -1;
+}
+
+static int builtin_arg(prolog_ctx_t *ctx, term_t *goal, env_t *env) {
+  term_t *n = deref(env, goal->args[0]);
+  term_t *term = deref(env, goal->args[1]);
+  if (n->type == VAR || term->type != FUNC)
+    return -1;
+  char *end;
+  int idx = (int)strtol(n->name, &end, 10);
+  if (*end != '\0' || idx < 1 || idx > term->arity)
+    return -1;
+  return unify(ctx, goal->args[2], term->args[idx - 1], env) ? 1 : -1;
+}
+
+static int builtin_univ(prolog_ctx_t *ctx, term_t *goal, env_t *env) {
+  term_t *term = deref(env, goal->args[0]);
+  term_t *list = deref(env, goal->args[1]);
+  if (term->type != VAR) {
+    term_t *result;
+    if (term->type == CONST || term->type == STRING) {
+      term_t *args[2] = {term, make_const(ctx, "[]")};
+      result = make_func(ctx, ".", args, 2);
+    } else if (term->type == FUNC) {
+      result = make_const(ctx, "[]");
+      for (int i = term->arity - 1; i >= 0; i--) {
+        term_t *args[2] = {term->args[i], result};
+        result = make_func(ctx, ".", args, 2);
+      }
+      term_t *args[2] = {make_const(ctx, term->name), result};
+      result = make_func(ctx, ".", args, 2);
+    } else {
+      return -1;
+    }
+    return unify(ctx, goal->args[1], result, env) ? 1 : -1;
+  }
+  /* list → term */
+  term_t *cur = deref(env, list);
+  if (cur->type != FUNC || strcmp(cur->name, ".") != 0 || cur->arity != 2)
+    return -1;
+  term_t *head = deref(env, cur->args[0]);
+  const char *fname = term_atom_str(head);
+  if (!fname)
+    return -1;
+  term_t *args[MAX_ARGS];
+  int ar = 0;
+  cur = deref(env, cur->args[1]);
+  while (cur->type == FUNC && strcmp(cur->name, ".") == 0 && cur->arity == 2) {
+    if (ar >= MAX_ARGS)
+      return -1;
+    args[ar++] = deref(env, cur->args[0]);
+    cur = deref(env, cur->args[1]);
+  }
+  if (cur->type != CONST || strcmp(cur->name, "[]") != 0)
+    return -1;
+  term_t *result =
+      (ar == 0) ? make_const(ctx, fname) : make_func(ctx, fname, args, ar);
+  return unify(ctx, goal->args[0], result, env) ? 1 : -1;
+}
+
+static int builtin_copy_term(prolog_ctx_t *ctx, term_t *goal, env_t *env) {
+  term_t *orig = substitute(ctx, env, deref(env, goal->args[0]));
+  int id = ++ctx->var_counter;
+  term_t *copy = rename_vars(ctx, orig, id);
+  return unify(ctx, goal->args[1], copy, env) ? 1 : -1;
+}
+
+/* ── dynamic database ───────────────────────────────────────────────── */
+static int builtin_retract(prolog_ctx_t *ctx, term_t *goal, env_t *env) {
+  term_t *arg = deref(env, goal->args[0]);
+  /* accept retract(Head) or retract((Head :- Body)) — body not checked */
+  term_t *head_pat =
+      (arg->type == FUNC && strcmp(arg->name, ":-") == 0 && arg->arity == 2)
+          ? deref(env, arg->args[0])
+          : arg;
+  for (int i = 0; i < ctx->db_count; i++) {
+    int id = ++ctx->var_counter;
+    int env_mark = env->count;
+    int trm_save = ctx->term_count;
+    if (unify(ctx, head_pat, rename_vars(ctx, ctx->database[i].head, id),
+              env)) {
+      for (int j = i; j < ctx->db_count - 1; j++)
+        ctx->database[j] = ctx->database[j + 1];
+      ctx->db_count--;
+      return 1;
+    }
+    env->count = env_mark;
+    ctx->term_count = trm_save;
+  }
+  return -1;
+}
+
+static int builtin_retractall(prolog_ctx_t *ctx, term_t *goal, env_t *env) {
+  term_t *head_pat = deref(env, goal->args[0]);
+  int i = 0;
+  while (i < ctx->db_count) {
+    int id = ++ctx->var_counter;
+    int env_mark = env->count;
+    int trm_save = ctx->term_count;
+    bool matched =
+        unify(ctx, head_pat, rename_vars(ctx, ctx->database[i].head, id), env);
+    env->count = env_mark;
+    ctx->term_count = trm_save;
+    if (matched) {
+      for (int j = i; j < ctx->db_count - 1; j++)
+        ctx->database[j] = ctx->database[j + 1];
+      ctx->db_count--;
+    } else {
+      i++;
+    }
+  }
+  return 1; /* always succeeds */
+}
+
+/* ── arithmetic helpers ─────────────────────────────────────────────── */
+static int builtin_succ(prolog_ctx_t *ctx, term_t *goal, env_t *env) {
+  term_t *x = deref(env, goal->args[0]);
+  term_t *y = deref(env, goal->args[1]);
+  char buf[16];
+  char *end;
+  if (x->type != VAR) {
+    int n = (int)strtol(x->name, &end, 10);
+    if (*end || n < 0)
+      return -1;
+    snprintf(buf, sizeof(buf), "%d", n + 1);
+    return unify(ctx, goal->args[1], make_const(ctx, buf), env) ? 1 : -1;
+  }
+  if (y->type != VAR) {
+    int n = (int)strtol(y->name, &end, 10);
+    if (*end || n < 1)
+      return -1;
+    snprintf(buf, sizeof(buf), "%d", n - 1);
+    return unify(ctx, goal->args[0], make_const(ctx, buf), env) ? 1 : -1;
+  }
+  return -1;
+}
+
+static int builtin_plus(prolog_ctx_t *ctx, term_t *goal, env_t *env) {
+  term_t *x = deref(env, goal->args[0]);
+  term_t *y = deref(env, goal->args[1]);
+  term_t *z = deref(env, goal->args[2]);
+  char buf[16];
+  char *ex, *ey, *ez;
+  if (x->type != VAR && y->type != VAR) {
+    int nx = (int)strtol(x->name, &ex, 10);
+    int ny = (int)strtol(y->name, &ey, 10);
+    if (*ex || *ey)
+      return -1;
+    snprintf(buf, sizeof(buf), "%d", nx + ny);
+    return unify(ctx, goal->args[2], make_const(ctx, buf), env) ? 1 : -1;
+  }
+  if (x->type != VAR && z->type != VAR) {
+    int nx = (int)strtol(x->name, &ex, 10);
+    int nz = (int)strtol(z->name, &ez, 10);
+    if (*ex || *ez)
+      return -1;
+    snprintf(buf, sizeof(buf), "%d", nz - nx);
+    return unify(ctx, goal->args[1], make_const(ctx, buf), env) ? 1 : -1;
+  }
+  if (y->type != VAR && z->type != VAR) {
+    int ny = (int)strtol(y->name, &ey, 10);
+    int nz = (int)strtol(z->name, &ez, 10);
+    if (*ey || *ez)
+      return -1;
+    snprintf(buf, sizeof(buf), "%d", nz - ny);
+    return unify(ctx, goal->args[0], make_const(ctx, buf), env) ? 1 : -1;
+  }
+  return -1;
+}
+
 static const builtin_t builtins[] = {
     // 0-arity
     {"true", 0, builtin_true},
@@ -381,6 +893,32 @@ static const builtin_t builtins[] = {
     // 3-arity
     {"findall", 3, builtin_findall},
     {"bagof", 3, builtin_bagof},
+    // type checks
+    {"compound", 1, builtin_compound},
+    {"callable", 1, builtin_callable},
+    {"number", 1, builtin_number},
+    {"atomic", 1, builtin_atomic},
+    {"string", 1, builtin_string},
+    // atom / string
+    {"atom_length", 2, builtin_atom_length},
+    {"atom_concat", 3, builtin_atom_concat},
+    {"atom_chars", 2, builtin_atom_chars},
+    {"atom_codes", 2, builtin_atom_codes},
+    {"char_code", 2, builtin_char_code},
+    {"atom_number", 2, builtin_atom_number},
+    {"number_codes", 2, builtin_number_codes},
+    {"number_chars", 2, builtin_number_chars},
+    // term introspection
+    {"functor", 3, builtin_functor},
+    {"arg", 3, builtin_arg},
+    {"=..", 2, builtin_univ},
+    {"copy_term", 2, builtin_copy_term},
+    // dynamic database
+    {"retract", 1, builtin_retract},
+    {"retractall", 1, builtin_retractall},
+    // arithmetic helpers
+    {"succ", 2, builtin_succ},
+    {"plus", 3, builtin_plus},
     {NULL, 0, NULL}};
 
 int try_builtin(prolog_ctx_t *ctx, term_t *goal, env_t *env) {

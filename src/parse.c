@@ -60,16 +60,16 @@ typedef struct {
 static term_t *parse_primary(prolog_ctx_t *ctx);
 static term_t *parse_infix(prolog_ctx_t *ctx, term_t *left, int min_prec);
 static const op_prec_t precedence_table[] = {
-    {"*", 40},    {"/", 40},  {"mod", 40}, {"+", 30},   {"-", 30},
-    {"<", 20},    {">", 20},  {"=<", 20},  {">=", 20},  {"=:=", 20},
-    {"=\\=", 20}, {"is", 10}, {"=", 10},   {"\\=", 10}, {NULL, 0}};
+    {"*", 40},  {"/", 40}, {"//", 40},  {"mod", 40}, {"+", 30},   {"-", 30},
+    {"<", 20},  {">", 20}, {"=<", 20},  {">=", 20},  {"=:=", 20}, {"=\\=", 20},
+    {"is", 10}, {"=", 10}, {"\\=", 10}, {"=..", 10}, {NULL, 0}};
 
 // ordered longest-first to avoid prefix conflicts
 static const op_pattern_t op_patterns[] = {
-    {"=:=", 3, false}, {"=\\=", 3, false}, {"mod", 3, true}, {"\\=", 2, false},
-    {"=<", 2, false},  {">=", 2, false},   {"is", 2, true},  {"+", 1, false},
-    {"*", 1, false},   {"/", 1, false},    {"<", 1, false},  {">", 1, false},
-    {"=", 1, false},   {"-", 1, false}, // special handling needed
+    {"=:=", 3, false}, {"=\\=", 3, false}, {"=..", 3, false}, {"mod", 3, true},
+    {"\\=", 2, false}, {"=<", 2, false},   {">=", 2, false},  {"//", 2, false},
+    {"is", 2, true},   {"+", 1, false},    {"*", 1, false},   {"/", 1, false},
+    {"<", 1, false},   {">", 1, false},    {"=", 1, false},   {"-", 1, false},
     {NULL, 0, false}};
 
 static int get_precedence(const char *op) {

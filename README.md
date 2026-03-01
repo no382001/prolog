@@ -27,18 +27,31 @@ A lightweight, embeddable Prolog interpreter written in C11.
 
 | Operator | Precedence | Description |
 |----------|-----------|-------------|
-| `*` `/` `mod` | 40 | multiply, divide, modulo |
+| `*` `/` `//` `mod` | 40 | multiply, divide, integer divide, modulo |
 | `+` `-` | 30 | add, subtract |
 | `<` `>` `=<` `>=` `=:=` `=\=` | 20 | arithmetic comparison |
-| `is` `=` `\=` | 10 | evaluate, unify, not-unify |
+| `is` `=` `\=` `=..` | 10 | evaluate, unify, not-unify, univ |
 
 **Built-in predicates**
+
+*Control*
 
 | Predicate | Description |
 |-----------|-------------|
 | `true` | always succeeds |
 | `fail` | always fails |
 | `!` | cut — discard choice points back to the parent |
+| `\+ Goal` | negation as failure — succeeds if `Goal` fails |
+| `call(Goal)` | call `Goal`; supports backtracking |
+| `once(Goal)` | call `Goal`, cut after first solution |
+| `findall(T, Goal, List)` | collect all `T` for which `Goal` succeeds into `List` |
+| `bagof(T, Goal, List)` | like `findall` but fails if there are no solutions |
+| `include(File)` | load and assert clauses from `File` |
+
+*Unification and arithmetic*
+
+| Predicate | Description |
+|-----------|-------------|
 | `X is Expr` | evaluate arithmetic expression, unify with `X` |
 | `X = Y` | unify `X` and `Y` |
 | `X \= Y` | succeed if `X` and `Y` do not unify |
@@ -48,19 +61,61 @@ A lightweight, embeddable Prolog interpreter written in C11.
 | `X >= Y` | arithmetic greater-or-equal |
 | `X =:= Y` | arithmetic equal |
 | `X =\= Y` | arithmetic not-equal |
-| `\+ Goal` | negation as failure — succeeds if `Goal` fails |
-| `call(Goal)` | execute `Goal` as a goal; supports backtracking |
-| `var(X)` | succeed if `X` is an unbound variable |
-| `nonvar(X)` | succeed if `X` is not an unbound variable |
-| `atom(X)` | succeed if `X` is an atom (non-numeric constant) |
-| `integer(X)` | succeed if `X` is an integer |
-| `is_list(X)` | succeed if `X` is a proper list |
+| `succ(X, Y)` | `Y = X + 1`; bidirectional |
+| `plus(X, Y, Z)` | `Z = X + Y`; solves for any one unknown |
+
+*Type tests*
+
+| Predicate | Description |
+|-----------|-------------|
+| `var(X)` | unbound variable |
+| `nonvar(X)` | not an unbound variable |
+| `atom(X)` | non-numeric atom |
+| `integer(X)` | integer |
+| `number(X)` | integer (alias) |
+| `atomic(X)` | atom or string |
+| `compound(X)` | functor with arity ≥ 1 |
+| `callable(X)` | atom or compound |
+| `string(X)` | double-quoted string |
+| `is_list(X)` | proper list |
+
+*Atom and string manipulation*
+
+| Predicate | Description |
+|-----------|-------------|
+| `atom_length(Atom, N)` | `N` = length of `Atom` |
+| `atom_concat(A, B, C)` | `C = A ++ B`; any one arg may be unbound |
+| `atom_chars(Atom, Chars)` | convert between atom and list of single-char atoms |
+| `atom_codes(Atom, Codes)` | convert between atom and list of character codes |
+| `atom_number(Atom, N)` | convert between atom representation and integer |
+| `char_code(Char, Code)` | convert single-char atom to/from ASCII code |
+| `number_codes(N, Codes)` | like `atom_codes` but validates `N` is an integer |
+| `number_chars(N, Chars)` | like `atom_chars` but validates `N` is an integer |
+
+*Term introspection*
+
+| Predicate | Description |
+|-----------|-------------|
+| `functor(Term, Name, Arity)` | decompose or construct a term |
+| `arg(N, Term, Arg)` | `Arg` = Nth argument of `Term` (1-indexed) |
+| `Term =.. List` | univ — `foo(a,b) =.. [foo,a,b]`; bidirectional |
+| `copy_term(Original, Copy)` | deep copy with fresh variables |
+
+*Dynamic database*
+
+| Predicate | Description |
+|-----------|-------------|
+| `assertz(Clause)` | add `Clause` at end of database |
+| `retract(Head)` | remove first clause matching `Head` |
+| `retractall(Head)` | remove all clauses matching `Head`; always succeeds |
+
+*I/O*
+
+| Predicate | Description |
+|-----------|-------------|
 | `nl` | print a newline |
 | `write(Term)` | print `Term` |
 | `writeln(Term)` | print `Term` followed by a newline |
-| `findall(T, Goal, List)` | collect all `T` for which `Goal` succeeds into `List` |
-| `bagof(T, Goal, List)` | like `findall` but fails if there are no solutions |
-| `include(File)` | load and assert clauses from `File` |
 | `stats` | print unification/backtrack/allocation counts |
 
 **Arithmetic expressions** (usable inside `is/2` and comparison operators)
@@ -70,9 +125,14 @@ A lightweight, embeddable Prolog interpreter written in C11.
 | `N` | integer literal |
 | `X + Y` | addition |
 | `X - Y` | subtraction |
+| `-X` | unary negation |
 | `X * Y` | multiplication |
 | `X / Y` | integer division |
+| `X // Y` | integer division (explicit) |
 | `X mod Y` | modulo |
+| `abs(X)` | absolute value |
+| `max(X, Y)` | maximum |
+| `min(X, Y)` | minimum |
 
 ## Build
 
