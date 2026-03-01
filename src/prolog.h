@@ -46,6 +46,7 @@ typedef __builtin_va_list va_list;
 #define MAX_CUSTOM_BUILTINS 64
 #define MAX_STRING_POOL 65536
 #define MAX_FILE_PATH 512
+#define MAX_MAKE_FILES 16
 
 typedef struct prolog_ctx prolog_ctx_t;
 typedef struct term term_t;
@@ -147,6 +148,14 @@ struct prolog_ctx {
   int custom_builtin_count;
 
   char load_dir[MAX_FILE_PATH]; // directory of the file currently being loaded
+
+  // make/0 – file reload tracking
+  char make_files[MAX_MAKE_FILES][MAX_FILE_PATH];
+  int make_file_count;
+  int make_db_mark;
+  int make_term_mark;
+  int make_string_mark;
+  int include_depth;
 
   struct {
     int terms_allocated;

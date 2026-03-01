@@ -226,13 +226,15 @@ static term_t *parse_primary(prolog_ctx_t *ctx) {
       if (*ctx->input_ptr == '\'') {
         if (ctx->input_ptr[1] == '\'') { // '' is escaped single-quote
           ctx->input_ptr += 2;
-          if (i < MAX_NAME - 1) name[i++] = '\'';
+          if (i < MAX_NAME - 1)
+            name[i++] = '\'';
         } else {
           ctx->input_ptr++; // closing quote
           break;
         }
       } else {
-        if (i < MAX_NAME - 1) name[i++] = *ctx->input_ptr;
+        if (i < MAX_NAME - 1)
+          name[i++] = *ctx->input_ptr;
         ctx->input_ptr++;
       }
     }
@@ -553,6 +555,33 @@ bool prolog_load_file(prolog_ctx_t *ctx, const char *filename) {
     return false;
   }
 
+  // track top-level files for make/0
+  if (ctx->include_depth == 0) {
+    bool already_tracked = false;
+    for (int i = 0; i < ctx->make_file_count; i++) {
+      if (strcmp(ctx->make_files[i], filename) == 0) {
+        already_tracked = true;
+        break;
+      }
+    }
+    if (!already_tracked) {
+      if (ctx->make_file_count == 0) {
+        // first file ever (or first after a make reset): snapshot state
+        ctx->make_db_mark = ctx->db_count;
+        ctx->make_term_mark = ctx->term_count;
+        ctx->make_string_mark = ctx->string_pool_offset;
+      }
+      if (ctx->make_file_count < MAX_MAKE_FILES) {
+        strncpy(ctx->make_files[ctx->make_file_count], filename,
+                MAX_FILE_PATH - 1);
+        ctx->make_files[ctx->make_file_count][MAX_FILE_PATH - 1] = '\0';
+        ctx->make_file_count++;
+      }
+    }
+  }
+
+  ctx->include_depth++;
+
   // set load_dir to this file's directory so nested includes resolve correctly
   char old_load_dir[MAX_FILE_PATH];
   strncpy(old_load_dir, ctx->load_dir, sizeof(old_load_dir) - 1);
@@ -606,6 +635,7 @@ bool prolog_load_file(prolog_ctx_t *ctx, const char *filename) {
 
   strncpy(ctx->load_dir, old_load_dir, sizeof(ctx->load_dir) - 1);
   fclose(f);
+  ctx->include_depth--;
   return true;
 }
 

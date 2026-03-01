@@ -759,10 +759,58 @@ static int builtin_copy_term(prolog_ctx_t *ctx, term_t *goal, env_t *env) {
   return unify(ctx, goal->args[1], copy, env) ? 1 : -1;
 }
 
-/* ── dynamic database ───────────────────────────────────────────────── */
+static int builtin_assertz(prolog_ctx_t *ctx, term_t *goal, env_t *env) {
+  if (ctx->db_count >= MAX_CLAUSES)
+    return -1;
+  term_t *arg = substitute(ctx, env, deref(env, goal->args[0]));
+  clause_t *c = &ctx->database[ctx->db_count];
+  c->body_count = 0;
+  if (arg->type == FUNC && strcmp(arg->name, ":-") == 0 && arg->arity == 2) {
+    c->head = deref(env, arg->args[0]);
+    term_t *body = deref(env, arg->args[1]);
+    // flatten top-level conjunctions
+    while (body->type == FUNC && strcmp(body->name, ",") == 0 &&
+           body->arity == 2 && c->body_count < MAX_GOALS - 1) {
+      c->body[c->body_count++] = deref(env, body->args[0]);
+      body = deref(env, body->args[1]);
+    }
+    c->body[c->body_count++] = body;
+  } else {
+    c->head = arg;
+  }
+  ctx->db_count++;
+  return 1;
+}
+
+static int builtin_asserta(prolog_ctx_t *ctx, term_t *goal, env_t *env) {
+  if (ctx->db_count >= MAX_CLAUSES)
+    return -1;
+  // shift database up by one
+  for (int i = ctx->db_count; i > 0; i--)
+    ctx->database[i] = ctx->database[i - 1];
+  ctx->db_count++;
+  // reuse assertz logic by writing into slot 0
+  term_t *arg = substitute(ctx, env, deref(env, goal->args[0]));
+  clause_t *c = &ctx->database[0];
+  c->body_count = 0;
+  if (arg->type == FUNC && strcmp(arg->name, ":-") == 0 && arg->arity == 2) {
+    c->head = deref(env, arg->args[0]);
+    term_t *body = deref(env, arg->args[1]);
+    while (body->type == FUNC && strcmp(body->name, ",") == 0 &&
+           body->arity == 2 && c->body_count < MAX_GOALS - 1) {
+      c->body[c->body_count++] = deref(env, body->args[0]);
+      body = deref(env, body->args[1]);
+    }
+    c->body[c->body_count++] = body;
+  } else {
+    c->head = arg;
+  }
+  return 1;
+}
+
 static int builtin_retract(prolog_ctx_t *ctx, term_t *goal, env_t *env) {
   term_t *arg = deref(env, goal->args[0]);
-  /* accept retract(Head) or retract((Head :- Body)) — body not checked */
+  // accept retract(Head) or retract((Head :- Body)) — body not checked
   term_t *head_pat =
       (arg->type == FUNC && strcmp(arg->name, ":-") == 0 && arg->arity == 2)
           ? deref(env, arg->args[0])
@@ -862,12 +910,41 @@ static int builtin_plus(prolog_ctx_t *ctx, term_t *goal, env_t *env) {
   return -1;
 }
 
+static int builtin_make(prolog_ctx_t *ctx, term_t *goal, env_t *env) {
+  (void)goal;
+  (void)env;
+  if (ctx->make_file_count == 0)
+    return 1; // no files tracked yet
+
+  // snapshot file list before resetting pools
+  char files[MAX_MAKE_FILES][MAX_FILE_PATH];
+  int count = ctx->make_file_count;
+  for (int i = 0; i < count; i++) {
+    strncpy(files[i], ctx->make_files[i], MAX_FILE_PATH - 1);
+    files[i][MAX_FILE_PATH - 1] = '\0';
+  }
+
+  // roll back to the state captured before the first include
+  ctx->db_count = ctx->make_db_mark;
+  ctx->term_count = ctx->make_term_mark;
+  ctx->string_pool_offset = ctx->make_string_mark;
+  ctx->make_file_count = 0;
+  // include_depth is 0 here; the first prolog_load_file will re-snapshot
+
+  for (int i = 0; i < count; i++)
+    prolog_load_file(ctx, files[i]);
+
+  io_writef(ctx, "%% make: reloaded %d file(s)\n", count);
+  return 1;
+}
+
 static const builtin_t builtins[] = {
     // 0-arity
     {"true", 0, builtin_true},
     {"fail", 0, builtin_fail},
     {"!", 0, builtin_cut},
     {"stats", 0, builtin_stats},
+    {"make", 0, builtin_make},
     // 2-arity
     {"is", 2, builtin_is},
     {"=", 2, builtin_unify},
@@ -914,6 +991,8 @@ static const builtin_t builtins[] = {
     {"=..", 2, builtin_univ},
     {"copy_term", 2, builtin_copy_term},
     // dynamic database
+    {"assertz", 1, builtin_assertz},
+    {"asserta", 1, builtin_asserta},
     {"retract", 1, builtin_retract},
     {"retractall", 1, builtin_retractall},
     // arithmetic helpers

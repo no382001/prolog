@@ -106,8 +106,10 @@ A lightweight, embeddable Prolog interpreter written in C11.
 | Predicate | Description |
 |-----------|-------------|
 | `assertz(Clause)` | add `Clause` at end of database |
+| `asserta(Clause)` | add `Clause` at start of database |
 | `retract(Head)` | remove first clause matching `Head` |
 | `retractall(Head)` | remove all clauses matching `Head`; always succeeds |
+| `make` | reload all files previously loaded with `include/1`; facts asserted before the first include are preserved |
 
 *I/O*
 
