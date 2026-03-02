@@ -82,6 +82,15 @@ typedef struct {
 
 typedef enum { CONST, VAR, FUNC, STRING } term_type;
 
+// escape sequence table used by both the parser (decode) and printer (encode).
+// each entry maps a raw byte to its two-character escape sequence.
+typedef struct {
+  char raw;
+  char seq; // the letter after backslash: 'n', 't', etc.
+} str_escape_t;
+static const str_escape_t STR_ESCAPES[] = {
+    {'\n', 'n'}, {'\t', 't'}, {'\r', 'r'}, {'\\', '\\'}, {'"', '"'}, {0, 0}};
+
 struct term {
   term_type type;
   char name[MAX_NAME];
@@ -209,7 +218,7 @@ bool solve_all(prolog_ctx_t *ctx, goal_stmt_t *initial_goals, env_t *env,
 
 bool prolog_exec_query(prolog_ctx_t *ctx, char *query);
 
-void print_term(prolog_ctx_t *ctx, term_t *t, env_t *env);
+void print_term(prolog_ctx_t *ctx, term_t *t, env_t *env, bool quoted);
 
 void parse_error(prolog_ctx_t *ctx, const char *fmt, ...);
 void parse_error_clear(prolog_ctx_t *ctx);
@@ -225,6 +234,7 @@ void io_hooks_set(prolog_ctx_t *ctx, io_hooks_t *hooks);
 // I/O functions (use hooks internally)
 void io_write_str(prolog_ctx_t *ctx, const char *str);
 void io_write_term(prolog_ctx_t *ctx, term_t *t, env_t *env);
+void io_write_term_quoted(prolog_ctx_t *ctx, term_t *t, env_t *env);
 void io_writef(prolog_ctx_t *ctx, const char *fmt, ...);
 int io_read_char(prolog_ctx_t *ctx);
 char *io_read_line(prolog_ctx_t *ctx, char *buf, int size);

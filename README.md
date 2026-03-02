@@ -44,6 +44,13 @@ A string printed as the tail of a partial list keeps its quoted form:
 
 The empty string `""` unifies with the empty list `[]`.
 
+`write/1` prints strings as raw bytes (no quotes or escapes); `writeq/1` prints them in quoted form that can be read back:
+
+```prolog
+?- write("hello\n").    % prints: hello<newline>
+?- writeq("hello\n").   % prints: "hello\n"
+```
+
 **Infix operators** (parsed with precedence)
 
 | Operator | Precedence | Description |
@@ -137,8 +144,9 @@ The empty string `""` unifies with the empty list `[]`.
 | Predicate | Description |
 |-----------|-------------|
 | `nl` | print a newline |
-| `write(Term)` | print `Term` |
+| `write(Term)` | print `Term`; strings are printed as raw bytes (no quotes) |
 | `writeln(Term)` | print `Term` followed by a newline |
+| `writeq(Term)` | print `Term` in quoted form; strings printed as `"..."` with escape sequences |
 | `stats` | print unification/backtrack/allocation counts |
 
 **Arithmetic expressions** (usable inside `is/2` and comparison operators)

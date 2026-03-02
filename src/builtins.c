@@ -356,6 +356,11 @@ static int builtin_writeln(prolog_ctx_t *ctx, term_t *goal, env_t *env) {
   return 1;
 }
 
+static int builtin_writeq(prolog_ctx_t *ctx, term_t *goal, env_t *env) {
+  io_write_term_quoted(ctx, deref(env, goal->args[0]), env);
+  return 1;
+}
+
 static int builtin_include(prolog_ctx_t *ctx, term_t *goal, env_t *env) {
   term_t *arg = deref(env, goal->args[0]);
   const char *filename = NULL;
@@ -966,6 +971,7 @@ static const builtin_t builtins[] = {
     {"nl", 0, builtin_nl},
     {"write", 1, builtin_write},
     {"writeln", 1, builtin_writeln},
+    {"writeq", 1, builtin_writeq},
     {"include", 1, builtin_include},
     // 3-arity
     {"findall", 3, builtin_findall},

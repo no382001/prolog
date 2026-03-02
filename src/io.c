@@ -10,7 +10,7 @@ static void default_write_str(prolog_ctx_t *ctx, const char *str,
 static void default_write_term(prolog_ctx_t *ctx, term_t *t, env_t *env,
                                void *userdata) {
   (void)userdata;
-  print_term(ctx, t, env);
+  print_term(ctx, t, env, false);
 }
 
 static void default_writef(prolog_ctx_t *ctx, const char *fmt, va_list args,
@@ -67,6 +67,10 @@ void io_write_term(prolog_ctx_t *ctx, term_t *t, env_t *env) {
   if (ctx->io_hooks.write_term) {
     ctx->io_hooks.write_term(ctx, t, env, ctx->io_hooks.userdata);
   }
+}
+
+void io_write_term_quoted(prolog_ctx_t *ctx, term_t *t, env_t *env) {
+  print_term(ctx, t, env, true);
 }
 
 void io_writef(prolog_ctx_t *ctx, const char *fmt, ...) {

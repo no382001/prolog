@@ -58,10 +58,72 @@ setup() {
 }
 
 @test "strings: escaped quote" {
-    skip
-    run bash -c "printf 'str(\"hello\\\\\"world\").\n?- str(\"hello\\\\\"world\")' | $PROLOG"
+    run $PROLOG -e '?- X = "\""'
     [ "$status" -eq 0 ]
-    [[ "$output" == *"true"* ]]
+    [[ "$output" == *'X = "\""'* ]]
+}
+
+
+# --- Escape sequence encoding/decoding ---
+
+@test "strings: escape: newline round-trips" {
+    run $PROLOG -e '?- X = "\n"'
+    [ "$status" -eq 0 ]
+    [[ "$output" == *'X = "\n"'* ]]
+}
+
+@test "strings: escape: tab round-trips" {
+    run $PROLOG -e '?- X = "\t"'
+    [ "$status" -eq 0 ]
+    [[ "$output" == *'X = "\t"'* ]]
+}
+
+@test "strings: escape: carriage return round-trips" {
+    run $PROLOG -e '?- X = "\r"'
+    [ "$status" -eq 0 ]
+    [[ "$output" == *'X = "\r"'* ]]
+}
+
+@test "strings: escape: backslash round-trips" {
+    run $PROLOG -e '?- X = "\\"'
+    [ "$status" -eq 0 ]
+    [[ "$output" == *'X = "\\"'* ]]
+}
+
+@test "strings: escape: write prints raw bytes" {
+    run $PROLOG -e '?- write("hello\nworld")'
+    [ "$status" -eq 0 ]
+    [[ "$output" == *$'hello\nworld'* ]]
+}
+
+@test "strings: escape: writeq prints escape sequences" {
+    run $PROLOG -e '?- writeq("\n\t\r")'
+    [ "$status" -eq 0 ]
+    [[ "$output" == *'"\n\t\r"'* ]]
+}
+
+@test "strings: escape: newline is one character" {
+    run $PROLOG -f $CORE -e '?- length("\n", N)'
+    [ "$status" -eq 0 ]
+    [[ "$output" == *"N = 1"* ]]
+}
+
+@test "strings: escape: backslash is one character" {
+    run $PROLOG -f $CORE -e '?- length("\\", N)'
+    [ "$status" -eq 0 ]
+    [[ "$output" == *"N = 1"* ]]
+}
+
+@test "strings: escape: mixed escapes" {
+    run $PROLOG -e '?- X = "a\nb"'
+    [ "$status" -eq 0 ]
+    [[ "$output" == *'X = "a\nb"'* ]]
+}
+
+@test "strings: escape: tail of newline string is empty" {
+    run $PROLOG -e '?- [_|T] = "\n"'
+    [ "$status" -eq 0 ]
+    [[ "$output" == *'T = ""'* ]]
 }
 
 
