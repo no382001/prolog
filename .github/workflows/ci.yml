@@ -1,0 +1,68 @@
+name: CI
+on:
+  push:
+    branches: [ main ]
+  pull_request:
+    branches: [ main ]
+
+permissions:
+  contents: read
+  actions: read
+  checks: write
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - name: checkout code
+        uses: actions/checkout@v4
+
+      - name: install build deps
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y build-essential clang-format
+
+      - name: build
+        run: make
+
+      - name: upload build artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: prolog-build
+          path: |
+            prolog
+            _build
+
+  test:
+    runs-on: ubuntu-latest
+    needs: build
+    permissions:
+      contents: read
+      actions: read
+      checks: write
+    steps:
+      - name: checkout code
+        uses: actions/checkout@v4
+
+      - name: download build artifacts
+        uses: actions/download-artifact@v4
+        with:
+          name: prolog-build
+
+      - name: install test deps
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y bats
+          chmod +x ./prolog
+
+      - name: run tests
+        run: bats --formatter junit test/*.sh > bats-results.xml
+        continue-on-error: true
+
+      - name: publish test results
+        uses: dorny/test-reporter@v1
+        if: always()
+        with:
+          name: BATS Tests
+          path: bats-results.xml
+          reporter: java-junit
