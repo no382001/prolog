@@ -2,6 +2,7 @@
 
 setup() {
     PROLOG="./prolog"
+    CORE="test/core.pl"
 }
 
 
@@ -57,10 +58,72 @@ setup() {
 }
 
 @test "strings: escaped quote" {
-    skip
-    run bash -c "printf 'str(\"hello\\\\\"world\").\n?- str(\"hello\\\\\"world\")' | $PROLOG"
+    run $PROLOG -e '?- X = "\""'
     [ "$status" -eq 0 ]
-    [[ "$output" == *"true"* ]]
+    [[ "$output" == *'X = "\""'* ]]
+}
+
+
+# --- Escape sequence encoding/decoding ---
+
+@test "strings: escape: newline round-trips" {
+    run $PROLOG -e '?- X = "\n"'
+    [ "$status" -eq 0 ]
+    [[ "$output" == *'X = "\n"'* ]]
+}
+
+@test "strings: escape: tab round-trips" {
+    run $PROLOG -e '?- X = "\t"'
+    [ "$status" -eq 0 ]
+    [[ "$output" == *'X = "\t"'* ]]
+}
+
+@test "strings: escape: carriage return round-trips" {
+    run $PROLOG -e '?- X = "\r"'
+    [ "$status" -eq 0 ]
+    [[ "$output" == *'X = "\r"'* ]]
+}
+
+@test "strings: escape: backslash round-trips" {
+    run $PROLOG -e '?- X = "\\"'
+    [ "$status" -eq 0 ]
+    [[ "$output" == *'X = "\\"'* ]]
+}
+
+@test "strings: escape: write prints raw bytes" {
+    run $PROLOG -e '?- write("hello\nworld")'
+    [ "$status" -eq 0 ]
+    [[ "$output" == *$'hello\nworld'* ]]
+}
+
+@test "strings: escape: writeq prints escape sequences" {
+    run $PROLOG -e '?- writeq("\n\t\r")'
+    [ "$status" -eq 0 ]
+    [[ "$output" == *'"\n\t\r"'* ]]
+}
+
+@test "strings: escape: newline is one character" {
+    run $PROLOG -f $CORE -e '?- length("\n", N)'
+    [ "$status" -eq 0 ]
+    [[ "$output" == *"N = 1"* ]]
+}
+
+@test "strings: escape: backslash is one character" {
+    run $PROLOG -f $CORE -e '?- length("\\", N)'
+    [ "$status" -eq 0 ]
+    [[ "$output" == *"N = 1"* ]]
+}
+
+@test "strings: escape: mixed escapes" {
+    run $PROLOG -e '?- X = "a\nb"'
+    [ "$status" -eq 0 ]
+    [[ "$output" == *'X = "a\nb"'* ]]
+}
+
+@test "strings: escape: tail of newline string is empty" {
+    run $PROLOG -e '?- [_|T] = "\n"'
+    [ "$status" -eq 0 ]
+    [[ "$output" == *'T = ""'* ]]
 }
 
 
@@ -219,4 +282,120 @@ setup() {
     run bash -c "printf 'msg(\"hello\").\nmsg(\"goodbye\").\n?- msg(X)' | $PROLOG"
     [ "$status" -eq 0 ]
     [[ "$output" == *'X = "hello"'* ]]
+}
+
+
+# --- String-as-list unification ---
+
+@test "strings: head|tail unification" {
+    run bash -c "printf '?- [L|Ls] = \"abc\".' | $PROLOG"
+    [ "$status" -eq 0 ]
+    [[ "$output" == *"L = a"* ]]
+    [[ "$output" == *'Ls = "bc"'* ]]
+}
+
+@test "strings: unify string with full char list" {
+    run bash -c "printf '?- \"abc\" = [a,b,c].' | $PROLOG"
+    [ "$status" -eq 0 ]
+    [[ "$output" == *"true"* ]]
+}
+
+@test "strings: head of string is first char" {
+    run bash -c "printf '?- [H|_] = \"hello\".' | $PROLOG"
+    [ "$status" -eq 0 ]
+    [[ "$output" == *"H = h"* ]]
+}
+
+@test "strings: tail of string is rest as string" {
+    run bash -c "printf '?- [_|T] = \"hello\".' | $PROLOG"
+    [ "$status" -eq 0 ]
+    [[ "$output" == *'T = "ello"'* ]]
+}
+
+@test "strings: empty string unifies with empty list" {
+    run bash -c "printf '?- \"\" = [].' | $PROLOG"
+    [ "$status" -eq 0 ]
+    [[ "$output" == *"true"* ]]
+}
+
+@test "strings: non-empty string does not unify with empty list" {
+    run bash -c "printf '?- \"a\" = [].' | $PROLOG"
+    [ "$status" -eq 0 ]
+    [[ "$output" == *"false"* ]]
+}
+
+@test "strings: single char string head|tail" {
+    run bash -c "printf '?- [L|Ls] = \"x\".' | $PROLOG"
+    [ "$status" -eq 0 ]
+    [[ "$output" == *"L = x"* ]]
+    [[ "$output" == *'Ls = ""'* ]]
+}
+
+@test "strings: wrong char list does not unify" {
+    run bash -c "printf '?- \"abc\" = [a,b,d].' | $PROLOG"
+    [ "$status" -eq 0 ]
+    [[ "$output" == *"false"* ]]
+}
+
+@test "strings: multiple heads from string" {
+    run $PROLOG -e '?- [A,B,C|Rest] = "prolog"'
+    [ "$status" -eq 0 ]
+    [[ "$output" == *"A = p"* ]]
+    [[ "$output" == *"B = r"* ]]
+    [[ "$output" == *"C = o"* ]]
+    [[ "$output" == *'Rest = "log"'* ]]
+}
+
+@test "strings: char list = string" {
+    run $PROLOG -e '?- [h,e,l,l,o] = "hello"'
+    [ "$status" -eq 0 ]
+    [[ "$output" == *"true"* ]]
+}
+
+@test "strings: member on string" {
+    run $PROLOG -f $CORE -e '?- member(X, "abc")'
+    [ "$status" -eq 0 ]
+    [[ "$output" == *"X = a"* ]]
+}
+
+@test "strings: findall chars from string" {
+    run $PROLOG -f $CORE -e '?- findall(X, member(X, "abc"), Cs)'
+    [ "$status" -eq 0 ]
+    [[ "$output" == *"Cs = [a, b, c]"* ]]
+}
+
+@test "strings: length of string" {
+    run $PROLOG -f $CORE -e '?- length("hello", N)'
+    [ "$status" -eq 0 ]
+    [[ "$output" == *"N = 5"* ]]
+}
+
+@test "strings: length of empty string" {
+    run $PROLOG -f $CORE -e '?- length("", N)'
+    [ "$status" -eq 0 ]
+    [[ "$output" == *"N = 0"* ]]
+}
+
+@test "strings: reverse of string gives char list" {
+    run $PROLOG -f $CORE -e '?- reverse("abc", X)'
+    [ "$status" -eq 0 ]
+    [[ "$output" == *"X = [c, b, a]"* ]]
+}
+
+@test "strings: last char of string" {
+    run $PROLOG -f $CORE -e '?- last(X, "hello")'
+    [ "$status" -eq 0 ]
+    [[ "$output" == *"X = o"* ]]
+}
+
+@test "strings: member check on string" {
+    run $PROLOG -f $CORE -e '?- member(h, "hello")'
+    [ "$status" -eq 0 ]
+    [[ "$output" == *"true"* ]]
+}
+
+@test "strings: non-member check on string" {
+    run $PROLOG -f $CORE -e '?- member(z, "hello")'
+    [ "$status" -eq 0 ]
+    [[ "$output" == *"false"* ]]
 }

@@ -255,28 +255,16 @@ static term_t *parse_primary(prolog_ctx_t *ctx) {
       }
 
       // escape sequences
-      if (*ctx->input_ptr == '\\\\' && ctx->input_ptr[1]) {
+      if (*ctx->input_ptr == '\\' && ctx->input_ptr[1]) {
         ctx->input_ptr++;
-        switch (*ctx->input_ptr) {
-        case 'n':
-          str_buf[i++] = '\\n';
-          break;
-        case 't':
-          str_buf[i++] = '\\t';
-          break;
-        case 'r':
-          str_buf[i++] = '\\r';
-          break;
-        case '\\\\':
-          str_buf[i++] = '\\\\';
-          break;
-        case '\"':
-          str_buf[i++] = '\"';
-          break;
-        default:
-          str_buf[i++] = *ctx->input_ptr;
-          break;
+        char decoded = *ctx->input_ptr;
+        for (const str_escape_t *e = STR_ESCAPES; e->raw; e++) {
+          if (e->seq == *ctx->input_ptr) {
+            decoded = e->raw;
+            break;
+          }
         }
+        str_buf[i++] = decoded;
         ctx->input_ptr++;
       } else {
         str_buf[i++] = *ctx->input_ptr++;
@@ -524,7 +512,7 @@ bool prolog_exec_query(prolog_ctx_t *ctx, char *query) {
       if (printed)
         io_write_str(ctx, ", ");
       io_writef(ctx, "%s = ", name);
-      io_write_term(ctx, env.bindings[i].value, &env);
+      io_write_term_quoted(ctx, env.bindings[i].value, &env);
       printed = true;
     }
     if (!printed)

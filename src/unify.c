@@ -48,6 +48,48 @@ bool unify(prolog_ctx_t *ctx, term_t *a, term_t *b, env_t *env) {
     return result;
   }
 
+  // unify a string with a list: "abc" = [H|T] or "abc" = [a,b,c]
+  if (a->type == STRING && b->type == CONST && strcmp(b->name, "[]") == 0) {
+    bool result = (a->string_data[0] == '\0');
+    debug(ctx, "  -> %s (string vs [])\n", result ? "OK" : "FAIL");
+    if (!result)
+      ctx->stats.unify_fails++;
+    return result;
+  }
+  if (b->type == STRING && a->type == CONST && strcmp(a->name, "[]") == 0) {
+    bool result = (b->string_data[0] == '\0');
+    debug(ctx, "  -> %s ([] vs string)\n", result ? "OK" : "FAIL");
+    if (!result)
+      ctx->stats.unify_fails++;
+    return result;
+  }
+  if (a->type == STRING && b->type == FUNC && strcmp(b->name, ".") == 0 &&
+      b->arity == 2) {
+    if (a->string_data[0] == '\0') {
+      debug(ctx, "  -> FAIL (empty string vs list)\n");
+      ctx->stats.unify_fails++;
+      return false;
+    }
+    char ch[2] = {a->string_data[0], '\0'};
+    term_t *head = make_const(ctx, ch);
+    term_t *tail = make_string(ctx, a->string_data + 1);
+    return unify(ctx, b->args[0], head, env) &&
+           unify(ctx, b->args[1], tail, env);
+  }
+  if (b->type == STRING && a->type == FUNC && strcmp(a->name, ".") == 0 &&
+      a->arity == 2) {
+    if (b->string_data[0] == '\0') {
+      debug(ctx, "  -> FAIL (list vs empty string)\n");
+      ctx->stats.unify_fails++;
+      return false;
+    }
+    char ch[2] = {b->string_data[0], '\0'};
+    term_t *head = make_const(ctx, ch);
+    term_t *tail = make_string(ctx, b->string_data + 1);
+    return unify(ctx, a->args[0], head, env) &&
+           unify(ctx, a->args[1], tail, env);
+  }
+
   if (a->type == FUNC && b->type == FUNC) {
     if (strcmp(a->name, b->name) != 0 || a->arity != b->arity) {
       debug(ctx, "  -> FAIL (func mismatch: %s/%d vs %s/%d)\n", a->name,

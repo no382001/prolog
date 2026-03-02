@@ -15,13 +15,41 @@ A lightweight, embeddable Prolog interpreter written in C11.
 | Atom | lowercase identifier or quoted | `foo`, `'hello world'` |
 | Variable | uppercase or `_` prefix | `X`, `_`, `_Tail` |
 | Integer | decimal digits | `0`, `42`, `-1` |
-| String | double-quoted | `"hello"` |
+| String | double-quoted; behaves as a list of single-char atoms | `"hello"` |
 | Functor | `name(arg, ...)` | `f(a, B)` |
 | List | `[head\|tail]` or `[]` | `[1,2,3]`, `[H\|T]` |
 | Fact | `head.` | `likes(alice, bob).` |
 | Rule | `head :- body.` | `mortal(X) :- human(X).` |
 | Query | `?- goal.` | `?- member(X, [1,2]).` |
 | Comment | `%` to end of line | `% this is a comment` |
+
+**Strings as character lists**
+
+Double-quoted strings unify with list patterns, so all list predicates work on strings directly:
+
+```prolog
+?- [L|Ls] = "abc".          % L = a, Ls = "bc"
+?- [H|_] = "hello".         % H = h
+?- "abc" = [a,b,c].         % true
+?- length("hello", N).      % N = 5
+?- member(X, "abc").        % X = a
+?- reverse("abc", X).       % X = [c, b, a]
+```
+
+A string printed as the tail of a partial list keeps its quoted form:
+
+```prolog
+?- [A,B|Rest] = "prolog".   % A = p, B = r, Rest = "olog"
+```
+
+The empty string `""` unifies with the empty list `[]`.
+
+`write/1` prints strings as raw bytes (no quotes or escapes); `writeq/1` prints them in quoted form that can be read back:
+
+```prolog
+?- write("hello\n").    % prints: hello<newline>
+?- writeq("hello\n").   % prints: "hello\n"
+```
 
 **Infix operators** (parsed with precedence)
 
@@ -76,7 +104,7 @@ A lightweight, embeddable Prolog interpreter written in C11.
 | `atomic(X)` | atom or string |
 | `compound(X)` | functor with arity ≥ 1 |
 | `callable(X)` | atom or compound |
-| `string(X)` | double-quoted string |
+| `string(X)` | double-quoted string literal |
 | `is_list(X)` | proper list |
 
 *Atom and string manipulation*
@@ -116,8 +144,9 @@ A lightweight, embeddable Prolog interpreter written in C11.
 | Predicate | Description |
 |-----------|-------------|
 | `nl` | print a newline |
-| `write(Term)` | print `Term` |
+| `write(Term)` | print `Term`; strings are printed as raw bytes (no quotes) |
 | `writeln(Term)` | print `Term` followed by a newline |
+| `writeq(Term)` | print `Term` in quoted form; strings printed as `"..."` with escape sequences |
 | `stats` | print unification/backtrack/allocation counts |
 
 **Arithmetic expressions** (usable inside `is/2` and comparison operators)

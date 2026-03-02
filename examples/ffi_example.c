@@ -105,7 +105,7 @@ int main() {
   env = (env_t){0};
   if (solve(&ctx, &goals, &env)) {
     printf("X = ");
-    print_term(&ctx, env.bindings[0].value, &env);
+    print_term(&ctx, env.bindings[0].value, &env, true);
     printf("\n");
   }
   
