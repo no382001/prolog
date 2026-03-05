@@ -361,23 +361,47 @@ static int builtin_writeq(prolog_ctx_t *ctx, term_t *goal, env_t *env) {
   return 1;
 }
 
-static int builtin_include(prolog_ctx_t *ctx, term_t *goal, env_t *env) {
-  term_t *arg = deref(env, goal->args[0]);
+static const char *resolve_filename(prolog_ctx_t *ctx, term_t *arg, char *buf,
+                                    size_t bufsz) {
   const char *filename = NULL;
   if (arg->type == STRING)
     filename = arg->string_data;
   else if (arg->type == CONST)
     filename = arg->name;
   else
-    return -1;
+    return NULL;
 
-  // resolve relative paths against the directory of the file being loaded
-  char resolved[MAX_FILE_PATH];
   if (filename[0] != '/' && ctx->load_dir[0] != '\0') {
-    snprintf(resolved, sizeof(resolved), "%s/%s", ctx->load_dir, filename);
-    filename = resolved;
+    snprintf(buf, bufsz, "%s/%s", ctx->load_dir, filename);
+    return buf;
   }
+  return filename;
+}
 
+// consult/1: load file as independent unit, tracked for make/0
+static int builtin_consult(prolog_ctx_t *ctx, term_t *goal, env_t *env) {
+  char resolved[MAX_FILE_PATH];
+  const char *filename = resolve_filename(ctx, deref(env, goal->args[0]),
+                                          resolved, sizeof(resolved));
+  if (!filename)
+    return -1;
+  return prolog_load_file(ctx, filename) ? 1 : -1;
+}
+
+// include/1: textual inclusion — only valid as a file directive,
+// clauses are owned by the including file, not tracked for make/0
+static int builtin_include(prolog_ctx_t *ctx, term_t *goal, env_t *env) {
+  if (ctx->include_depth == 0) {
+    io_writef(ctx, "Error: include/1 is only valid as a file directive\n");
+    return -1;
+  }
+  char resolved[MAX_FILE_PATH];
+  const char *filename = resolve_filename(ctx, deref(env, goal->args[0]),
+                                          resolved, sizeof(resolved));
+  if (!filename)
+    return -1;
+  // include_depth >= 1 here, so prolog_load_file won't track this file for
+  // make/0
   return prolog_load_file(ctx, filename) ? 1 : -1;
 }
 
@@ -921,6 +945,19 @@ static int builtin_make(prolog_ctx_t *ctx, term_t *goal, env_t *env) {
   if (ctx->make_file_count == 0)
     return 1; // no files tracked yet
 
+  // check which files have changed since they were loaded
+  int changed = 0;
+  for (int i = 0; i < ctx->make_file_count; i++) {
+    long long cur = prolog_file_mtime(ctx->make_files[i]);
+    if (cur == -1LL || cur != ctx->make_file_mtimes[i])
+      changed++;
+  }
+
+  if (changed == 0) {
+    io_writef(ctx, "%% make: nothing to reload\n");
+    return 1;
+  }
+
   // snapshot file list before resetting pools
   char files[MAX_MAKE_FILES][MAX_FILE_PATH];
   int count = ctx->make_file_count;
@@ -929,17 +966,16 @@ static int builtin_make(prolog_ctx_t *ctx, term_t *goal, env_t *env) {
     files[i][MAX_FILE_PATH - 1] = '\0';
   }
 
-  // roll back to the state captured before the first include
+  // roll back to the state captured before the first consult
   ctx->db_count = ctx->make_db_mark;
   ctx->term_count = ctx->make_term_mark;
   ctx->string_pool_offset = ctx->make_string_mark;
   ctx->make_file_count = 0;
-  // include_depth is 0 here; the first prolog_load_file will re-snapshot
 
   for (int i = 0; i < count; i++)
     prolog_load_file(ctx, files[i]);
 
-  io_writef(ctx, "%% make: reloaded %d file(s)\n", count);
+  io_writef(ctx, "%% make: reloaded %d file(s) (%d changed)\n", count, changed);
   return 1;
 }
 
@@ -972,6 +1008,7 @@ static const builtin_t builtins[] = {
     {"write", 1, builtin_write},
     {"writeln", 1, builtin_writeln},
     {"writeq", 1, builtin_writeq},
+    {"consult", 1, builtin_consult},
     {"include", 1, builtin_include},
     // 3-arity
     {"findall", 3, builtin_findall},

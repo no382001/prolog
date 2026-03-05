@@ -595,53 +595,63 @@ teardown() {
     [[ "$output" == *"y"* ]]
 }
 
-# --- include/1 ---
+# --- consult/1 ---
 
-@test "include: loads facts from file" {
-    local tmpfile
-    tmpfile=$(mktemp /tmp/prolog_test_XXXXXX.pl)
+@test "consult: loads facts from file" {
     printf 'animal(cat).\nanimal(dog).\n' > "$tmpfile"
-    run bash -c "printf '?- include(\"%s\")\n?- animal(cat)\n' \"$tmpfile\" | $PROLOG"
-    rm -f "$tmpfile"
+    run bash -c "printf '?- consult(\"%s\")\n?- animal(cat)\n' \"$tmpfile\" | $PROLOG"
     [ "$status" -eq 0 ]
     [[ "$output" == *"true"* ]]
 }
 
-@test "include: fails on nonexistent file" {
-    run bash -c "echo '?- include(\"/nonexistent/does_not_exist.pl\")' | $PROLOG 2>&1"
+@test "consult: fails on nonexistent file" {
+    run bash -c "echo '?- consult(\"/nonexistent/does_not_exist.pl\")' | $PROLOG 2>&1"
     [ "$status" -eq 0 ]
     [[ "$output" == *"false"* ]]
 }
 
-@test "include: loads multiline rules" {
-    local tmpfile
-    tmpfile=$(mktemp /tmp/prolog_test_XXXXXX.pl)
+@test "consult: loads multiline rules" {
     printf 'parent(tom, bob).\nancestor(X, Y) :-\n  parent(X, Y).\n' > "$tmpfile"
-    run bash -c "printf '?- include(\"%s\")\n?- ancestor(tom, bob)\n' \"$tmpfile\" | $PROLOG"
-    rm -f "$tmpfile"
+    run bash -c "printf '?- consult(\"%s\")\n?- ancestor(tom, bob)\n' \"$tmpfile\" | $PROLOG"
     [ "$status" -eq 0 ]
     [[ "$output" == *"true"* ]]
 }
 
-@test "include: all clauses from file are accessible" {
-    local tmpfile
-    tmpfile=$(mktemp /tmp/prolog_test_XXXXXX.pl)
+@test "consult: all clauses from file are accessible" {
     printf 'color(red).\ncolor(green).\ncolor(blue).\n' > "$tmpfile"
-    run bash -c "printf '?- include(\"%s\")\n?- color(red), color(blue)\n' \"$tmpfile\" | $PROLOG"
-    rm -f "$tmpfile"
+    run bash -c "printf '?- consult(\"%s\")\n?- color(red), color(blue)\n' \"$tmpfile\" | $PROLOG"
     [ "$status" -eq 0 ]
     [[ "$output" == *"true"* ]]
 }
 
-@test "include: works in rule body" {
+@test "consult: works in rule body" {
     local tmpfile2
     tmpfile2=$(mktemp /tmp/prolog_test_XXXXXX.pl)
     printf 'foo(a).\n' > "$tmpfile"
-    printf 'load(F) :- include(F).\n' > "$tmpfile2"
+    printf 'load(F) :- consult(F).\n' > "$tmpfile2"
     run $PROLOG -f "$tmpfile2" -e "?- load(\"$tmpfile\"), foo(a)"
     rm -f "$tmpfile2"
     [ "$status" -eq 0 ]
     [[ "$output" == *"true"* ]]
+}
+
+# --- include/1 ---
+
+@test "include: works as file directive" {
+    local tmpfile2
+    tmpfile2=$(mktemp /tmp/prolog_test_XXXXXX.pl)
+    printf 'animal(cat).\nanimal(dog).\n' > "$tmpfile"
+    printf ':- include("%s").\n' "$tmpfile" > "$tmpfile2"
+    run $PROLOG -f "$tmpfile2" -e '?- animal(cat)'
+    rm -f "$tmpfile2"
+    [ "$status" -eq 0 ]
+    [[ "$output" == *"true"* ]]
+}
+
+@test "include: rejected as runtime goal" {
+    run bash -c "echo '?- include(\"/dev/null\")' | $PROLOG 2>&1"
+    [ "$status" -eq 0 ]
+    [[ "$output" == *"false"* ]]
 }
 
 # --- nl/0 ---

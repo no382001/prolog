@@ -16,10 +16,8 @@ SRCS := $(wildcard src/*.c)
 HDRS := $(wildcard src/*.h)
 OBJS := $(SRCS:src/%.c=$(BUILD_DIR)/%.o)
 
-# Filter out main.o for examples that have their own main
 LIB_OBJS := $(filter-out $(BUILD_DIR)/main.o,$(OBJS))
 
-# Examples
 EXAMPLE_SRCS := $(wildcard $(EXAMPLES_DIR)/*.c)
 EXAMPLE_BINS := $(EXAMPLE_SRCS:$(EXAMPLES_DIR)/%.c=$(BUILD_DIR)/%)
 
@@ -31,7 +29,6 @@ $(TARGET): $(OBJS)
 $(BUILD_DIR)/%.o: src/%.c $(HDRS) | $(BUILD_DIR)
 	$(CC) $(CFLAGS) -c $< -o $@
 
-# Build examples
 $(BUILD_DIR)/%: $(EXAMPLES_DIR)/%.c $(LIB_OBJS) $(HDRS) | $(BUILD_DIR)
 	$(CC) $(CFLAGS) $< $(LIB_OBJS) $(LDFLAGS) -o $@
 

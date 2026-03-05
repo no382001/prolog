@@ -563,6 +563,8 @@ bool prolog_load_file(prolog_ctx_t *ctx, const char *filename) {
         strncpy(ctx->make_files[ctx->make_file_count], filename,
                 MAX_FILE_PATH - 1);
         ctx->make_files[ctx->make_file_count][MAX_FILE_PATH - 1] = '\0';
+        ctx->make_file_mtimes[ctx->make_file_count] =
+            prolog_file_mtime(filename);
         ctx->make_file_count++;
       }
     }
@@ -603,7 +605,7 @@ bool prolog_load_file(prolog_ctx_t *ctx, const char *filename) {
 
     if (has_complete_clause(clause)) {
       ctx->input_line++;
-      if (strncmp(clause, "?-", 2) == 0)
+      if (strncmp(clause, "?-", 2) == 0 || strncmp(clause, ":-", 2) == 0)
         exec_directive(ctx, clause);
       else
         parse_clause(ctx, clause);
