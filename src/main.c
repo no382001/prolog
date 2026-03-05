@@ -50,14 +50,15 @@ static void print_bindings(prolog_ctx_t *ctx, env_t *env) {
     io_write_str(ctx, "true");
 }
 
-static bool toplevel_cb(prolog_ctx_t *ctx, env_t *env, void *ud) {
+static bool toplevel_cb(prolog_ctx_t *ctx, env_t *env, void *ud,
+                        bool has_more) {
   toplevel_state_t *st = ud;
   print_bindings(ctx, env);
   st->want_more = false;
 
-  if (!st->interactive) {
+  if (!st->interactive || !has_more) {
     io_write_str(ctx, "\n");
-    return false; // non-interactive: stop after first solution
+    return false; // no choice points: stop here
   }
 
   io_write_str(ctx, " ;");

@@ -145,7 +145,7 @@ A:
     found_any = true;
 
     if (callback) {
-      if (!callback(ctx, env, userdata)) {
+      if (!callback(ctx, env, userdata, sp > 1)) {
         // callback says stop
         return true;
       }

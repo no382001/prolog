@@ -194,7 +194,9 @@ typedef struct {
   int max;
 } findall_state_t;
 
-static bool findall_callback(prolog_ctx_t *ctx, env_t *env, void *userdata) {
+static bool findall_callback(prolog_ctx_t *ctx, env_t *env, void *userdata,
+                             bool has_more) {
+  (void)has_more;
   findall_state_t *state = (findall_state_t *)userdata;
 
   if (state->count < state->max) {
@@ -272,9 +274,11 @@ static int builtin_bagof(prolog_ctx_t *ctx, term_t *goal, env_t *env) {
   return unify(ctx, result_list, list, env) ? 1 : -1;
 }
 
-static bool not_found_callback(prolog_ctx_t *ctx, env_t *env, void *userdata) {
+static bool not_found_callback(prolog_ctx_t *ctx, env_t *env, void *userdata,
+                               bool has_more) {
   (void)ctx;
   (void)env;
+  (void)has_more;
   *(bool *)userdata = true;
   return false;
 }
