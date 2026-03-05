@@ -3,6 +3,11 @@
 setup() {
     PROLOG="./prolog"
     CORE="test/core.pl"
+    tmpfile=$(mktemp /tmp/prolog_test_XXXXXX.pl)
+}
+
+teardown() {
+    rm -f "$tmpfile"
 }
 
 # --- is/2 basic arithmetic ---
@@ -108,13 +113,15 @@ setup() {
 # --- is/2 with variables ---
 
 @test "is: variable in expression" {
-    run bash -c "echo -e 'num(5).\n?- num(N), X is N + 1' | $PROLOG"
+    printf 'num(5).\n' > "$tmpfile"
+    run $PROLOG -f "$tmpfile" -e '?- num(N), X is N + 1'
     [ "$status" -eq 0 ]
     [[ "$output" == *"X = 6"* ]]
 }
 
 @test "is: two variables" {
-    run bash -c "echo -e 'pair(3, 4).\n?- pair(A, B), X is A + B' | $PROLOG"
+    printf 'pair(3, 4).\n' > "$tmpfile"
+    run $PROLOG -f "$tmpfile" -e '?- pair(A, B), X is A + B'
     [ "$status" -eq 0 ]
     [[ "$output" == *"X = 7"* ]]
 }
@@ -292,7 +299,8 @@ setup() {
 }
 
 @test "true in conjunction" {
-    run bash -c "echo -e 'foo(a).\n?- foo(X), true' | $PROLOG"
+    printf 'foo(a).\n' > "$tmpfile"
+    run $PROLOG -f "$tmpfile" -e '?- foo(X), true'
     [ "$status" -eq 0 ]
     [[ "$output" == *"X = a"* ]]
 }
@@ -390,43 +398,50 @@ setup() {
 # --- combined builtins ---
 
 @test "combined: arithmetic in rule" {
-    run bash -c "echo -e 'double(X, Y) :- Y is X * 2.\n?- double(5, D)' | $PROLOG"
+    printf 'double(X, Y) :- Y is X * 2.\n' > "$tmpfile"
+    run $PROLOG -f "$tmpfile" -e '?- double(5, D)'
     [ "$status" -eq 0 ]
     [[ "$output" == *"D = 10"* ]]
 }
 
 @test "combined: comparison guard" {
-    run bash -c "echo -e 'positive(X) :- X > 0.\n?- positive(5)' | $PROLOG"
+    printf 'positive(X) :- X > 0.\n' > "$tmpfile"
+    run $PROLOG -f "$tmpfile" -e '?- positive(5)'
     [ "$status" -eq 0 ]
     [[ "$output" == *"true"* ]]
 }
 
 @test "combined: comparison guard fails" {
-    run bash -c "echo -e 'positive(X) :- X > 0.\n?- positive(-3)' | $PROLOG"
+    printf 'positive(X) :- X > 0.\n' > "$tmpfile"
+    run $PROLOG -f "$tmpfile" -e '?- positive(-3)'
     [ "$status" -eq 0 ]
     [[ "$output" == *"false"* ]]
 }
 
 @test "combined: max of two" {
-    run bash -c "echo -e 'max(X, Y, X) :- X >= Y.\nmax(X, Y, Y) :- Y > X.\n?- max(3, 7, M)' | $PROLOG"
+    printf 'max(X, Y, X) :- X >= Y.\nmax(X, Y, Y) :- Y > X.\n' > "$tmpfile"
+    run $PROLOG -f "$tmpfile" -e '?- max(3, 7, M)'
     [ "$status" -eq 0 ]
     [[ "$output" == *"M = 7"* ]]
 }
 
 @test "combined: factorial base case" {
-    run bash -c "echo -e 'fact(0, 1).\nfact(N, F) :- N > 0, N1 is N - 1, fact(N1, F1), F is N * F1.\n?- fact(0, F)' | $PROLOG"
+    printf 'fact(0, 1).\nfact(N, F) :- N > 0, N1 is N - 1, fact(N1, F1), F is N * F1.\n' > "$tmpfile"
+    run $PROLOG -f "$tmpfile" -e '?- fact(0, F)'
     [ "$status" -eq 0 ]
     [[ "$output" == *"F = 1"* ]]
 }
 
 @test "combined: factorial of 5" {
-    run bash -c "echo -e 'fact(0, 1).\nfact(N, F) :- N > 0, N1 is N - 1, fact(N1, F1), F is N * F1.\n?- fact(5, F)' | $PROLOG"
+    printf 'fact(0, 1).\nfact(N, F) :- N > 0, N1 is N - 1, fact(N1, F1), F is N * F1.\n' > "$tmpfile"
+    run $PROLOG -f "$tmpfile" -e '?- fact(5, F)'
     [ "$status" -eq 0 ]
     [[ "$output" == *"F = 120"* ]]
 }
 
 @test "combined: sum list" {
-    run bash -c "echo -e 'sum([], 0).\nsum([H|T], S) :- sum(T, S1), S is S1 + H.\n?- sum([1,2,3,4], S)' | $PROLOG"
+    printf 'sum([], 0).\nsum([H|T], S) :- sum(T, S1), S is S1 + H.\n' > "$tmpfile"
+    run $PROLOG -f "$tmpfile" -e '?- sum([1,2,3,4], S)'
     [ "$status" -eq 0 ]
     [[ "$output" == *"S = 10"* ]]
 }
@@ -460,19 +475,21 @@ setup() {
 # --- findall basic ---
 
 @test "findall: collect all facts" {
-    run bash -c "echo -e 'foo(a).\nfoo(b).\nfoo(c).\n?- findall(X, foo(X), L)' | $PROLOG"
+    printf 'foo(a).\nfoo(b).\nfoo(c).\n' > "$tmpfile"
+    run $PROLOG -f "$tmpfile" -e '?- findall(X, foo(X), L)'
     [ "$status" -eq 0 ]
     [[ "$output" == *"L = [a, b, c]"* ]]
 }
 
 @test "findall: empty result is empty list" {
-    run bash -c "echo -e 'foo(a).\n?- findall(X, bar(X), L)' | $PROLOG"
+    run bash -c "echo '?- findall(X, bar(X), L)' | $PROLOG"
     [ "$status" -eq 0 ]
     [[ "$output" == *"L = []"* ]]
 }
 
 @test "findall: single result" {
-    run bash -c "echo -e 'foo(only).\n?- findall(X, foo(X), L)' | $PROLOG"
+    printf 'foo(only).\n' > "$tmpfile"
+    run $PROLOG -f "$tmpfile" -e '?- findall(X, foo(X), L)'
     [ "$status" -eq 0 ]
     [[ "$output" == *"L = [only]"* ]]
 }
@@ -480,19 +497,22 @@ setup() {
 # --- findall with templates ---
 
 @test "findall: template extracts part" {
-    run bash -c "echo -e 'pair(1,a).\npair(2,b).\npair(3,c).\n?- findall(Y, pair(X,Y), L)' | $PROLOG"
+    printf 'pair(1,a).\npair(2,b).\npair(3,c).\n' > "$tmpfile"
+    run $PROLOG -f "$tmpfile" -e '?- findall(Y, pair(X,Y), L)'
     [ "$status" -eq 0 ]
     [[ "$output" == *"L = [a, b, c]"* ]]
 }
 
 @test "findall: template is constant" {
-    run bash -c "echo -e 'foo(a).\nfoo(b).\nfoo(c).\n?- findall(x, foo(_), L)' | $PROLOG"
+    printf 'foo(a).\nfoo(b).\nfoo(c).\n' > "$tmpfile"
+    run $PROLOG -f "$tmpfile" -e '?- findall(x, foo(_), L)'
     [ "$status" -eq 0 ]
     [[ "$output" == *"L = [x, x, x]"* ]]
 }
 
 @test "findall: template is compound" {
-    run bash -c "echo -e 'edge(a,b).\nedge(b,c).\n?- findall(pair(X,Y), edge(X,Y), L)' | $PROLOG"
+    printf 'edge(a,b).\nedge(b,c).\n' > "$tmpfile"
+    run $PROLOG -f "$tmpfile" -e '?- findall(pair(X,Y), edge(X,Y), L)'
     [ "$status" -eq 0 ]
     [[ "$output" == *"pair(a, b)"* ]]
     [[ "$output" == *"pair(b, c)"* ]]
@@ -501,7 +521,8 @@ setup() {
 # --- findall with rules ---
 
 @test "findall: works with rules" {
-    run bash -c "echo -e 'parent(tom,bob).\nparent(tom,liz).\nparent(bob,jim).\nchild(C,P) :- parent(P,C).\n?- findall(C, child(C,tom), L)' | $PROLOG"
+    printf 'parent(tom,bob).\nparent(tom,liz).\nparent(bob,jim).\nchild(C,P) :- parent(P,C).\n' > "$tmpfile"
+    run $PROLOG -f "$tmpfile" -e '?- findall(C, child(C,tom), L)'
     [ "$status" -eq 0 ]
     [[ "$output" == *"bob"* ]]
     [[ "$output" == *"liz"* ]]
@@ -538,7 +559,8 @@ setup() {
 # --- findall nested ---
 
 @test "findall: used in rule body" {
-    run bash -c "echo -e 'item(a).\nitem(b).\nall_items(L) :- findall(X, item(X), L).\n?- all_items(L)' | $PROLOG"
+    printf 'item(a).\nitem(b).\nall_items(L) :- findall(X, item(X), L).\n' > "$tmpfile"
+    run $PROLOG -f "$tmpfile" -e '?- all_items(L)'
     [ "$status" -eq 0 ]
     [[ "$output" == *"L = [a, b]"* ]]
 }
@@ -546,25 +568,28 @@ setup() {
 # --- bagof basic ---
 
 @test "bagof: collect all facts" {
-    run bash -c "echo -e 'foo(a).\nfoo(b).\nfoo(c).\n?- bagof(X, foo(X), L)' | $PROLOG"
+    printf 'foo(a).\nfoo(b).\nfoo(c).\n' > "$tmpfile"
+    run $PROLOG -f "$tmpfile" -e '?- bagof(X, foo(X), L)'
     [ "$status" -eq 0 ]
     [[ "$output" == *"L = [a, b, c]"* ]]
 }
 
 @test "bagof: fails on no solutions" {
-    run bash -c "echo -e 'foo(a).\n?- bagof(X, bar(X), L)' | $PROLOG"
+    run bash -c "echo '?- bagof(X, bar(X), L)' | $PROLOG"
     [ "$status" -eq 0 ]
     [[ "$output" == *"false"* ]]
 }
 
 @test "bagof: single solution" {
-    run bash -c "echo -e 'foo(only).\n?- bagof(X, foo(X), L)' | $PROLOG"
+    printf 'foo(only).\n' > "$tmpfile"
+    run $PROLOG -f "$tmpfile" -e '?- bagof(X, foo(X), L)'
     [ "$status" -eq 0 ]
     [[ "$output" == *"L = [only]"* ]]
 }
 
 @test "bagof: with template" {
-    run bash -c "echo -e 'pair(1,x).\npair(2,y).\n?- bagof(B, pair(A,B), L)' | $PROLOG"
+    printf 'pair(1,x).\npair(2,y).\n' > "$tmpfile"
+    run $PROLOG -f "$tmpfile" -e '?- bagof(B, pair(A,B), L)'
     [ "$status" -eq 0 ]
     [[ "$output" == *"x"* ]]
     [[ "$output" == *"y"* ]]
@@ -609,11 +634,12 @@ setup() {
 }
 
 @test "include: works in rule body" {
-    local tmpfile
-    tmpfile=$(mktemp /tmp/prolog_test_XXXXXX.pl)
+    local tmpfile2
+    tmpfile2=$(mktemp /tmp/prolog_test_XXXXXX.pl)
     printf 'foo(a).\n' > "$tmpfile"
-    run bash -c "printf 'load(F) :- include(F).\n?- load(\"%s\"), foo(a)\n' \"$tmpfile\" | $PROLOG"
-    rm -f "$tmpfile"
+    printf 'load(F) :- include(F).\n' > "$tmpfile2"
+    run $PROLOG -f "$tmpfile2" -e "?- load(\"$tmpfile\"), foo(a)"
+    rm -f "$tmpfile2"
     [ "$status" -eq 0 ]
     [[ "$output" == *"true"* ]]
 }
@@ -668,7 +694,8 @@ setup() {
 }
 
 @test "write: works in rule body" {
-    run bash -c "echo -e 'greet :- write(hi).\n?- greet' | $PROLOG"
+    printf 'greet :- write(hi).\n' > "$tmpfile"
+    run $PROLOG -f "$tmpfile" -e '?- greet'
     [ "$status" -eq 0 ]
     [[ "$output" == *"hi"* ]]
 }
@@ -694,7 +721,8 @@ setup() {
 }
 
 @test "writeln: works in rule body" {
-    run bash -c "echo -e 'announce(X) :- writeln(X).\n?- announce(done)' | $PROLOG"
+    printf 'announce(X) :- writeln(X).\n' > "$tmpfile"
+    run $PROLOG -f "$tmpfile" -e '?- announce(done)'
     [ "$status" -eq 0 ]
     [[ "$output" == *"done"* ]]
 }
@@ -714,31 +742,36 @@ setup() {
 }
 
 @test "not: \\+ with unmatched fact succeeds" {
-    run bash -c "echo -e 'foo(a).\n?- \\+ foo(b)' | $PROLOG"
+    printf 'foo(a).\n' > "$tmpfile"
+    run $PROLOG -f "$tmpfile" -e '?- \+ foo(b)'
     [ "$status" -eq 0 ]
     [[ "$output" == *"true"* ]]
 }
 
 @test "not: \\+ with matched fact fails" {
-    run bash -c "echo -e 'foo(a).\n?- \\+ foo(a)' | $PROLOG"
+    printf 'foo(a).\n' > "$tmpfile"
+    run $PROLOG -f "$tmpfile" -e '?- \+ foo(a)'
     [ "$status" -eq 0 ]
     [[ "$output" == *"false"* ]]
 }
 
 @test "not: \\+ with bound variable" {
-    run bash -c "echo -e 'foo(a).\n?- X = b, \\+ foo(X)' | $PROLOG"
+    printf 'foo(a).\n' > "$tmpfile"
+    run $PROLOG -f "$tmpfile" -e '?- X = b, \+ foo(X)'
     [ "$status" -eq 0 ]
     [[ "$output" == *"X = b"* ]]
 }
 
 @test "not: fails when inner goal can succeed with unbound var" {
-    run bash -c "echo -e 'foo(a).\n?- \\+ foo(X)' | $PROLOG"
+    printf 'foo(a).\n' > "$tmpfile"
+    run $PROLOG -f "$tmpfile" -e '?- \+ foo(X)'
     [ "$status" -eq 0 ]
     [[ "$output" == *"false"* ]]
 }
 
 @test "not: works in rule body" {
-    run bash -c "echo -e 'foo(a).\nnot_foo(X) :- \\+ foo(X).\n?- not_foo(b)' | $PROLOG"
+    printf 'foo(a).\nnot_foo(X) :- \+ foo(X).\n' > "$tmpfile"
+    run $PROLOG -f "$tmpfile" -e '?- not_foo(b)'
     [ "$status" -eq 0 ]
     [[ "$output" == *"true"* ]]
 }
@@ -764,19 +797,22 @@ setup() {
 }
 
 @test "call: call with a fact" {
-    run bash -c "echo -e 'foo(a).\n?- call(foo(a))' | $PROLOG"
+    printf 'foo(a).\n' > "$tmpfile"
+    run $PROLOG -f "$tmpfile" -e '?- call(foo(a))'
     [ "$status" -eq 0 ]
     [[ "$output" == *"true"* ]]
 }
 
 @test "call: call with a goal variable" {
-    run bash -c "echo -e 'foo(a).\n?- G = foo(a), call(G)' | $PROLOG"
+    printf 'foo(a).\n' > "$tmpfile"
+    run $PROLOG -f "$tmpfile" -e '?- G = foo(a), call(G)'
     [ "$status" -eq 0 ]
     [[ "$output" == *"foo(a)"* ]]
 }
 
 @test "call: call binds variables" {
-    run bash -c "echo -e 'foo(a).\n?- call(foo(X))' | $PROLOG"
+    printf 'foo(a).\n' > "$tmpfile"
+    run $PROLOG -f "$tmpfile" -e '?- call(foo(X))'
     [ "$status" -eq 0 ]
     [[ "$output" == *"X = a"* ]]
 }
@@ -788,13 +824,15 @@ setup() {
 }
 
 @test "call: call in rule body" {
-    run bash -c "echo -e 'apply(G) :- call(G).\nfoo(a).\n?- apply(foo(X))' | $PROLOG"
+    printf 'apply(G) :- call(G).\nfoo(a).\n' > "$tmpfile"
+    run $PROLOG -f "$tmpfile" -e '?- apply(foo(X))'
     [ "$status" -eq 0 ]
     [[ "$output" == *"X = a"* ]]
 }
 
 @test "call: \\+ call(G) negates the called goal" {
-    run bash -c "echo -e 'foo(a).\n?- \\+ call(foo(b))' | $PROLOG"
+    printf 'foo(a).\n' > "$tmpfile"
+    run $PROLOG -f "$tmpfile" -e '?- \+ call(foo(b))'
     [ "$status" -eq 0 ]
     [[ "$output" == *"true"* ]]
 }

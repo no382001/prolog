@@ -2,6 +2,11 @@
 
 setup() {
     PROLOG="./prolog"
+    tmpfile=$(mktemp /tmp/prolog_test_XXXXXX.pl)
+}
+
+teardown() {
+    rm -f "$tmpfile"
 }
 
 
@@ -14,49 +19,57 @@ setup() {
 }
 
 @test "parse: number" {
-    run bash -c "echo -e 'num(42).\n?- num(42)' | $PROLOG"
+    printf 'num(42).\n' > "$tmpfile"
+    run $PROLOG -f "$tmpfile" -e '?- num(42)'
     [ "$status" -eq 0 ]
     [[ "$output" == *"true"* ]]
 }
 
 @test "parse: negative number" {
-    run bash -c "echo -e 'num(-5).\n?- num(-5)' | $PROLOG"
+    printf 'num(-5).\n' > "$tmpfile"
+    run $PROLOG -f "$tmpfile" -e '?- num(-5)'
     [ "$status" -eq 0 ]
     [[ "$output" == *"true"* ]]
 }
 
 @test "parse: variable" {
-    run bash -c "echo -e 'foo(a).\n?- foo(X)' | $PROLOG"
+    printf 'foo(a).\n' > "$tmpfile"
+    run $PROLOG -f "$tmpfile" -e '?- foo(X)'
     [ "$status" -eq 0 ]
     [[ "$output" == *"X = a"* ]]
 }
 
 @test "parse: underscore variable" {
-    run bash -c "echo -e 'foo(a, b).\n?- foo(_, X)' | $PROLOG"
+    printf 'foo(a, b).\n' > "$tmpfile"
+    run $PROLOG -f "$tmpfile" -e '?- foo(_, X)'
     [ "$status" -eq 0 ]
     [[ "$output" == *"X = b"* ]]
 }
 
 @test "parse: functor no args" {
-    run bash -c "echo -e 'foo.\n?- foo' | $PROLOG"
+    printf 'foo.\n' > "$tmpfile"
+    run $PROLOG -f "$tmpfile" -e '?- foo'
     [ "$status" -eq 0 ]
     [[ "$output" == *"true"* ]]
 }
 
 @test "parse: functor one arg" {
-    run bash -c "echo -e 'foo(a).\n?- foo(a)' | $PROLOG"
+    printf 'foo(a).\n' > "$tmpfile"
+    run $PROLOG -f "$tmpfile" -e '?- foo(a)'
     [ "$status" -eq 0 ]
     [[ "$output" == *"true"* ]]
 }
 
 @test "parse: functor multiple args" {
-    run bash -c "echo -e 'foo(a, b, c).\n?- foo(a, b, c)' | $PROLOG"
+    printf 'foo(a, b, c).\n' > "$tmpfile"
+    run $PROLOG -f "$tmpfile" -e '?- foo(a, b, c)'
     [ "$status" -eq 0 ]
     [[ "$output" == *"true"* ]]
 }
 
 @test "parse: nested functors" {
-    run bash -c "echo -e 'foo(bar(baz(x))).\n?- foo(bar(baz(X)))' | $PROLOG"
+    printf 'foo(bar(baz(x))).\n' > "$tmpfile"
+    run $PROLOG -f "$tmpfile" -e '?- foo(bar(baz(X)))'
     [ "$status" -eq 0 ]
     [[ "$output" == *"X = x"* ]]
 }
@@ -64,39 +77,45 @@ setup() {
 # --- lists ---
 
 @test "parse: empty list" {
-    run bash -c "echo -e 'foo([]).\n?- foo([])' | $PROLOG"
+    printf 'foo([]).\n' > "$tmpfile"
+    run $PROLOG -f "$tmpfile" -e '?- foo([])'
     [ "$status" -eq 0 ]
     [[ "$output" == *"true"* ]]
 }
 
 @test "parse: singleton list" {
-    run bash -c "echo -e 'foo([a]).\n?- foo([X])' | $PROLOG"
+    printf 'foo([a]).\n' > "$tmpfile"
+    run $PROLOG -f "$tmpfile" -e '?- foo([X])'
     [ "$status" -eq 0 ]
     [[ "$output" == *"X = a"* ]]
 }
 
 @test "parse: multi-element list" {
-    run bash -c "echo -e 'foo([a,b,c]).\n?- foo([a,b,c])' | $PROLOG"
+    printf 'foo([a,b,c]).\n' > "$tmpfile"
+    run $PROLOG -f "$tmpfile" -e '?- foo([a,b,c])'
     [ "$status" -eq 0 ]
     [[ "$output" == *"true"* ]]
 }
 
 @test "parse: head|tail pattern" {
-    run bash -c "echo -e 'foo([1,2,3]).\n?- foo([H|T])' | $PROLOG"
+    printf 'foo([1,2,3]).\n' > "$tmpfile"
+    run $PROLOG -f "$tmpfile" -e '?- foo([H|T])'
     [ "$status" -eq 0 ]
     [[ "$output" == *"H = 1"* ]]
     [[ "$output" == *"T = [2, 3]"* ]]
 }
 
 @test "parse: head|tail empty tail" {
-    run bash -c "echo -e 'foo([1]).\n?- foo([H|T])' | $PROLOG"
+    printf 'foo([1]).\n' > "$tmpfile"
+    run $PROLOG -f "$tmpfile" -e '?- foo([H|T])'
     [ "$status" -eq 0 ]
     [[ "$output" == *"H = 1"* ]]
     [[ "$output" == *"T = []"* ]]
 }
 
 @test "parse: multiple heads" {
-    run bash -c "echo -e 'foo([1,2,3]).\n?- foo([A,B|T])' | $PROLOG"
+    printf 'foo([1,2,3]).\n' > "$tmpfile"
+    run $PROLOG -f "$tmpfile" -e '?- foo([A,B|T])'
     [ "$status" -eq 0 ]
     [[ "$output" == *"A = 1"* ]]
     [[ "$output" == *"B = 2"* ]]
@@ -104,7 +123,8 @@ setup() {
 }
 
 @test "parse: nested lists" {
-    run bash -c "echo -e 'foo([[a,b],[c]]).\n?- foo([[a,X],Y])' | $PROLOG"
+    printf 'foo([[a,b],[c]]).\n' > "$tmpfile"
+    run $PROLOG -f "$tmpfile" -e '?- foo([[a,X],Y])'
     [ "$status" -eq 0 ]
     [[ "$output" == *"X = b"* ]]
     [[ "$output" == *"Y = [c]"* ]]
@@ -113,19 +133,22 @@ setup() {
 # --- clauses ---
 
 @test "parse: fact" {
-    run bash -c "echo -e 'likes(mary, food).\n?- likes(mary, food)' | $PROLOG"
+    printf 'likes(mary, food).\n' > "$tmpfile"
+    run $PROLOG -f "$tmpfile" -e '?- likes(mary, food)'
     [ "$status" -eq 0 ]
     [[ "$output" == *"true"* ]]
 }
 
 @test "parse: rule single body" {
-    run bash -c "echo -e 'a(x).\nb(X) :- a(X).\n?- b(X)' | $PROLOG"
+    printf 'a(x).\nb(X) :- a(X).\n' > "$tmpfile"
+    run $PROLOG -f "$tmpfile" -e '?- b(X)'
     [ "$status" -eq 0 ]
     [[ "$output" == *"X = x"* ]]
 }
 
 @test "parse: rule multiple body goals" {
-    run bash -c "echo -e 'a(x).\nb(x).\nc(X) :- a(X), b(X).\n?- c(X)' | $PROLOG"
+    printf 'a(x).\nb(x).\nc(X) :- a(X), b(X).\n' > "$tmpfile"
+    run $PROLOG -f "$tmpfile" -e '?- c(X)'
     [ "$status" -eq 0 ]
     [[ "$output" == *"X = x"* ]]
 }
@@ -133,19 +156,22 @@ setup() {
 # --- whitespace handling ---
 
 @test "parse: extra spaces" {
-    run bash -c "echo -e 'foo(  a  ,  b  ).\n?- foo( a , b )' | $PROLOG"
+    printf 'foo(  a  ,  b  ).\n' > "$tmpfile"
+    run $PROLOG -f "$tmpfile" -e '?- foo( a , b )'
     [ "$status" -eq 0 ]
     [[ "$output" == *"true"* ]]
 }
 
 @test "parse: tabs" {
-    run bash -c "printf 'foo(\ta\t).\n?- foo(X)' | $PROLOG"
+    printf 'foo(\ta\t).\n' > "$tmpfile"
+    run $PROLOG -f "$tmpfile" -e '?- foo(X)'
     [ "$status" -eq 0 ]
     [[ "$output" == *"X = a"* ]]
 }
 
 @test "parse: no spaces around :-" {
-    run bash -c "echo -e 'a(x).\nb(X):-a(X).\n?- b(X)' | $PROLOG"
+    printf 'a(x).\nb(X):-a(X).\n' > "$tmpfile"
+    run $PROLOG -f "$tmpfile" -e '?- b(X)'
     [ "$status" -eq 0 ]
     [[ "$output" == *"X = x"* ]]
 }
@@ -153,13 +179,15 @@ setup() {
 # --- query syntax ---
 
 @test "parse: query single goal" {
-    run bash -c "echo -e 'foo(a).\n?- foo(X)' | $PROLOG"
+    printf 'foo(a).\n' > "$tmpfile"
+    run $PROLOG -f "$tmpfile" -e '?- foo(X)'
     [ "$status" -eq 0 ]
     [[ "$output" == *"X = a"* ]]
 }
 
 @test "parse: query multiple goals" {
-    run bash -c "echo -e 'foo(a).\nbar(a).\n?- foo(X), bar(X)' | $PROLOG"
+    printf 'foo(a).\nbar(a).\n' > "$tmpfile"
+    run $PROLOG -f "$tmpfile" -e '?- foo(X), bar(X)'
     [ "$status" -eq 0 ]
     [[ "$output" == *"X = a"* ]]
 }
@@ -167,19 +195,22 @@ setup() {
 # --- edge cases ---
 
 @test "parse: atom with underscore" {
-    run bash -c "echo -e 'foo_bar(x).\n?- foo_bar(X)' | $PROLOG"
+    printf 'foo_bar(x).\n' > "$tmpfile"
+    run $PROLOG -f "$tmpfile" -e '?- foo_bar(X)'
     [ "$status" -eq 0 ]
     [[ "$output" == *"X = x"* ]]
 }
 
 @test "parse: atom with numbers" {
-    run bash -c "echo -e 'foo123(x).\n?- foo123(X)' | $PROLOG"
+    printf 'foo123(x).\n' > "$tmpfile"
+    run $PROLOG -f "$tmpfile" -e '?- foo123(X)'
     [ "$status" -eq 0 ]
     [[ "$output" == *"X = x"* ]]
 }
 
 @test "parse: variable with underscore" {
-    run bash -c "echo -e 'foo(a).\n?- foo(X_1)' | $PROLOG"
+    printf 'foo(a).\n' > "$tmpfile"
+    run $PROLOG -f "$tmpfile" -e '?- foo(X_1)'
     [ "$status" -eq 0 ]
     [[ "$output" == *"X_1 = a"* ]]
 }
@@ -246,7 +277,8 @@ setup() {
 # --- recovery ---
 
 @test "error recovery: continue after error in interactive" {
-    run bash -c "printf '?- @bad\nfoo(a).\n?- foo(X).\n' | $PROLOG 2>&1"
+    printf 'foo(a).\n' > "$tmpfile"
+    run bash -c "printf '?- @bad\n?- foo(X).\n' | $PROLOG -f \"$tmpfile\" 2>&1"
     [ "$status" -eq 0 ]
     [[ "$output" == *"X = a"* ]]
 }
@@ -254,81 +286,57 @@ setup() {
 # --- multiline file loading ---
 
 @test "parse file: rule body split across lines" {
-    local tmpfile
-    tmpfile=$(mktemp /tmp/prolog_test_XXXXXX.pl)
     printf 'parent(tom, bob).\nancestor(X, Y) :-\n  parent(X, Y).\n' > "$tmpfile"
     run $PROLOG -f "$tmpfile" -e '?- ancestor(tom, bob)'
-    rm -f "$tmpfile"
     [ "$status" -eq 0 ]
     [[ "$output" == *"true"* ]]
 }
 
 @test "parse file: fact args split across lines" {
-    local tmpfile
-    tmpfile=$(mktemp /tmp/prolog_test_XXXXXX.pl)
     printf 'foo(\n  a,\n  b,\n  c\n).\n' > "$tmpfile"
     run $PROLOG -f "$tmpfile" -e '?- foo(a, b, c)'
-    rm -f "$tmpfile"
     [ "$status" -eq 0 ]
     [[ "$output" == *"true"* ]]
 }
 
 @test "parse file: body goals each on own line" {
-    local tmpfile
-    tmpfile=$(mktemp /tmp/prolog_test_XXXXXX.pl)
     printf 'a(x).\nb(x).\nc(X) :-\n  a(X),\n  b(X).\n' > "$tmpfile"
     run $PROLOG -f "$tmpfile" -e '?- c(X)'
-    rm -f "$tmpfile"
     [ "$status" -eq 0 ]
     [[ "$output" == *"X = x"* ]]
 }
 
 @test "parse file: percent comment on its own line" {
-    local tmpfile
-    tmpfile=$(mktemp /tmp/prolog_test_XXXXXX.pl)
     printf '%% full-line comment\nfoo(a).\n' > "$tmpfile"
     run $PROLOG -f "$tmpfile" -e '?- foo(a)'
-    rm -f "$tmpfile"
     [ "$status" -eq 0 ]
     [[ "$output" == *"true"* ]]
 }
 
 @test "parse file: inline percent comment" {
-    local tmpfile
-    tmpfile=$(mktemp /tmp/prolog_test_XXXXXX.pl)
     printf 'foo(a). %% this is ignored\n' > "$tmpfile"
     run $PROLOG -f "$tmpfile" -e '?- foo(a)'
-    rm -f "$tmpfile"
     [ "$status" -eq 0 ]
     [[ "$output" == *"true"* ]]
 }
 
 @test "parse file: blank lines between clauses" {
-    local tmpfile
-    tmpfile=$(mktemp /tmp/prolog_test_XXXXXX.pl)
     printf 'foo(a).\n\n\nbar(b).\n' > "$tmpfile"
     run $PROLOG -f "$tmpfile" -e '?- foo(a), bar(b)'
-    rm -f "$tmpfile"
     [ "$status" -eq 0 ]
     [[ "$output" == *"true"* ]]
 }
 
 @test "parse file: dot inside string does not end clause" {
-    local tmpfile
-    tmpfile=$(mktemp /tmp/prolog_test_XXXXXX.pl)
     printf 'greeting("hello.world").\n' > "$tmpfile"
     run $PROLOG -f "$tmpfile" -e '?- greeting(X)'
-    rm -f "$tmpfile"
     [ "$status" -eq 0 ]
     [[ "$output" == *"hello.world"* ]]
 }
 
 @test "parse file: multiple clauses loaded" {
-    local tmpfile
-    tmpfile=$(mktemp /tmp/prolog_test_XXXXXX.pl)
     printf 'color(red).\ncolor(green).\ncolor(blue).\n' > "$tmpfile"
     run $PROLOG -f "$tmpfile" -e '?- color(green)'
-    rm -f "$tmpfile"
     [ "$status" -eq 0 ]
     [[ "$output" == *"true"* ]]
 }

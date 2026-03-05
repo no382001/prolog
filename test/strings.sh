@@ -3,35 +3,45 @@
 setup() {
     PROLOG="./prolog"
     CORE="test/core.pl"
+    tmpfile=$(mktemp /tmp/prolog_test_XXXXXX.pl)
+}
+
+teardown() {
+    rm -f "$tmpfile"
 }
 
 
 @test "strings: simple string" {
-    run bash -c "printf 'str(\"hello\").\n?- str(\"hello\")' | $PROLOG"
+    printf 'str("hello").\n' > "$tmpfile"
+    run $PROLOG -f "$tmpfile" -e '?- str("hello")'
     [ "$status" -eq 0 ]
     [[ "$output" == *"true"* ]]
 }
 
 @test "strings: empty string" {
-    run bash -c "printf 'str(\"\").\n?- str(\"\")' | $PROLOG"
+    printf 'str("").\n' > "$tmpfile"
+    run $PROLOG -f "$tmpfile" -e '?- str("")'
     [ "$status" -eq 0 ]
     [[ "$output" == *"true"* ]]
 }
 
 @test "strings: string with spaces" {
-    run bash -c "printf 'str(\"hello world\").\n?- str(\"hello world\")' | $PROLOG"
+    printf 'str("hello world").\n' > "$tmpfile"
+    run $PROLOG -f "$tmpfile" -e '?- str("hello world")'
     [ "$status" -eq 0 ]
     [[ "$output" == *"true"* ]]
 }
 
 @test "strings: string with numbers" {
-    run bash -c "printf 'str(\"test123\").\n?- str(\"test123\")' | $PROLOG"
+    printf 'str("test123").\n' > "$tmpfile"
+    run $PROLOG -f "$tmpfile" -e '?- str("test123")'
     [ "$status" -eq 0 ]
     [[ "$output" == *"true"* ]]
 }
 
 @test "strings: string with special chars" {
-    run bash -c "printf 'str(\"hello!@#\").\n?- str(\"hello!@#\")' | $PROLOG"
+    printf 'str("hello!@#").\n' > "$tmpfile"
+    run $PROLOG -f "$tmpfile" -e '?- str("hello!@#")'
     [ "$status" -eq 0 ]
     [[ "$output" == *"true"* ]]
 }
@@ -40,19 +50,22 @@ setup() {
 # --- String escape sequences ---
 
 @test "strings: escaped newline" {
-    run bash -c "printf 'str(\"hello\\\\nworld\").\n?- str(\"hello\\\\nworld\")' | $PROLOG"
+    printf 'str("hello\\nworld").\n' > "$tmpfile"
+    run $PROLOG -f "$tmpfile" -e '?- str("hello\nworld")'
     [ "$status" -eq 0 ]
     [[ "$output" == *"true"* ]]
 }
 
 @test "strings: escaped tab" {
-    run bash -c "printf 'str(\"hello\\\\tworld\").\n?- str(\"hello\\\\tworld\")' | $PROLOG"
+    printf 'str("hello\\tworld").\n' > "$tmpfile"
+    run $PROLOG -f "$tmpfile" -e '?- str("hello\tworld")'
     [ "$status" -eq 0 ]
     [[ "$output" == *"true"* ]]
 }
 
 @test "strings: escaped backslash" {
-    run bash -c "printf 'str(\"hello\\\\\\\\world\").\n?- str(\"hello\\\\\\\\world\")' | $PROLOG"
+    printf 'str("hello\\\\world").\n' > "$tmpfile"
+    run $PROLOG -f "$tmpfile" -e '?- str("hello\\world")'
     [ "$status" -eq 0 ]
     [[ "$output" == *"true"* ]]
 }
@@ -130,19 +143,22 @@ setup() {
 # --- String unification with variables ---
 
 @test "strings: unify string with variable" {
-    run bash -c "printf 'str(\"hello\").\n?- str(X)' | $PROLOG"
+    printf 'str("hello").\n' > "$tmpfile"
+    run $PROLOG -f "$tmpfile" -e '?- str(X)'
     [ "$status" -eq 0 ]
     [[ "$output" == *'X = "hello"'* ]]
 }
 
 @test "strings: unify variable with string query" {
-    run bash -c "printf 'str(X) :- X = \"test\".\n?- str(Y)' | $PROLOG"
+    printf 'str(X) :- X = "test".\n' > "$tmpfile"
+    run $PROLOG -f "$tmpfile" -e '?- str(Y)'
     [ "$status" -eq 0 ]
     [[ "$output" == *'Y = "test"'* ]]
 }
 
 @test "strings: multiple string variables" {
-    run bash -c "printf 'pair(\"foo\", \"bar\").\n?- pair(X, Y)' | $PROLOG"
+    printf 'pair("foo", "bar").\n' > "$tmpfile"
+    run $PROLOG -f "$tmpfile" -e '?- pair(X, Y)'
     [ "$status" -eq 0 ]
     [[ "$output" == *'X = "foo"'* ]]
     [[ "$output" == *'Y = "bar"'* ]]
@@ -152,7 +168,8 @@ setup() {
 # --- String comparison ---
 
 @test "strings: identical strings unify" {
-    run bash -c "printf 'test :- \"hello\" = \"hello\".\n?- test' | $PROLOG"
+    printf 'test :- "hello" = "hello".\n' > "$tmpfile"
+    run $PROLOG -f "$tmpfile" -e '?- test'
     [ "$status" -eq 0 ]
     [[ "$output" == *"true"* ]]
 }
@@ -173,26 +190,30 @@ setup() {
 # --- Strings in complex terms ---
 
 @test "strings: string as functor argument" {
-    run bash -c "printf 'person(\"Alice\", 30).\n?- person(\"Alice\", 30)' | $PROLOG"
+    printf 'person("Alice", 30).\n' > "$tmpfile"
+    run $PROLOG -f "$tmpfile" -e '?- person("Alice", 30)'
     [ "$status" -eq 0 ]
     [[ "$output" == *"true"* ]]
 }
 
 @test "strings: query string in functor" {
-    run bash -c "printf 'person(\"Alice\", 30).\n?- person(X, 30)' | $PROLOG"
+    printf 'person("Alice", 30).\n' > "$tmpfile"
+    run $PROLOG -f "$tmpfile" -e '?- person(X, 30)'
     [ "$status" -eq 0 ]
     [[ "$output" == *'X = "Alice"'* ]]
 }
 
 @test "strings: multiple strings in functor" {
-    run bash -c "printf 'greeting(\"hello\", \"world\").\n?- greeting(X, Y)' | $PROLOG"
+    printf 'greeting("hello", "world").\n' > "$tmpfile"
+    run $PROLOG -f "$tmpfile" -e '?- greeting(X, Y)'
     [ "$status" -eq 0 ]
     [[ "$output" == *'X = "hello"'* ]]
     [[ "$output" == *'Y = "world"'* ]]
 }
 
 @test "strings: nested functors with strings" {
-    run bash -c "printf 'data(user(\"Bob\")).\n?- data(user(X))' | $PROLOG"
+    printf 'data(user("Bob")).\n' > "$tmpfile"
+    run $PROLOG -f "$tmpfile" -e '?- data(user(X))'
     [ "$status" -eq 0 ]
     [[ "$output" == *'X = "Bob"'* ]]
 }
@@ -201,19 +222,22 @@ setup() {
 # --- Strings in lists ---
 
 @test "strings: list of strings" {
-    run bash -c "printf 'list([\"a\", \"b\", \"c\"]).\n?- list([\"a\", \"b\", \"c\"])' | $PROLOG"
+    printf 'list(["a", "b", "c"]).\n' > "$tmpfile"
+    run $PROLOG -f "$tmpfile" -e '?- list(["a", "b", "c"])'
     [ "$status" -eq 0 ]
     [[ "$output" == *"true"* ]]
 }
 
 @test "strings: query list with strings" {
-    run bash -c "printf 'list([\"foo\", \"bar\"]).\n?- list(X)' | $PROLOG"
+    printf 'list(["foo", "bar"]).\n' > "$tmpfile"
+    run $PROLOG -f "$tmpfile" -e '?- list(X)'
     [ "$status" -eq 0 ]
     [[ "$output" == *'X = ["foo", "bar"]'* ]]
 }
 
 @test "strings: unify list element" {
-    run bash -c "printf 'list([\"first\", \"second\"]).\n?- list([X, Y])' | $PROLOG"
+    printf 'list(["first", "second"]).\n' > "$tmpfile"
+    run $PROLOG -f "$tmpfile" -e '?- list([X, Y])'
     [ "$status" -eq 0 ]
     [[ "$output" == *'X = "first"'* ]]
     [[ "$output" == *'Y = "second"'* ]]
@@ -235,7 +259,8 @@ setup() {
 }
 
 @test "strings: mixed types in functor" {
-    run bash -c "printf 'data(\"text\", 42, atom).\n?- data(X, Y, Z)' | $PROLOG"
+    printf 'data("text", 42, atom).\n' > "$tmpfile"
+    run $PROLOG -f "$tmpfile" -e '?- data(X, Y, Z)'
     [ "$status" -eq 0 ]
     [[ "$output" == *'X = "text"'* ]]
     [[ "$output" == *"Y = 42"* ]]
@@ -246,25 +271,29 @@ setup() {
 # --- Edge cases ---
 
 @test "strings: string with single character" {
-    run bash -c "printf 'str(\"x\").\n?- str(\"x\")' | $PROLOG"
+    printf 'str("x").\n' > "$tmpfile"
+    run $PROLOG -f "$tmpfile" -e '?- str("x")'
     [ "$status" -eq 0 ]
     [[ "$output" == *"true"* ]]
 }
 
 @test "strings: string with parentheses" {
-    run bash -c "printf 'str(\"(test)\").\n?- str(\"(test)\")' | $PROLOG"
+    printf 'str("(test)").\n' > "$tmpfile"
+    run $PROLOG -f "$tmpfile" -e '?- str("(test)")'
     [ "$status" -eq 0 ]
     [[ "$output" == *"true"* ]]
 }
 
 @test "strings: string with brackets" {
-    run bash -c "printf 'str(\"[test]\").\n?- str(\"[test]\")' | $PROLOG"
+    printf 'str("[test]").\n' > "$tmpfile"
+    run $PROLOG -f "$tmpfile" -e '?- str("[test]")'
     [ "$status" -eq 0 ]
     [[ "$output" == *"true"* ]]
 }
 
 @test "strings: string with comma" {
-    run bash -c "printf 'str(\"a,b,c\").\n?- str(\"a,b,c\")' | $PROLOG"
+    printf 'str("a,b,c").\n' > "$tmpfile"
+    run $PROLOG -f "$tmpfile" -e '?- str("a,b,c")'
     [ "$status" -eq 0 ]
     [[ "$output" == *"true"* ]]
 }
@@ -273,13 +302,15 @@ setup() {
 # --- Multiple solutions with strings ---
 
 @test "strings: multiple clauses with strings" {
-    run bash -c "printf 'color(\"red\").\ncolor(\"green\").\ncolor(\"blue\").\n?- color(X)' | $PROLOG"
+    printf 'color("red").\ncolor("green").\ncolor("blue").\n' > "$tmpfile"
+    run $PROLOG -f "$tmpfile" -e '?- color(X)'
     [ "$status" -eq 0 ]
     [[ "$output" == *'X = "red"'* ]]
 }
 
 @test "strings: backtracking with strings" {
-    run bash -c "printf 'msg(\"hello\").\nmsg(\"goodbye\").\n?- msg(X)' | $PROLOG"
+    printf 'msg("hello").\nmsg("goodbye").\n' > "$tmpfile"
+    run $PROLOG -f "$tmpfile" -e '?- msg(X)'
     [ "$status" -eq 0 ]
     [[ "$output" == *'X = "hello"'* ]]
 }

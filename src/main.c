@@ -34,7 +34,7 @@ static void process_line(prolog_ctx_t *ctx, char *line, bool *should_exit) {
   if (strncmp(line, "?-", 2) == 0) {
     prolog_exec_query(ctx, line + 2);
   } else {
-    parse_clause(ctx, line);
+    prolog_exec_query(ctx, line);
   }
 }
 
@@ -93,7 +93,7 @@ int main(int argc, char *argv[]) {
 
   while (!should_exit) {
     if (interactive) {
-      printf("> ");
+      printf("?- ");
       fflush(stdout);
     }
 

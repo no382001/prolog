@@ -3,6 +3,11 @@
 setup() {
     PROLOG="./prolog"
     CORE="test/core.pl"
+    tmpfile=$(mktemp /tmp/prolog_test_XXXXXX.pl)
+}
+
+teardown() {
+    rm -f "$tmpfile"
 }
 
 # --- append tests ---
@@ -110,19 +115,22 @@ setup() {
 # --- facts only tests ---
 
 @test "simple fact" {
-    run bash -c "echo -e 'foo(a).\nfoo(b).\n?- foo(a)' | $PROLOG"
+    printf 'foo(a).\nfoo(b).\n' > "$tmpfile"
+    run $PROLOG -f "$tmpfile" -e '?- foo(a)'
     [ "$status" -eq 0 ]
     [[ "$output" == *"true"* ]]
 }
 
 @test "simple fact: query variable" {
-    run bash -c "echo -e 'foo(a).\nfoo(b).\n?- foo(X)' | $PROLOG"
+    printf 'foo(a).\nfoo(b).\n' > "$tmpfile"
+    run $PROLOG -f "$tmpfile" -e '?- foo(X)'
     [ "$status" -eq 0 ]
     [[ "$output" == *"X = a"* ]]
 }
 
 @test "fact not found" {
-    run bash -c "echo -e 'foo(a).\n?- foo(b)' | $PROLOG"
+    printf 'foo(a).\n' > "$tmpfile"
+    run $PROLOG -f "$tmpfile" -e '?- foo(b)'
     [ "$status" -eq 0 ]
     [[ "$output" == *"false"* ]]
 }
@@ -130,13 +138,15 @@ setup() {
 # --- nested structures ---
 
 @test "nested functor" {
-    run bash -c "echo -e 'f(g(a)).\n?- f(g(X))' | $PROLOG"
+    printf 'f(g(a)).\n' > "$tmpfile"
+    run $PROLOG -f "$tmpfile" -e '?- f(g(X))'
     [ "$status" -eq 0 ]
     [[ "$output" == *"X = a"* ]]
 }
 
 @test "nested functor: no match" {
-    run bash -c "echo -e 'f(g(a)).\n?- f(h(X))' | $PROLOG"
+    printf 'f(g(a)).\n' > "$tmpfile"
+    run $PROLOG -f "$tmpfile" -e '?- f(h(X))'
     [ "$status" -eq 0 ]
     [[ "$output" == *"false"* ]]
 }
@@ -144,13 +154,15 @@ setup() {
 # --- piped input ---
 
 @test "pipe: multiple lines" {
-    run bash -c "printf 'parent(tom, bob).\nparent(bob, jim).\n?- parent(tom, X)' | $PROLOG"
+    printf 'parent(tom, bob).\nparent(bob, jim).\n' > "$tmpfile"
+    run $PROLOG -f "$tmpfile" -e '?- parent(tom, X)'
     [ "$status" -eq 0 ]
     [[ "$output" == *"X = bob"* ]]
 }
 
 @test "pipe: rule with body" {
-    run bash -c "printf 'parent(tom, bob).\nparent(bob, jim).\ngrandparent(X,Z) :- parent(X,Y), parent(Y,Z).\n?- grandparent(tom, X)' | $PROLOG"
+    printf 'parent(tom, bob).\nparent(bob, jim).\ngrandparent(X,Z) :- parent(X,Y), parent(Y,Z).\n' > "$tmpfile"
+    run $PROLOG -f "$tmpfile" -e '?- grandparent(tom, X)'
     [ "$status" -eq 0 ]
     [[ "$output" == *"X = jim"* ]]
 }
