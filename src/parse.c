@@ -579,6 +579,47 @@ static void exec_directive(prolog_ctx_t *ctx, char *buf) {
   prolog_exec_query(ctx, buf + 2); // skip "?-" or ":-"
 }
 
+static bool load_clauses_from_fp(prolog_ctx_t *ctx, FILE *f,
+                                 const char *label) {
+  char line[1024];
+  char clause[16384] = {0};
+
+  while (fgets(line, sizeof(line), f)) {
+    line[strcspn(line, "\n")] = 0;
+    strip_line_comment(line);
+
+    char *trimmed = line;
+    while (isspace((unsigned char)*trimmed))
+      trimmed++;
+
+    if (*trimmed == '\0' && clause[0] == '\0')
+      continue;
+
+    if (clause[0] != '\0' && *trimmed != '\0')
+      strncat(clause, " ", sizeof(clause) - strlen(clause) - 1);
+    strncat(clause, trimmed, sizeof(clause) - strlen(clause) - 1);
+
+    if (has_complete_clause(clause)) {
+      ctx->input_line++;
+      if (strncmp(clause, "?-", 2) == 0 || strncmp(clause, ":-", 2) == 0)
+        exec_directive(ctx, clause);
+      else
+        parse_clause(ctx, clause);
+      clause[0] = '\0';
+      if (parse_has_error(ctx))
+        return false;
+    }
+  }
+
+  char *p = clause;
+  while (isspace((unsigned char)*p))
+    p++;
+  if (*p != '\0')
+    fprintf(stderr, "Warning: unterminated clause at end of '%s'\n", label);
+
+  return true;
+}
+
 bool prolog_load_file(prolog_ctx_t *ctx, const char *filename) {
   FILE *f = fopen(filename, "r");
   if (!f) {
@@ -628,20 +669,35 @@ bool prolog_load_file(prolog_ctx_t *ctx, const char *filename) {
     ctx->load_dir[len] = '\0';
   }
 
+  bool ok = load_clauses_from_fp(ctx, f, filename);
+
+  strncpy(ctx->load_dir, old_load_dir, sizeof(ctx->load_dir) - 1);
+  fclose(f);
+  ctx->include_depth--;
+  return ok;
+}
+
+bool prolog_load_string(prolog_ctx_t *ctx, const char *src) {
   char line[1024];
   char clause[16384] = {0};
+  ctx->include_depth++; // not tracked for make/0
 
-  while (fgets(line, sizeof(line), f)) {
-    line[strcspn(line, "\n")] = 0;
+  while (*src) {
+    // read one line into `line`
+    int i = 0;
+    while (*src && *src != '\n' && i < (int)sizeof(line) - 1)
+      line[i++] = *src++;
+    if (*src == '\n')
+      src++;
+    line[i] = '\0';
+
     strip_line_comment(line);
-
     char *trimmed = line;
     while (isspace((unsigned char)*trimmed))
       trimmed++;
 
     if (*trimmed == '\0' && clause[0] == '\0')
       continue;
-
     if (clause[0] != '\0' && *trimmed != '\0')
       strncat(clause, " ", sizeof(clause) - strlen(clause) - 1);
     strncat(clause, trimmed, sizeof(clause) - strlen(clause) - 1);
@@ -654,20 +710,12 @@ bool prolog_load_file(prolog_ctx_t *ctx, const char *filename) {
         parse_clause(ctx, clause);
       clause[0] = '\0';
       if (parse_has_error(ctx)) {
-        fclose(f);
+        ctx->include_depth--;
         return false;
       }
     }
   }
 
-  char *p = clause;
-  while (isspace((unsigned char)*p))
-    p++;
-  if (*p != '\0')
-    fprintf(stderr, "Warning: unterminated clause at end of '%s'\n", filename);
-
-  strncpy(ctx->load_dir, old_load_dir, sizeof(ctx->load_dir) - 1);
-  fclose(f);
   ctx->include_depth--;
   return true;
 }

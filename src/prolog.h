@@ -197,6 +197,7 @@ term_t *parse_term(prolog_ctx_t *ctx);
 term_t *parse_list(prolog_ctx_t *ctx);
 void parse_clause(prolog_ctx_t *ctx, char *line);
 bool prolog_load_file(prolog_ctx_t *ctx, const char *filename);
+bool prolog_load_string(prolog_ctx_t *ctx, const char *src);
 
 term_t *lookup(env_t *env, const char *name);
 void bind(prolog_ctx_t *ctx, env_t *env, const char *name, term_t *value);

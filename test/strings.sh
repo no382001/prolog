@@ -2,7 +2,6 @@
 
 setup() {
     PROLOG="./prolog"
-    CORE="test/core.pl"
     tmpfile=$(mktemp /tmp/prolog_test_XXXXXX.pl)
 }
 
@@ -116,13 +115,13 @@ teardown() {
 }
 
 @test "strings: escape: newline is one character" {
-    run $PROLOG -f $CORE -e '?- length("\n", N)'
+    run $PROLOG -e '?- length("\n", N)'
     [ "$status" -eq 0 ]
     [[ "$output" == *"N = 1"* ]]
 }
 
 @test "strings: escape: backslash is one character" {
-    run $PROLOG -f $CORE -e '?- length("\\", N)'
+    run $PROLOG -e '?- length("\\", N)'
     [ "$status" -eq 0 ]
     [[ "$output" == *"N = 1"* ]]
 }
@@ -384,49 +383,49 @@ teardown() {
 }
 
 @test "strings: member on string" {
-    run $PROLOG -f $CORE -e '?- member(X, "abc")'
+    run $PROLOG -e '?- member(X, "abc")'
     [ "$status" -eq 0 ]
     [[ "$output" == *"X = a"* ]]
 }
 
 @test "strings: findall chars from string" {
-    run $PROLOG -f $CORE -e '?- findall(X, member(X, "abc"), Cs)'
+    run $PROLOG -e '?- findall(X, member(X, "abc"), Cs)'
     [ "$status" -eq 0 ]
     [[ "$output" == *"Cs = [a, b, c]"* ]]
 }
 
 @test "strings: length of string" {
-    run $PROLOG -f $CORE -e '?- length("hello", N)'
+    run $PROLOG -e '?- length("hello", N)'
     [ "$status" -eq 0 ]
     [[ "$output" == *"N = 5"* ]]
 }
 
 @test "strings: length of empty string" {
-    run $PROLOG -f $CORE -e '?- length("", N)'
+    run $PROLOG -e '?- length("", N)'
     [ "$status" -eq 0 ]
     [[ "$output" == *"N = 0"* ]]
 }
 
 @test "strings: reverse of string gives char list" {
-    run $PROLOG -f $CORE -e '?- reverse("abc", X)'
+    run $PROLOG -e '?- reverse("abc", X)'
     [ "$status" -eq 0 ]
     [[ "$output" == *"X = [c, b, a]"* ]]
 }
 
 @test "strings: last char of string" {
-    run $PROLOG -f $CORE -e '?- last(X, "hello")'
+    run $PROLOG -e '?- last(X, "hello")'
     [ "$status" -eq 0 ]
     [[ "$output" == *"X = o"* ]]
 }
 
 @test "strings: member check on string" {
-    run $PROLOG -f $CORE -e '?- member(h, "hello")'
+    run $PROLOG -e '?- member(h, "hello")'
     [ "$status" -eq 0 ]
     [[ "$output" == *"true"* ]]
 }
 
 @test "strings: non-member check on string" {
-    run $PROLOG -f $CORE -e '?- member(z, "hello")'
+    run $PROLOG -e '?- member(z, "hello")'
     [ "$status" -eq 0 ]
     [[ "$output" == *"false"* ]]
 }

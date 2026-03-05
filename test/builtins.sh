@@ -2,7 +2,6 @@
 
 setup() {
     PROLOG="./prolog"
-    CORE="test/core.pl"
     tmpfile=$(mktemp /tmp/prolog_test_XXXXXX.pl)
 }
 
@@ -529,13 +528,13 @@ teardown() {
 }
 
 @test "findall: with member" {
-    run $PROLOG -f $CORE -e "?- findall(X, member(X, [1,2,3]), L)"
+    run $PROLOG -e "?- findall(X, member(X, [1,2,3]), L)"
     [ "$status" -eq 0 ]
     [[ "$output" == *"L = [1, 2, 3]"* ]]
 }
 
 @test "findall: with append" {
-    run $PROLOG -f $CORE -e "?- findall(L, append([a], X, L), Results)"
+    run $PROLOG -e "?- findall(L, append([a], X, L), Results)"
     [ "$status" -eq 0 ]
     # Should find at least the case where X=[]
 }
@@ -828,7 +827,7 @@ teardown() {
 }
 
 @test "call: backtracking through call" {
-    run $PROLOG -f test/core.pl -e "?- findall(X, call(member(X, [1,2,3])), L)"
+    run $PROLOG -e "?- findall(X, call(member(X, [1,2,3])), L)"
     [ "$status" -eq 0 ]
     [[ "$output" == *"L = [1, 2, 3]"* ]]
 }

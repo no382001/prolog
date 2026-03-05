@@ -4,6 +4,7 @@ CFLAGS := \
     -Wall \
     -Wextra \
     -Wpedantic \
+	-Werror \
     -g
 CFLAGS += -fsanitize=address -fno-omit-frame-pointer
 LDFLAGS += -fsanitize=address

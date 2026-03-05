@@ -1,7 +1,36 @@
+#define _POSIX_C_SOURCE 200809L
 #include "platform_impl.h"
 #include <getopt.h>
+#include <libgen.h>
 #include <termios.h>
 #include <unistd.h>
+
+#define CORE_PATH_MAX 8192
+
+static void try_load_core(prolog_ctx_t *ctx, const char *argv0) {
+  char exe[CORE_PATH_MAX];
+  char dir[CORE_PATH_MAX];
+
+  ssize_t len = readlink("/proc/self/exe", exe, sizeof(exe) - 1);
+  if (len > 0) {
+    exe[len] = '\0';
+    strncpy(dir, exe, sizeof(dir) - 1);
+    dir[sizeof(dir) - 1] = '\0';
+  } else {
+    strncpy(dir, argv0, sizeof(dir) - 1);
+    dir[sizeof(dir) - 1] = '\0';
+  }
+  dirname(dir);
+
+  char path[CORE_PATH_MAX];
+  strncpy(path, dir, sizeof(path) - 9);
+  path[sizeof(path) - 9] = '\0';
+  strcat(path, "/core.pl");
+
+  struct stat st;
+  if (stat(path, &st) == 0)
+    prolog_load_file(ctx, path);
+}
 
 static int read_key(void) {
   struct termios old, raw;
@@ -107,6 +136,7 @@ int main(int argc, char *argv[]) {
   prolog_ctx_t *ctx = &context;
 
   io_hooks_init_default(ctx);
+  try_load_core(ctx, argv[0]);
 
   const char *input_file = NULL;
   const char *expression = NULL;
