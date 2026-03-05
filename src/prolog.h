@@ -218,6 +218,8 @@ bool solve_all(prolog_ctx_t *ctx, goal_stmt_t *initial_goals, env_t *env,
                solution_callback_t callback, void *userdata);
 
 bool prolog_exec_query(prolog_ctx_t *ctx, char *query);
+bool prolog_exec_query_multi(prolog_ctx_t *ctx, char *query,
+                             solution_callback_t cb, void *ud);
 
 void print_term(prolog_ctx_t *ctx, term_t *t, env_t *env, bool quoted);
 

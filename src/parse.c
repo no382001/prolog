@@ -532,8 +532,51 @@ bool prolog_exec_query(prolog_ctx_t *ctx, char *query) {
   return ok;
 }
 
+// parse and run a query, calling cb for each solution (no printing).
+// returns true if at least one solution was found.
+bool prolog_exec_query_multi(prolog_ctx_t *ctx, char *query,
+                             solution_callback_t cb, void *ud) {
+  parse_error_clear(ctx);
+  ctx->input_ptr = query;
+  ctx->input_start = query;
+
+  int term_mark = ctx->term_count;
+  int string_mark = ctx->string_pool_offset;
+  int db_mark = ctx->db_count;
+
+  goal_stmt_t goals = {0};
+  do {
+    skip_ws(ctx);
+    term_t *g = parse_term(ctx);
+    if (!g) {
+      if (parse_has_error(ctx)) {
+        parse_error_print(ctx);
+        return false;
+      }
+      break;
+    }
+    if (goals.count < MAX_GOALS)
+      goals.goals[goals.count++] = g;
+    skip_ws(ctx);
+  } while (*ctx->input_ptr == ',' && ctx->input_ptr++);
+
+  if (goals.count == 0) {
+    fprintf(stderr, "Error: empty query\n");
+    return false;
+  }
+
+  env_t env = {0};
+  bool found = solve_all(ctx, &goals, &env, cb, ud);
+
+  if (ctx->db_count == db_mark) {
+    ctx->term_count = term_mark;
+    ctx->string_pool_offset = string_mark;
+  }
+  return found;
+}
+
 static void exec_directive(prolog_ctx_t *ctx, char *buf) {
-  prolog_exec_query(ctx, buf + 2); // skip "?-"
+  prolog_exec_query(ctx, buf + 2); // skip "?-" or ":-"
 }
 
 bool prolog_load_file(prolog_ctx_t *ctx, const char *filename) {
