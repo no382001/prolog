@@ -245,7 +245,7 @@ static term_t *parse_primary(prolog_ctx_t *ctx) {
   if (*ctx->input_ptr == '\"') {
     ctx->input_ptr++;           // skip opening quote
     char str_buf[MAX_NAME * 4]; // allow longer strings
-    int i = 0;
+    size_t i = 0;
 
     while (*ctx->input_ptr && *ctx->input_ptr != '\"') {
       if (i >= sizeof(str_buf) - 1) {

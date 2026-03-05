@@ -9,3 +9,5 @@ int ids instead of string names, this will increase the string pool
 - if there are more than one "_" named anonymus variable in the eval scope, they are going to unify.
 - trailing unparseable input in a query is silently ignored instead of erroring (e.g. ?- X is 5 \/ 3 gives X = 5)
 - the program shouldnt manage the memory pool
+
+- install sigfault handlers?

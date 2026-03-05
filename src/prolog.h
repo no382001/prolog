@@ -40,7 +40,6 @@ typedef __builtin_va_list va_list;
 #define MAX_CLAUSES 256
 #define MAX_BINDINGS 256
 #define MAX_GOALS 64
-#define MAX_STACK 256
 #define MAX_TERMS 4096
 #define MAX_ERROR_MSG 256
 #define MAX_CUSTOM_BUILTINS 64
@@ -121,13 +120,6 @@ typedef struct {
 } goal_stmt_t;
 
 typedef struct {
-  goal_stmt_t goals;
-  int clause_index;
-  int env_mark;
-  int cut_point; // stack pointer to cut back to
-} frame_t;
-
-typedef struct {
   bool has_error;
   char message[MAX_ERROR_MSG];
   int line;
@@ -172,7 +164,6 @@ struct prolog_ctx {
     int terms_peak;
     int unify_calls;
     int unify_fails;
-    int son_calls;
     int backtracks;
   } stats;
 };
@@ -207,9 +198,6 @@ term_t *substitute(prolog_ctx_t *ctx, env_t *env, term_t *t);
 bool unify(prolog_ctx_t *ctx, term_t *a, term_t *b, env_t *env);
 
 term_t *rename_vars(prolog_ctx_t *ctx, term_t *t, int id);
-
-bool son(prolog_ctx_t *ctx, goal_stmt_t *cn, int *clause_idx, env_t *env,
-         int env_mark, goal_stmt_t *resolvent);
 
 typedef bool (*solution_callback_t)(prolog_ctx_t *ctx, env_t *env,
                                     void *userdata, bool has_more);
