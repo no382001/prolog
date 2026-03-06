@@ -502,21 +502,7 @@ bool prolog_exec_query(prolog_ctx_t *ctx, char *query) {
   env_t env = {0};
   bool ok = solve(ctx, &goals, &env);
   if (ok) {
-    bool printed = false;
-    for (int i = 0; i < env.count; i++) {
-      const char *name = env.bindings[i].name;
-      if (strchr(name, '#'))
-        continue;
-      if (name[0] == '_')
-        continue;
-      if (printed)
-        io_write_str(ctx, ", ");
-      io_writef(ctx, "%s = ", name);
-      io_write_term_quoted(ctx, env.bindings[i].value, &env);
-      printed = true;
-    }
-    if (!printed)
-      io_write_str(ctx, "true");
+    print_bindings(ctx, &env);
     io_write_str(ctx, "\n");
   } else {
     io_write_str(ctx, "false\n");

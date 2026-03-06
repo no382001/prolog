@@ -177,6 +177,36 @@ struct prolog_ctx {
   } stats;
 };
 
+static inline bool is_cons(const term_t *t) {
+  return t && t->type == FUNC && t->name[0] == '.' && t->name[1] == '\0' &&
+         t->arity == 2;
+}
+
+static inline bool is_nil(const term_t *t) {
+  return t && t->type == CONST && t->name[0] == '[' && t->name[1] == ']' &&
+         t->name[2] == '\0';
+}
+
+static inline bool term_as_int(const term_t *t, int *out) {
+  if (!t || t->type != CONST)
+    return false;
+  const char *p = t->name;
+  int sign = 1;
+  if (*p == '-') {
+    sign = -1;
+    p++;
+  }
+  if (*p < '0' || *p > '9')
+    return false;
+  int val = 0;
+  while (*p >= '0' && *p <= '9')
+    val = val * 10 + (*p++ - '0');
+  if (*p != '\0')
+    return false;
+  *out = sign * val;
+  return true;
+}
+
 void ctx_reset_terms(prolog_ctx_t *ctx);
 term_t *ctx_alloc_term(prolog_ctx_t *ctx);
 const char *intern_name(prolog_ctx_t *ctx, const char *name);
@@ -224,6 +254,7 @@ bool prolog_exec_query_multi(prolog_ctx_t *ctx, char *query,
                              solution_callback_t cb, void *ud);
 
 void print_term(prolog_ctx_t *ctx, term_t *t, env_t *env, bool quoted);
+void print_bindings(prolog_ctx_t *ctx, env_t *env);
 
 void parse_error(prolog_ctx_t *ctx, const char *fmt, ...);
 void parse_error_clear(prolog_ctx_t *ctx);

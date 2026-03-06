@@ -18,15 +18,8 @@ static const arith_op_t arith_ops[] = {{"+", arith_add},   {"-", arith_sub},
 static bool eval_arith(prolog_ctx_t *ctx, term_t *t, env_t *env, int *result) {
   t = deref(env, t);
 
-  if (t->type == CONST) {
-    char *end;
-    long val = strtol(t->name, &end, 10);
-    if (*end == '\0') {
-      *result = (int)val;
-      return true;
-    }
-    return false;
-  }
+  if (term_as_int(t, result))
+    return true;
 
   if (t->type == FUNC && t->arity == 1) {
     int val;
@@ -124,50 +117,23 @@ static int builtin_lt(prolog_ctx_t *ctx, term_t *goal, env_t *env) {
   return left < right ? 1 : -1;
 }
 
-static int builtin_gt(prolog_ctx_t *ctx, term_t *goal, env_t *env) {
-  int left, right;
-  if (!eval_arith(ctx, goal->args[0], env, &left))
-    return 0;
-  if (!eval_arith(ctx, goal->args[1], env, &right))
-    return 0;
-  return left > right ? 1 : -1;
-}
+#define ARITH_CMP_BUILTIN(name, op)                                            \
+  static int name(prolog_ctx_t *ctx, term_t *goal, env_t *env) {               \
+    int left, right;                                                           \
+    if (!eval_arith(ctx, goal->args[0], env, &left))                           \
+      return 0;                                                                \
+    if (!eval_arith(ctx, goal->args[1], env, &right))                          \
+      return 0;                                                                \
+    return left op right ? 1 : -1;                                             \
+  }
 
-static int builtin_le(prolog_ctx_t *ctx, term_t *goal, env_t *env) {
-  int left, right;
-  if (!eval_arith(ctx, goal->args[0], env, &left))
-    return 0;
-  if (!eval_arith(ctx, goal->args[1], env, &right))
-    return 0;
-  return left <= right ? 1 : -1;
-}
+ARITH_CMP_BUILTIN(builtin_gt, >)
+ARITH_CMP_BUILTIN(builtin_le, <=)
+ARITH_CMP_BUILTIN(builtin_ge, >=)
+ARITH_CMP_BUILTIN(builtin_arith_eq, ==)
+ARITH_CMP_BUILTIN(builtin_arith_ne, !=)
 
-static int builtin_ge(prolog_ctx_t *ctx, term_t *goal, env_t *env) {
-  int left, right;
-  if (!eval_arith(ctx, goal->args[0], env, &left))
-    return 0;
-  if (!eval_arith(ctx, goal->args[1], env, &right))
-    return 0;
-  return left >= right ? 1 : -1;
-}
-
-static int builtin_arith_eq(prolog_ctx_t *ctx, term_t *goal, env_t *env) {
-  int left, right;
-  if (!eval_arith(ctx, goal->args[0], env, &left))
-    return 0;
-  if (!eval_arith(ctx, goal->args[1], env, &right))
-    return 0;
-  return left == right ? 1 : -1;
-}
-
-static int builtin_arith_ne(prolog_ctx_t *ctx, term_t *goal, env_t *env) {
-  int left, right;
-  if (!eval_arith(ctx, goal->args[0], env, &left))
-    return 0;
-  if (!eval_arith(ctx, goal->args[1], env, &right))
-    return 0;
-  return left != right ? 1 : -1;
-}
+#undef ARITH_CMP_BUILTIN
 
 static int builtin_cut(prolog_ctx_t *ctx, term_t *goal, env_t *env) {
   (void)ctx;
@@ -208,7 +174,7 @@ static bool findall_callback(prolog_ctx_t *ctx, env_t *env, void *userdata,
 
 static term_t *reverse_list(prolog_ctx_t *ctx, term_t *list) {
   term_t *result = make_const(ctx, "[]");
-  while (list->type == FUNC && strcmp(list->name, ".") == 0) {
+  while (is_cons(list)) {
     term_t *args[2] = {list->args[0], result};
     result = make_func(ctx, ".", args, 2);
     list = list->args[1];
@@ -315,9 +281,9 @@ static int builtin_integer(prolog_ctx_t *ctx, term_t *goal, env_t *env) {
 static int builtin_is_list(prolog_ctx_t *ctx, term_t *goal, env_t *env) {
   (void)ctx;
   term_t *t = deref(env, goal->args[0]);
-  while (t->type == FUNC && strcmp(t->name, ".") == 0 && t->arity == 2)
+  while (is_cons(t))
     t = deref(env, t->args[1]);
-  return (t->type == CONST && strcmp(t->name, "[]") == 0) ? 1 : -1;
+  return is_nil(t) ? 1 : -1;
 }
 
 static int builtin_nl(prolog_ctx_t *ctx, term_t *goal, env_t *env) {
@@ -482,11 +448,11 @@ static int builtin_atom_chars(prolog_ctx_t *ctx, term_t *goal, env_t *env) {
     }
     return unify(ctx, goal->args[1], list, env) ? 1 : -1;
   }
-  /* chars → atom */
+  /* chars -> atom */
   char buf[MAX_NAME] = {0};
   int n = 0;
   term_t *cur = deref(env, goal->args[1]);
-  while (cur->type == FUNC && strcmp(cur->name, ".") == 0 && cur->arity == 2) {
+  while (is_cons(cur)) {
     term_t *head = deref(env, cur->args[0]);
     const char *cs = term_atom_str(head);
     if (!cs || cs[1] != '\0')
@@ -496,7 +462,7 @@ static int builtin_atom_chars(prolog_ctx_t *ctx, term_t *goal, env_t *env) {
     buf[n++] = cs[0];
     cur = deref(env, cur->args[1]);
   }
-  if (cur->type != CONST || strcmp(cur->name, "[]") != 0)
+  if (!is_nil(cur))
     return -1;
   buf[n] = '\0';
   return unify(ctx, goal->args[0], make_const(ctx, buf), env) ? 1 : -1;
@@ -517,24 +483,21 @@ static int builtin_atom_codes(prolog_ctx_t *ctx, term_t *goal, env_t *env) {
     }
     return unify(ctx, goal->args[1], list, env) ? 1 : -1;
   }
-  /* codes → atom */
+  /* codes -> atom */
   char buf[MAX_NAME] = {0};
   int n = 0;
   term_t *cur = deref(env, goal->args[1]);
-  while (cur->type == FUNC && strcmp(cur->name, ".") == 0 && cur->arity == 2) {
+  while (is_cons(cur)) {
     term_t *head = deref(env, cur->args[0]);
-    if (head->type != CONST)
-      return -1;
-    char *end;
-    int c = (int)strtol(head->name, &end, 10);
-    if (*end != '\0' || c < 0 || c > 255)
+    int c;
+    if (!term_as_int(head, &c) || c < 0 || c > 255)
       return -1;
     if (n >= MAX_NAME - 1)
       return -1;
     buf[n++] = (char)c;
     cur = deref(env, cur->args[1]);
   }
-  if (cur->type != CONST || strcmp(cur->name, "[]") != 0)
+  if (!is_nil(cur))
     return -1;
   buf[n] = '\0';
   return unify(ctx, goal->args[0], make_const(ctx, buf), env) ? 1 : -1;
@@ -552,9 +515,8 @@ static int builtin_char_code(prolog_ctx_t *ctx, term_t *goal, env_t *env) {
     return unify(ctx, goal->args[1], make_const(ctx, buf), env) ? 1 : -1;
   }
   if (code->type != VAR) {
-    char *end;
-    int c = (int)strtol(code->name, &end, 10);
-    if (*end != '\0' || c < 0 || c > 255)
+    int c;
+    if (!term_as_int(code, &c) || c < 0 || c > 255)
       return -1;
     char buf[2] = {(char)c, '\0'};
     return unify(ctx, goal->args[0], make_const(ctx, buf), env) ? 1 : -1;
@@ -594,24 +556,21 @@ static int builtin_number_codes(prolog_ctx_t *ctx, term_t *goal, env_t *env) {
     }
     return unify(ctx, goal->args[1], list, env) ? 1 : -1;
   }
-  /* codes → number: build string then validate */
+  /* codes -> number: build string then validate */
   char buf[MAX_NAME] = {0};
   int n = 0;
   term_t *cur = deref(env, goal->args[1]);
-  while (cur->type == FUNC && strcmp(cur->name, ".") == 0 && cur->arity == 2) {
+  while (is_cons(cur)) {
     term_t *head = deref(env, cur->args[0]);
-    if (head->type != CONST)
-      return -1;
-    char *end;
-    int c = (int)strtol(head->name, &end, 10);
-    if (*end != '\0' || c < 0 || c > 255)
+    int c;
+    if (!term_as_int(head, &c) || c < 0 || c > 255)
       return -1;
     if (n >= MAX_NAME - 1)
       return -1;
     buf[n++] = (char)c;
     cur = deref(env, cur->args[1]);
   }
-  if (cur->type != CONST || strcmp(cur->name, "[]") != 0)
+  if (!is_nil(cur))
     return -1;
   buf[n] = '\0';
   if (!is_integer_str(buf))
@@ -633,11 +592,11 @@ static int builtin_number_chars(prolog_ctx_t *ctx, term_t *goal, env_t *env) {
     }
     return unify(ctx, goal->args[1], list, env) ? 1 : -1;
   }
-  /* chars → number */
+  /* chars -> number */
   char buf[MAX_NAME] = {0};
   int n = 0;
   term_t *cur = deref(env, goal->args[1]);
-  while (cur->type == FUNC && strcmp(cur->name, ".") == 0 && cur->arity == 2) {
+  while (is_cons(cur)) {
     term_t *head = deref(env, cur->args[0]);
     const char *cs = term_atom_str(head);
     if (!cs || cs[1] != '\0')
@@ -647,7 +606,7 @@ static int builtin_number_chars(prolog_ctx_t *ctx, term_t *goal, env_t *env) {
     buf[n++] = cs[0];
     cur = deref(env, cur->args[1]);
   }
-  if (cur->type != CONST || strcmp(cur->name, "[]") != 0)
+  if (!is_nil(cur))
     return -1;
   buf[n] = '\0';
   if (!is_integer_str(buf))
@@ -687,9 +646,8 @@ static int builtin_functor(prolog_ctx_t *ctx, term_t *goal, env_t *env) {
   const char *fname = term_atom_str(n);
   if (!fname)
     return -1;
-  char *end;
-  int ar = (int)strtol(a->name, &end, 10);
-  if (*end != '\0' || ar < 0 || ar > MAX_ARGS)
+  int ar;
+  if (!term_as_int(a, &ar) || ar < 0 || ar > MAX_ARGS)
     return -1;
   term_t *t;
   if (ar == 0) {
@@ -711,9 +669,8 @@ static int builtin_arg(prolog_ctx_t *ctx, term_t *goal, env_t *env) {
   term_t *term = deref(env, goal->args[1]);
   if (n->type == VAR || term->type != FUNC)
     return -1;
-  char *end;
-  int idx = (int)strtol(n->name, &end, 10);
-  if (*end != '\0' || idx < 1 || idx > term->arity)
+  int idx;
+  if (!term_as_int(n, &idx) || idx < 1 || idx > term->arity)
     return -1;
   return unify(ctx, goal->args[2], term->args[idx - 1], env) ? 1 : -1;
 }
@@ -739,9 +696,9 @@ static int builtin_univ(prolog_ctx_t *ctx, term_t *goal, env_t *env) {
     }
     return unify(ctx, goal->args[1], result, env) ? 1 : -1;
   }
-  /* list → term */
+  /* list -> term */
   term_t *cur = deref(env, list);
-  if (cur->type != FUNC || strcmp(cur->name, ".") != 0 || cur->arity != 2)
+  if (!is_cons(cur))
     return -1;
   term_t *head = deref(env, cur->args[0]);
   const char *fname = term_atom_str(head);
@@ -750,13 +707,13 @@ static int builtin_univ(prolog_ctx_t *ctx, term_t *goal, env_t *env) {
   term_t *args[MAX_ARGS];
   int ar = 0;
   cur = deref(env, cur->args[1]);
-  while (cur->type == FUNC && strcmp(cur->name, ".") == 0 && cur->arity == 2) {
+  while (is_cons(cur)) {
     if (ar >= MAX_ARGS)
       return -1;
     args[ar++] = deref(env, cur->args[0]);
     cur = deref(env, cur->args[1]);
   }
-  if (cur->type != CONST || strcmp(cur->name, "[]") != 0)
+  if (!is_nil(cur))
     return -1;
   term_t *result =
       (ar == 0) ? make_const(ctx, fname) : make_func(ctx, fname, args, ar);
@@ -770,6 +727,15 @@ static int builtin_copy_term(prolog_ctx_t *ctx, term_t *goal, env_t *env) {
   return unify(ctx, goal->args[1], copy, env) ? 1 : -1;
 }
 
+static void flatten_body(env_t *env, term_t *body, clause_t *c) {
+  while (body->type == FUNC && strcmp(body->name, ",") == 0 &&
+         body->arity == 2 && c->body_count < MAX_GOALS - 1) {
+    c->body[c->body_count++] = deref(env, body->args[0]);
+    body = deref(env, body->args[1]);
+  }
+  c->body[c->body_count++] = body;
+}
+
 static int builtin_assertz(prolog_ctx_t *ctx, term_t *goal, env_t *env) {
   if (ctx->db_count >= MAX_CLAUSES)
     return -1;
@@ -778,14 +744,7 @@ static int builtin_assertz(prolog_ctx_t *ctx, term_t *goal, env_t *env) {
   c->body_count = 0;
   if (arg->type == FUNC && strcmp(arg->name, ":-") == 0 && arg->arity == 2) {
     c->head = deref(env, arg->args[0]);
-    term_t *body = deref(env, arg->args[1]);
-    // flatten top-level conjunctions
-    while (body->type == FUNC && strcmp(body->name, ",") == 0 &&
-           body->arity == 2 && c->body_count < MAX_GOALS - 1) {
-      c->body[c->body_count++] = deref(env, body->args[0]);
-      body = deref(env, body->args[1]);
-    }
-    c->body[c->body_count++] = body;
+    flatten_body(env, deref(env, arg->args[1]), c);
   } else {
     c->head = arg;
   }
@@ -796,23 +755,15 @@ static int builtin_assertz(prolog_ctx_t *ctx, term_t *goal, env_t *env) {
 static int builtin_asserta(prolog_ctx_t *ctx, term_t *goal, env_t *env) {
   if (ctx->db_count >= MAX_CLAUSES)
     return -1;
-  // shift database up by one
   for (int i = ctx->db_count; i > 0; i--)
     ctx->database[i] = ctx->database[i - 1];
   ctx->db_count++;
-  // reuse assertz logic by writing into slot 0
   term_t *arg = substitute(ctx, env, deref(env, goal->args[0]));
   clause_t *c = &ctx->database[0];
   c->body_count = 0;
   if (arg->type == FUNC && strcmp(arg->name, ":-") == 0 && arg->arity == 2) {
     c->head = deref(env, arg->args[0]);
-    term_t *body = deref(env, arg->args[1]);
-    while (body->type == FUNC && strcmp(body->name, ",") == 0 &&
-           body->arity == 2 && c->body_count < MAX_GOALS - 1) {
-      c->body[c->body_count++] = deref(env, body->args[0]);
-      body = deref(env, body->args[1]);
-    }
-    c->body[c->body_count++] = body;
+    flatten_body(env, deref(env, arg->args[1]), c);
   } else {
     c->head = arg;
   }
@@ -870,17 +821,15 @@ static int builtin_succ(prolog_ctx_t *ctx, term_t *goal, env_t *env) {
   term_t *x = deref(env, goal->args[0]);
   term_t *y = deref(env, goal->args[1]);
   char buf[16];
-  char *end;
+  int n;
   if (x->type != VAR) {
-    int n = (int)strtol(x->name, &end, 10);
-    if (*end || n < 0)
+    if (!term_as_int(x, &n) || n < 0)
       return -1;
     snprintf(buf, sizeof(buf), "%d", n + 1);
     return unify(ctx, goal->args[1], make_const(ctx, buf), env) ? 1 : -1;
   }
   if (y->type != VAR) {
-    int n = (int)strtol(y->name, &end, 10);
-    if (*end || n < 1)
+    if (!term_as_int(y, &n) || n < 1)
       return -1;
     snprintf(buf, sizeof(buf), "%d", n - 1);
     return unify(ctx, goal->args[0], make_const(ctx, buf), env) ? 1 : -1;
@@ -893,27 +842,21 @@ static int builtin_plus(prolog_ctx_t *ctx, term_t *goal, env_t *env) {
   term_t *y = deref(env, goal->args[1]);
   term_t *z = deref(env, goal->args[2]);
   char buf[16];
-  char *ex, *ey, *ez;
+  int nx, ny, nz;
   if (x->type != VAR && y->type != VAR) {
-    int nx = (int)strtol(x->name, &ex, 10);
-    int ny = (int)strtol(y->name, &ey, 10);
-    if (*ex || *ey)
+    if (!term_as_int(x, &nx) || !term_as_int(y, &ny))
       return -1;
     snprintf(buf, sizeof(buf), "%d", nx + ny);
     return unify(ctx, goal->args[2], make_const(ctx, buf), env) ? 1 : -1;
   }
   if (x->type != VAR && z->type != VAR) {
-    int nx = (int)strtol(x->name, &ex, 10);
-    int nz = (int)strtol(z->name, &ez, 10);
-    if (*ex || *ez)
+    if (!term_as_int(x, &nx) || !term_as_int(z, &nz))
       return -1;
     snprintf(buf, sizeof(buf), "%d", nz - nx);
     return unify(ctx, goal->args[1], make_const(ctx, buf), env) ? 1 : -1;
   }
   if (y->type != VAR && z->type != VAR) {
-    int ny = (int)strtol(y->name, &ey, 10);
-    int nz = (int)strtol(z->name, &ez, 10);
-    if (*ey || *ez)
+    if (!term_as_int(y, &ny) || !term_as_int(z, &nz))
       return -1;
     snprintf(buf, sizeof(buf), "%d", nz - ny);
     return unify(ctx, goal->args[0], make_const(ctx, buf), env) ? 1 : -1;

@@ -10,16 +10,16 @@ void print_term(prolog_ctx_t *ctx, term_t *t, env_t *env, bool quoted) {
 
   t = deref(env, t);
 
-  if (t->type == FUNC && strcmp(t->name, ".") == 0 && t->arity == 2) {
+  if (is_cons(t)) {
     io_write_str(ctx, "[");
-    while (t->type == FUNC && strcmp(t->name, ".") == 0) {
+    while (is_cons(t)) {
       assert(t->arity == 2 && "List node must have arity 2");
       print_term(ctx, t->args[0], env, quoted);
       t = deref(env, t->args[1]);
-      if (t->type == FUNC && strcmp(t->name, ".") == 0)
+      if (is_cons(t))
         io_write_str(ctx, ", ");
     }
-    if (!(t->type == CONST && strcmp(t->name, "[]") == 0)) {
+    if (!is_nil(t)) {
       io_write_str(ctx, "|");
       print_term(ctx, t, env, quoted);
     }
@@ -27,7 +27,7 @@ void print_term(prolog_ctx_t *ctx, term_t *t, env_t *env, bool quoted) {
     return;
   }
 
-  if (t->type == CONST && strcmp(t->name, "[]") == 0) {
+  if (is_nil(t)) {
     io_write_str(ctx, "[]");
     return;
   }
@@ -64,4 +64,22 @@ void print_term(prolog_ctx_t *ctx, term_t *t, env_t *env, bool quoted) {
     }
     io_write_str(ctx, ")");
   }
+}
+
+void print_bindings(prolog_ctx_t *ctx, env_t *env) {
+  bool printed = false;
+  for (int i = 0; i < env->count; i++) {
+    const char *name = env->bindings[i].name;
+    if (strchr(name, '#'))
+      continue;
+    if (name[0] == '_')
+      continue;
+    if (printed)
+      io_write_str(ctx, ", ");
+    io_writef(ctx, "%s = ", name);
+    io_write_term_quoted(ctx, env->bindings[i].value, env);
+    printed = true;
+  }
+  if (!printed)
+    io_write_str(ctx, "true");
 }

@@ -61,24 +61,6 @@ typedef struct {
   bool want_more; // true if user typed ; on the last solution
 } toplevel_state_t;
 
-static void print_bindings(prolog_ctx_t *ctx, env_t *env) {
-  bool printed = false;
-  for (int i = 0; i < env->count; i++) {
-    const char *name = env->bindings[i].name;
-    if (strchr(name, '#'))
-      continue;
-    if (name[0] == '_')
-      continue;
-    if (printed)
-      io_write_str(ctx, ", ");
-    io_writef(ctx, "%s = ", name);
-    io_write_term_quoted(ctx, env->bindings[i].value, env);
-    printed = true;
-  }
-  if (!printed)
-    io_write_str(ctx, "true");
-}
-
 static bool toplevel_cb(prolog_ctx_t *ctx, env_t *env, void *ud,
                         bool has_more) {
   toplevel_state_t *st = ud;
