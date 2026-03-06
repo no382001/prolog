@@ -183,7 +183,8 @@ static int builtin_stats(prolog_ctx_t *ctx, term_t *goal, env_t *env) {
             ctx->stats.terms_allocated, ctx->stats.terms_peak, ctx->term_count);
   io_writef(ctx, "unify: %d calls, %d fails\n", ctx->stats.unify_calls,
             ctx->stats.unify_fails);
-  io_writef(ctx, "solve: %d backtracks\n", ctx->stats.backtracks);
+  io_writef(ctx, "solve: %d son calls, %d backtracks\n", ctx->stats.son_calls,
+            ctx->stats.backtracks);
   return 1;
 }
 
