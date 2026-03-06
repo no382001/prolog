@@ -52,7 +52,15 @@ typedef struct prolog_ctx prolog_ctx_t;
 typedef struct term term_t;
 typedef struct env env_t;
 
-typedef int (*builtin_handler_t)(prolog_ctx_t *ctx, term_t *goal, env_t *env);
+typedef enum {
+  BUILTIN_FAIL = -1,
+  BUILTIN_NOT_HANDLED = 0,
+  BUILTIN_OK = 1,
+  BUILTIN_CUT = 2,
+} builtin_result_t;
+
+typedef builtin_result_t (*builtin_handler_t)(prolog_ctx_t *ctx, term_t *goal,
+                                              env_t *env);
 
 typedef struct {
   char name[MAX_NAME];
@@ -261,7 +269,7 @@ void parse_error_clear(prolog_ctx_t *ctx);
 bool parse_has_error(prolog_ctx_t *ctx);
 void parse_error_print(prolog_ctx_t *ctx);
 
-int try_builtin(prolog_ctx_t *ctx, term_t *goal, env_t *env);
+builtin_result_t try_builtin(prolog_ctx_t *ctx, term_t *goal, env_t *env);
 
 // I/O hook management
 void io_hooks_init_default(prolog_ctx_t *ctx);

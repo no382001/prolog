@@ -23,9 +23,9 @@ bool son(prolog_ctx_t *ctx, goal_stmt_t *cn, int *clause_idx, env_t *env,
   debug(ctx, "Starting from clause %d\n", *clause_idx);
 
   if (*clause_idx == 0) {
-    int builtin_result = try_builtin(ctx, selected_goal, env);
-    if (builtin_result != 0) {
-      if (builtin_result == 1) {
+    builtin_result_t builtin_result = try_builtin(ctx, selected_goal, env);
+    if (builtin_result != BUILTIN_NOT_HANDLED) {
+      if (builtin_result == BUILTIN_OK) {
         debug(ctx, ">>> BUILTIN succeeded!\n");
         resolvent->count = 0;
         for (int j = 1; j < cn->count; j++) {

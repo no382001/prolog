@@ -3,17 +3,17 @@
 #include <string.h>
 #include <stdlib.h>
 
-static int custom_hello(prolog_ctx_t *ctx, term_t *goal, env_t *env) {
+static builtin_result_t custom_hello(prolog_ctx_t *ctx, term_t *goal, env_t *env) {
   (void)goal;
   (void)env;
   io_write_str(ctx, "Hello from custom builtin!\n");
-  return 1; // success
+  return BUILTIN_OK;
 }
 
-static int custom_double(prolog_ctx_t *ctx, term_t *goal, env_t *env) {
+static builtin_result_t custom_double(prolog_ctx_t *ctx, term_t *goal, env_t *env) {
   // double(X, Y) - unifies Y with 2*X
   if (goal->arity != 2)
-    return -1; // fail
+    return BUILTIN_FAIL;
   
   term_t *x = deref(env, goal->args[0]);
   
@@ -21,7 +21,7 @@ static int custom_double(prolog_ctx_t *ctx, term_t *goal, env_t *env) {
   char *end;
   long val = strtol(x->name, &end, 10);
   if (*end != '\0')
-    return -1; // not a number
+    return BUILTIN_FAIL;
   
   // create result term
   char buf[32];
@@ -29,7 +29,7 @@ static int custom_double(prolog_ctx_t *ctx, term_t *goal, env_t *env) {
   term_t *result = make_const(ctx, buf);
   
   // unify with second argument
-  return unify(ctx, goal->args[1], result, env) ? 1 : -1;
+  return unify(ctx, goal->args[1], result, env) ? BUILTIN_OK : BUILTIN_FAIL;
 }
 
 typedef struct {
@@ -37,7 +37,7 @@ typedef struct {
   const char *prefix;
 } counter_data_t;
 
-static int custom_count(prolog_ctx_t *ctx, term_t *goal, env_t *env) {
+static builtin_result_t custom_count(prolog_ctx_t *ctx, term_t *goal, env_t *env) {
   (void)goal;
   (void)env;
   
@@ -53,7 +53,7 @@ static int custom_count(prolog_ctx_t *ctx, term_t *goal, env_t *env) {
   snprintf(buf, sizeof(buf), "%s: count = %d\n", data->prefix, data->counter);
   io_write_str(ctx, buf);
   
-  return 1; // success
+  return BUILTIN_OK;
 }
 
 typedef struct {
