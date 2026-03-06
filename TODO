@@ -9,4 +9,5 @@ bump allocator + container_of for variable-size terms (const 16B, var 16B, func 
 
 - if there are more than one "_" named anonymus variable in the eval scope, they are going to unify.
 - trailing unparseable input in a query is silently ignored instead of erroring (e.g. ?- X is 5 \/ 3 gives X = 5)
-- the program shouldnt manage the memory pool
+
+https://www.complang.tuwien.ac.at/ulrich/iso-prolog/prologue
