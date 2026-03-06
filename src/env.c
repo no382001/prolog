@@ -26,7 +26,7 @@ void bind(prolog_ctx_t *ctx, env_t *env, const char *name, term_t *value) {
   }
 
   binding_t *b = &env->bindings[env->count++];
-  strncpy(b->name, name, MAX_NAME - 1);
+  b->name = intern_name(ctx, name);
   b->value = value;
 }
 

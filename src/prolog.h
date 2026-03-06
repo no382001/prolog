@@ -93,14 +93,14 @@ static const str_escape_t STR_ESCAPES[] = {
 
 struct term {
   term_type type;
-  char name[MAX_NAME];
+  const char *name;
   struct term *args[MAX_ARGS];
   int arity;
   char *string_data;
 };
 
 typedef struct {
-  char name[MAX_NAME];
+  const char *name;
   term_t *value;
 } binding_t;
 
@@ -179,6 +179,7 @@ struct prolog_ctx {
 
 void ctx_reset_terms(prolog_ctx_t *ctx);
 term_t *ctx_alloc_term(prolog_ctx_t *ctx);
+const char *intern_name(prolog_ctx_t *ctx, const char *name);
 
 void debug(prolog_ctx_t *ctx, const char *fmt, ...);
 void print_term_raw(term_t *t);

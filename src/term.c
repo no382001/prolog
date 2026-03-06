@@ -5,6 +5,29 @@ void ctx_reset_terms(prolog_ctx_t *ctx) {
   ctx->string_pool_offset = 0;
 }
 
+const char *intern_name(prolog_ctx_t *ctx, const char *name) {
+  assert(ctx != NULL && "Context is NULL");
+  assert(name != NULL && "Name is NULL");
+
+  int len = strlen(name);
+
+  // search for existing copy in string pool
+  int i = 0;
+  while (i < ctx->string_pool_offset) {
+    if (strcmp(&ctx->string_pool[i], name) == 0)
+      return &ctx->string_pool[i];
+    i += strlen(&ctx->string_pool[i]) + 1;
+  }
+
+  assert(ctx->string_pool_offset + len + 1 <= MAX_STRING_POOL &&
+         "String pool exhausted");
+
+  char *dest = &ctx->string_pool[ctx->string_pool_offset];
+  memcpy(dest, name, len + 1);
+  ctx->string_pool_offset += len + 1;
+  return dest;
+}
+
 term_t *ctx_alloc_term(prolog_ctx_t *ctx) {
   assert(ctx->term_count < MAX_TERMS && "Term pool exhausted");
 
@@ -28,7 +51,7 @@ term_t *make_term(prolog_ctx_t *ctx, term_type type, const char *name,
   term_t *t = ctx_alloc_term(ctx);
 
   t->type = type;
-  strncpy(t->name, name, MAX_NAME - 1);
+  t->name = intern_name(ctx, name);
   t->arity = arity;
   for (int i = 0; i < arity; i++) {
     assert(args != NULL && "Args array is NULL but arity > 0");
@@ -60,7 +83,7 @@ term_t *make_string(prolog_ctx_t *ctx, const char *str) {
 
   term_t *t = ctx_alloc_term(ctx);
   t->type = STRING;
-  t->name[0] = '\0';
+  t->name = "";
   t->arity = 0;
 
   int len = strlen(str);

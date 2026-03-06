@@ -1,6 +1,7 @@
 streaming findall solutions
 lazy list
 int ids instead of string names, this will increase the string pool
+bump allocator + container_of for variable-size terms (const 16B, var 16B, func 96B, string 16B -> ~75% pool reduction)
 
 - arithmetic: bitwise ops (>>, <<, \/, /\)
 - readline/history in repl

@@ -504,7 +504,7 @@ bool prolog_exec_query(prolog_ctx_t *ctx, char *query) {
   if (ok) {
     bool printed = false;
     for (int i = 0; i < env.count; i++) {
-      char *name = env.bindings[i].name;
+      const char *name = env.bindings[i].name;
       if (strchr(name, '#'))
         continue;
       if (name[0] == '_')
