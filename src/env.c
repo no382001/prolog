@@ -28,10 +28,11 @@ void bind(prolog_ctx_t *ctx, env_t *env, term_t *var, term_t *value) {
     debug(ctx, "\n");
   }
 
-  binding_t *b = &env->bindings[env->count++];
-  b->var_id = var->arity;
-  b->name = var->name; // already interned (or NULL for internal vars)
-  b->value = value;
+  env->bindings[env->count++] = (binding_t){
+      .var_id = var->arity,
+      .name   = var->name, // already interned (or NULL for internal vars)
+      .value  = value,
+  };
 }
 
 term_t *deref(env_t *env, term_t *t) {

@@ -10,10 +10,13 @@ static int arith_sub(int a, int b) { return a - b; }
 static int arith_mul(int a, int b) { return a * b; }
 static int arith_div(int a, int b) { return b ? a / b : 0; }
 static int arith_mod(int a, int b) { return b ? a % b : 0; }
+static int arith_max(int a, int b) { return a > b ? a : b; }
+static int arith_min(int a, int b) { return a < b ? a : b; }
 
-static const arith_op_t arith_ops[] = {{"+", arith_add},   {"-", arith_sub},
-                                       {"*", arith_mul},   {"/", arith_div},
-                                       {"mod", arith_mod}, {NULL, NULL}};
+static const arith_op_t arith_ops[] = {
+    {"+", arith_add}, {"-", arith_sub}, {"*", arith_mul},
+    {"/", arith_div}, {"mod", arith_mod}, {"//", arith_div},
+    {"max", arith_max}, {"min", arith_min}, {NULL, NULL}};
 
 static bool eval_arith(prolog_ctx_t *ctx, term_t *t, env_t *env, int *result) {
   t = deref(env, t);
@@ -42,19 +45,6 @@ static bool eval_arith(prolog_ctx_t *ctx, term_t *t, env_t *env, int *result) {
       return false;
     if (!eval_arith(ctx, t->args[1], env, &right))
       return false;
-
-    if (strcmp(t->name, "max") == 0) {
-      *result = left > right ? left : right;
-      return true;
-    }
-    if (strcmp(t->name, "min") == 0) {
-      *result = left < right ? left : right;
-      return true;
-    }
-    if (strcmp(t->name, "//") == 0) {
-      *result = right ? left / right : 0;
-      return true;
-    }
 
     for (const arith_op_t *op = arith_ops; op->op; op++) {
       if (strcmp(t->name, op->op) == 0) {
@@ -115,16 +105,6 @@ static builtin_result_t builtin_not_unify(prolog_ctx_t *ctx, term_t *goal,
   return unified ? -1 : 1;
 }
 
-static builtin_result_t builtin_lt(prolog_ctx_t *ctx, term_t *goal,
-                                   env_t *env) {
-  int left, right;
-  if (!eval_arith(ctx, goal->args[0], env, &left))
-    return BUILTIN_NOT_HANDLED;
-  if (!eval_arith(ctx, goal->args[1], env, &right))
-    return BUILTIN_NOT_HANDLED;
-  return left < right ? BUILTIN_OK : BUILTIN_FAIL;
-}
-
 #define ARITH_CMP_BUILTIN(name, op)                                            \
   static builtin_result_t name(prolog_ctx_t *ctx, term_t *goal, env_t *env) {  \
     int left, right;                                                           \
@@ -135,6 +115,7 @@ static builtin_result_t builtin_lt(prolog_ctx_t *ctx, term_t *goal,
     return left op right ? BUILTIN_OK : BUILTIN_FAIL;                          \
   }
 
+ARITH_CMP_BUILTIN(builtin_lt, <)
 ARITH_CMP_BUILTIN(builtin_gt, >)
 ARITH_CMP_BUILTIN(builtin_le, <=)
 ARITH_CMP_BUILTIN(builtin_ge, >=)
@@ -476,38 +457,69 @@ static builtin_result_t builtin_atom_concat(prolog_ctx_t *ctx, term_t *goal,
   return BUILTIN_FAIL;
 }
 
+static term_t *str_to_char_list(prolog_ctx_t *ctx, const char *s) {
+  term_t *list = make_const(ctx, "[]");
+  for (int i = (int)strlen(s) - 1; i >= 0; i--) {
+    char ch[2] = {s[i], '\0'};
+    term_t *args[2] = {make_const(ctx, ch), list};
+    list = make_func(ctx, ".", args, 2);
+  }
+  return list;
+}
+
+static term_t *str_to_code_list(prolog_ctx_t *ctx, const char *s) {
+  term_t *list = make_const(ctx, "[]");
+  for (int i = (int)strlen(s) - 1; i >= 0; i--) {
+    char code[8];
+    snprintf(code, sizeof(code), "%d", (unsigned char)s[i]);
+    term_t *args[2] = {make_const(ctx, code), list};
+    list = make_func(ctx, ".", args, 2);
+  }
+  return list;
+}
+
+static bool char_list_to_str(env_t *env, term_t *list, char *buf, int max) {
+  int n = 0;
+  while (is_cons(list)) {
+    const char *cs = term_atom_str(deref(env, list->args[0]));
+    if (!cs || cs[1] != '\0' || n >= max - 1)
+      return false;
+    buf[n++] = cs[0];
+    list = deref(env, list->args[1]);
+  }
+  if (!is_nil(list))
+    return false;
+  buf[n] = '\0';
+  return true;
+}
+
+static bool code_list_to_str(env_t *env, term_t *list, char *buf, int max) {
+  int n = 0;
+  while (is_cons(list)) {
+    int c;
+    if (!term_as_int(deref(env, list->args[0]), &c) || c < 0 || c > 255 ||
+        n >= max - 1)
+      return false;
+    buf[n++] = (char)c;
+    list = deref(env, list->args[1]);
+  }
+  if (!is_nil(list))
+    return false;
+  buf[n] = '\0';
+  return true;
+}
+
 static builtin_result_t builtin_atom_chars(prolog_ctx_t *ctx, term_t *goal,
                                            env_t *env) {
   term_t *atom = deref(env, goal->args[0]);
   if (atom->type != VAR) {
     const char *s = term_atom_str(atom);
-    if (!s)
-      return BUILTIN_FAIL;
-    term_t *list = make_const(ctx, "[]");
-    for (int i = (int)strlen(s) - 1; i >= 0; i--) {
-      char ch[2] = {s[i], '\0'};
-      term_t *args[2] = {make_const(ctx, ch), list};
-      list = make_func(ctx, ".", args, 2);
-    }
-    return unify(ctx, goal->args[1], list, env) ? BUILTIN_OK : BUILTIN_FAIL;
+    return (s && unify(ctx, goal->args[1], str_to_char_list(ctx, s), env))
+               ? BUILTIN_OK : BUILTIN_FAIL;
   }
-  /* chars -> atom */
   char buf[MAX_NAME] = {0};
-  int n = 0;
-  term_t *cur = deref(env, goal->args[1]);
-  while (is_cons(cur)) {
-    term_t *head = deref(env, cur->args[0]);
-    const char *cs = term_atom_str(head);
-    if (!cs || cs[1] != '\0')
-      return BUILTIN_FAIL;
-    if (n >= MAX_NAME - 1)
-      return BUILTIN_FAIL;
-    buf[n++] = cs[0];
-    cur = deref(env, cur->args[1]);
-  }
-  if (!is_nil(cur))
+  if (!char_list_to_str(env, deref(env, goal->args[1]), buf, MAX_NAME))
     return BUILTIN_FAIL;
-  buf[n] = '\0';
   return unify(ctx, goal->args[0], make_const(ctx, buf), env) ? BUILTIN_OK
                                                               : BUILTIN_FAIL;
 }
@@ -517,34 +529,12 @@ static builtin_result_t builtin_atom_codes(prolog_ctx_t *ctx, term_t *goal,
   term_t *atom = deref(env, goal->args[0]);
   if (atom->type != VAR) {
     const char *s = term_atom_str(atom);
-    if (!s)
-      return BUILTIN_FAIL;
-    term_t *list = make_const(ctx, "[]");
-    for (int i = (int)strlen(s) - 1; i >= 0; i--) {
-      char code[8];
-      snprintf(code, sizeof(code), "%d", (unsigned char)s[i]);
-      term_t *args[2] = {make_const(ctx, code), list};
-      list = make_func(ctx, ".", args, 2);
-    }
-    return unify(ctx, goal->args[1], list, env) ? BUILTIN_OK : BUILTIN_FAIL;
+    return (s && unify(ctx, goal->args[1], str_to_code_list(ctx, s), env))
+               ? BUILTIN_OK : BUILTIN_FAIL;
   }
-  /* codes -> atom */
   char buf[MAX_NAME] = {0};
-  int n = 0;
-  term_t *cur = deref(env, goal->args[1]);
-  while (is_cons(cur)) {
-    term_t *head = deref(env, cur->args[0]);
-    int c;
-    if (!term_as_int(head, &c) || c < 0 || c > 255)
-      return BUILTIN_FAIL;
-    if (n >= MAX_NAME - 1)
-      return BUILTIN_FAIL;
-    buf[n++] = (char)c;
-    cur = deref(env, cur->args[1]);
-  }
-  if (!is_nil(cur))
+  if (!code_list_to_str(env, deref(env, goal->args[1]), buf, MAX_NAME))
     return BUILTIN_FAIL;
-  buf[n] = '\0';
   return unify(ctx, goal->args[0], make_const(ctx, buf), env) ? BUILTIN_OK
                                                               : BUILTIN_FAIL;
 }
@@ -600,34 +590,12 @@ static builtin_result_t builtin_number_codes(prolog_ctx_t *ctx, term_t *goal,
   if (num->type != VAR) {
     if (!is_integer_str(num->name))
       return BUILTIN_FAIL;
-    const char *s = num->name;
-    term_t *list = make_const(ctx, "[]");
-    for (int i = (int)strlen(s) - 1; i >= 0; i--) {
-      char code[8];
-      snprintf(code, sizeof(code), "%d", (unsigned char)s[i]);
-      term_t *args[2] = {make_const(ctx, code), list};
-      list = make_func(ctx, ".", args, 2);
-    }
-    return unify(ctx, goal->args[1], list, env) ? BUILTIN_OK : BUILTIN_FAIL;
+    return unify(ctx, goal->args[1], str_to_code_list(ctx, num->name), env)
+               ? BUILTIN_OK : BUILTIN_FAIL;
   }
-  /* codes -> number: build string then validate */
   char buf[MAX_NAME] = {0};
-  int n = 0;
-  term_t *cur = deref(env, goal->args[1]);
-  while (is_cons(cur)) {
-    term_t *head = deref(env, cur->args[0]);
-    int c;
-    if (!term_as_int(head, &c) || c < 0 || c > 255)
-      return BUILTIN_FAIL;
-    if (n >= MAX_NAME - 1)
-      return BUILTIN_FAIL;
-    buf[n++] = (char)c;
-    cur = deref(env, cur->args[1]);
-  }
-  if (!is_nil(cur))
-    return BUILTIN_FAIL;
-  buf[n] = '\0';
-  if (!is_integer_str(buf))
+  if (!code_list_to_str(env, deref(env, goal->args[1]), buf, MAX_NAME) ||
+      !is_integer_str(buf))
     return BUILTIN_FAIL;
   return unify(ctx, goal->args[0], make_const(ctx, buf), env) ? BUILTIN_OK
                                                               : BUILTIN_FAIL;
@@ -639,33 +607,12 @@ static builtin_result_t builtin_number_chars(prolog_ctx_t *ctx, term_t *goal,
   if (num->type != VAR) {
     if (!is_integer_str(num->name))
       return BUILTIN_FAIL;
-    const char *s = num->name;
-    term_t *list = make_const(ctx, "[]");
-    for (int i = (int)strlen(s) - 1; i >= 0; i--) {
-      char ch[2] = {s[i], '\0'};
-      term_t *args[2] = {make_const(ctx, ch), list};
-      list = make_func(ctx, ".", args, 2);
-    }
-    return unify(ctx, goal->args[1], list, env) ? BUILTIN_OK : BUILTIN_FAIL;
+    return unify(ctx, goal->args[1], str_to_char_list(ctx, num->name), env)
+               ? BUILTIN_OK : BUILTIN_FAIL;
   }
-  /* chars -> number */
   char buf[MAX_NAME] = {0};
-  int n = 0;
-  term_t *cur = deref(env, goal->args[1]);
-  while (is_cons(cur)) {
-    term_t *head = deref(env, cur->args[0]);
-    const char *cs = term_atom_str(head);
-    if (!cs || cs[1] != '\0')
-      return BUILTIN_FAIL;
-    if (n >= MAX_NAME - 1)
-      return BUILTIN_FAIL;
-    buf[n++] = cs[0];
-    cur = deref(env, cur->args[1]);
-  }
-  if (!is_nil(cur))
-    return BUILTIN_FAIL;
-  buf[n] = '\0';
-  if (!is_integer_str(buf))
+  if (!char_list_to_str(env, deref(env, goal->args[1]), buf, MAX_NAME) ||
+      !is_integer_str(buf))
     return BUILTIN_FAIL;
   return unify(ctx, goal->args[0], make_const(ctx, buf), env) ? BUILTIN_OK
                                                               : BUILTIN_FAIL;
@@ -941,8 +888,8 @@ static builtin_result_t builtin_make(prolog_ctx_t *ctx, term_t *goal,
   // check which files have changed since they were loaded
   int changed = 0;
   for (int i = 0; i < ctx->make_file_count; i++) {
-    long long cur = prolog_file_mtime(ctx->make_files[i]);
-    if (cur == -1LL || cur != ctx->make_file_mtimes[i])
+    long long cur = prolog_file_mtime(ctx->make_files[i].path);
+    if (cur == -1LL || cur != ctx->make_files[i].mtime)
       changed++;
   }
 
@@ -952,11 +899,11 @@ static builtin_result_t builtin_make(prolog_ctx_t *ctx, term_t *goal,
   }
 
   // snapshot file list before resetting pools
-  char files[MAX_MAKE_FILES][MAX_FILE_PATH];
   int count = ctx->make_file_count;
+  char snapshot[MAX_MAKE_FILES][MAX_FILE_PATH];
   for (int i = 0; i < count; i++) {
-    strncpy(files[i], ctx->make_files[i], MAX_FILE_PATH - 1);
-    files[i][MAX_FILE_PATH - 1] = '\0';
+    strncpy(snapshot[i], ctx->make_files[i].path, MAX_FILE_PATH - 1);
+    snapshot[i][MAX_FILE_PATH - 1] = '\0';
   }
 
   // roll back to the state captured before the first consult
@@ -966,7 +913,7 @@ static builtin_result_t builtin_make(prolog_ctx_t *ctx, term_t *goal,
   ctx->make_file_count = 0;
 
   for (int i = 0; i < count; i++)
-    prolog_load_file(ctx, files[i]);
+    prolog_load_file(ctx, snapshot[i]);
 
   io_writef(ctx, "%% make: reloaded %d file(s) (%d changed)\n", count, changed);
   return BUILTIN_OK;

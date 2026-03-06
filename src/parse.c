@@ -485,17 +485,12 @@ static bool has_complete_clause(const char *buf) {
   return false;
 }
 
-bool prolog_exec_query(prolog_ctx_t *ctx, char *query) {
+static bool parse_goals(prolog_ctx_t *ctx, char *query, goal_stmt_t *goals) {
   parse_error_clear(ctx);
   ctx->input_ptr = query;
   ctx->input_start = query;
   ctx->clause_var_count = 0;
-
-  int term_mark = ctx->term_count;
-  int string_mark = ctx->string_pool_offset;
-  int db_mark = ctx->db_count;
-
-  goal_stmt_t goals = {0};
+  goals->count = 0;
   do {
     skip_ws(ctx);
     term_t *g = parse_term(ctx);
@@ -506,15 +501,26 @@ bool prolog_exec_query(prolog_ctx_t *ctx, char *query) {
       }
       break;
     }
-    if (goals.count < MAX_GOALS)
-      goals.goals[goals.count++] = g;
+    if (goals->count < MAX_GOALS)
+      goals->goals[goals->count++] = g;
     skip_ws(ctx);
   } while (*ctx->input_ptr == ',' && ctx->input_ptr++);
 
-  if (goals.count == 0) {
+  if (goals->count == 0) {
     fprintf(stderr, "Error: empty query\n");
     return false;
   }
+  return true;
+}
+
+bool prolog_exec_query(prolog_ctx_t *ctx, char *query) {
+  int term_mark = ctx->term_count;
+  int string_mark = ctx->string_pool_offset;
+  int db_mark = ctx->db_count;
+
+  goal_stmt_t goals = {0};
+  if (!parse_goals(ctx, query, &goals))
+    return false;
 
   env_t env = {0};
   bool ok = solve(ctx, &goals, &env);
@@ -531,7 +537,6 @@ bool prolog_exec_query(prolog_ctx_t *ctx, char *query) {
     ctx->term_count = term_mark;
     ctx->string_pool_offset = string_mark;
   }
-
   return ok;
 }
 
@@ -539,35 +544,13 @@ bool prolog_exec_query(prolog_ctx_t *ctx, char *query) {
 // returns true if at least one solution was found.
 bool prolog_exec_query_multi(prolog_ctx_t *ctx, char *query,
                              solution_callback_t cb, void *ud) {
-  parse_error_clear(ctx);
-  ctx->input_ptr = query;
-  ctx->input_start = query;
-  ctx->clause_var_count = 0;
-
   int term_mark = ctx->term_count;
   int string_mark = ctx->string_pool_offset;
   int db_mark = ctx->db_count;
 
   goal_stmt_t goals = {0};
-  do {
-    skip_ws(ctx);
-    term_t *g = parse_term(ctx);
-    if (!g) {
-      if (parse_has_error(ctx)) {
-        parse_error_print(ctx);
-        return false;
-      }
-      break;
-    }
-    if (goals.count < MAX_GOALS)
-      goals.goals[goals.count++] = g;
-    skip_ws(ctx);
-  } while (*ctx->input_ptr == ',' && ctx->input_ptr++);
-
-  if (goals.count == 0) {
-    fprintf(stderr, "Error: empty query\n");
+  if (!parse_goals(ctx, query, &goals))
     return false;
-  }
 
   env_t env = {0};
   bool found = solve_all(ctx, &goals, &env, cb, ud);
@@ -583,6 +566,28 @@ static void exec_directive(prolog_ctx_t *ctx, char *buf) {
   prolog_exec_query(ctx, buf + 2); // skip "?-" or ":-"
 }
 
+// accumulate one trimmed line into clause[]. if a complete clause is ready,
+// dispatch it and reset. returns false on parse error.
+static bool process_clause_line(prolog_ctx_t *ctx, char *clause, size_t sz,
+                                const char *trimmed) {
+  if (*trimmed == '\0' && clause[0] == '\0')
+    return true;
+  if (clause[0] != '\0' && *trimmed != '\0')
+    strncat(clause, " ", sz - strlen(clause) - 1);
+  strncat(clause, trimmed, sz - strlen(clause) - 1);
+
+  if (!has_complete_clause(clause))
+    return true;
+
+  ctx->input_line++;
+  if (strncmp(clause, "?-", 2) == 0 || strncmp(clause, ":-", 2) == 0)
+    exec_directive(ctx, clause);
+  else
+    parse_clause(ctx, clause);
+  clause[0] = '\0';
+  return !parse_has_error(ctx);
+}
+
 static bool load_clauses_from_fp(prolog_ctx_t *ctx, FILE *f,
                                  const char *label) {
   char line[1024];
@@ -591,28 +596,11 @@ static bool load_clauses_from_fp(prolog_ctx_t *ctx, FILE *f,
   while (fgets(line, sizeof(line), f)) {
     line[strcspn(line, "\n")] = 0;
     strip_line_comment(line);
-
     char *trimmed = line;
     while (isspace((unsigned char)*trimmed))
       trimmed++;
-
-    if (*trimmed == '\0' && clause[0] == '\0')
-      continue;
-
-    if (clause[0] != '\0' && *trimmed != '\0')
-      strncat(clause, " ", sizeof(clause) - strlen(clause) - 1);
-    strncat(clause, trimmed, sizeof(clause) - strlen(clause) - 1);
-
-    if (has_complete_clause(clause)) {
-      ctx->input_line++;
-      if (strncmp(clause, "?-", 2) == 0 || strncmp(clause, ":-", 2) == 0)
-        exec_directive(ctx, clause);
-      else
-        parse_clause(ctx, clause);
-      clause[0] = '\0';
-      if (parse_has_error(ctx))
-        return false;
-    }
+    if (!process_clause_line(ctx, clause, sizeof(clause), trimmed))
+      return false;
   }
 
   char *p = clause;
@@ -620,7 +608,6 @@ static bool load_clauses_from_fp(prolog_ctx_t *ctx, FILE *f,
     p++;
   if (*p != '\0')
     fprintf(stderr, "Warning: unterminated clause at end of '%s'\n", label);
-
   return true;
 }
 
@@ -635,7 +622,7 @@ bool prolog_load_file(prolog_ctx_t *ctx, const char *filename) {
   if (ctx->include_depth == 0) {
     bool already_tracked = false;
     for (int i = 0; i < ctx->make_file_count; i++) {
-      if (strcmp(ctx->make_files[i], filename) == 0) {
+      if (strcmp(ctx->make_files[i].path, filename) == 0) {
         already_tracked = true;
         break;
       }
@@ -648,12 +635,10 @@ bool prolog_load_file(prolog_ctx_t *ctx, const char *filename) {
         ctx->make_string_mark = ctx->string_pool_offset;
       }
       if (ctx->make_file_count < MAX_MAKE_FILES) {
-        strncpy(ctx->make_files[ctx->make_file_count], filename,
-                MAX_FILE_PATH - 1);
-        ctx->make_files[ctx->make_file_count][MAX_FILE_PATH - 1] = '\0';
-        ctx->make_file_mtimes[ctx->make_file_count] =
-            prolog_file_mtime(filename);
-        ctx->make_file_count++;
+        int idx = ctx->make_file_count++;
+        strncpy(ctx->make_files[idx].path, filename, MAX_FILE_PATH - 1);
+        ctx->make_files[idx].path[MAX_FILE_PATH - 1] = '\0';
+        ctx->make_files[idx].mtime = prolog_file_mtime(filename);
       }
     }
   }
@@ -687,7 +672,6 @@ bool prolog_load_string(prolog_ctx_t *ctx, const char *src) {
   ctx->include_depth++; // not tracked for make/0
 
   while (*src) {
-    // read one line into `line`
     int i = 0;
     while (*src && *src != '\n' && i < (int)sizeof(line) - 1)
       line[i++] = *src++;
@@ -699,24 +683,9 @@ bool prolog_load_string(prolog_ctx_t *ctx, const char *src) {
     char *trimmed = line;
     while (isspace((unsigned char)*trimmed))
       trimmed++;
-
-    if (*trimmed == '\0' && clause[0] == '\0')
-      continue;
-    if (clause[0] != '\0' && *trimmed != '\0')
-      strncat(clause, " ", sizeof(clause) - strlen(clause) - 1);
-    strncat(clause, trimmed, sizeof(clause) - strlen(clause) - 1);
-
-    if (has_complete_clause(clause)) {
-      ctx->input_line++;
-      if (strncmp(clause, "?-", 2) == 0 || strncmp(clause, ":-", 2) == 0)
-        exec_directive(ctx, clause);
-      else
-        parse_clause(ctx, clause);
-      clause[0] = '\0';
-      if (parse_has_error(ctx)) {
-        ctx->include_depth--;
-        return false;
-      }
+    if (!process_clause_line(ctx, clause, sizeof(clause), trimmed)) {
+      ctx->include_depth--;
+      return false;
     }
   }
 

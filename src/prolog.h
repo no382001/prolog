@@ -180,8 +180,10 @@ struct prolog_ctx {
   char load_dir[MAX_FILE_PATH]; // directory of the file currently being loaded
 
   // make/0 – file reload tracking
-  char make_files[MAX_MAKE_FILES][MAX_FILE_PATH];
-  long long make_file_mtimes[MAX_MAKE_FILES];
+  struct {
+    char path[MAX_FILE_PATH];
+    long long mtime;
+  } make_files[MAX_MAKE_FILES];
   int make_file_count;
   int make_db_mark;
   int make_term_mark;
