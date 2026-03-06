@@ -47,9 +47,9 @@ bool son(prolog_ctx_t *ctx, goal_stmt_t *cn, int *clause_idx, env_t *env,
 
     env->count = env_mark;
 
-    int id = ++ctx->var_counter;
     int term_save = ctx->term_count; // reclaim on failed unification
-    term_t *renamed_head = rename_vars(ctx, c->head, id);
+    var_id_map_t map = {0};
+    term_t *renamed_head = rename_vars_mapped(ctx, c->head, &map);
     assert(renamed_head != NULL && "Failed to rename clause head");
 
     debug(ctx, "\n--- Trying clause %d ---\n", i);
@@ -64,7 +64,8 @@ bool son(prolog_ctx_t *ctx, goal_stmt_t *cn, int *clause_idx, env_t *env,
 
       for (int j = 0; j < c->body_count; j++) {
         assert(resolvent->count < MAX_GOALS && "Resolvent overflow");
-        resolvent->goals[resolvent->count++] = rename_vars(ctx, c->body[j], id);
+        resolvent->goals[resolvent->count++] =
+            rename_vars_mapped(ctx, c->body[j], &map);
       }
 
       for (int j = 1; j < cn->count; j++) {

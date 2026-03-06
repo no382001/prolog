@@ -198,9 +198,9 @@ static int collect_solutions(prolog_ctx_t *ctx, term_t *goal, env_t *env,
   term_t *query = deref(env, goal->args[1]);
   term_t *result_var = goal->args[2];
 
-  int id = ++ctx->var_counter;
-  template = rename_vars(ctx, template, id);
-  query = rename_vars(ctx, query, id);
+  var_id_map_t _map = {0};
+  template = rename_vars_mapped(ctx, template, &_map);
+  query = rename_vars_mapped(ctx, query, &_map);
 
   goal_stmt_t goals = {0};
   goals.goals[goals.count++] = query;
@@ -711,9 +711,7 @@ static builtin_result_t builtin_functor(prolog_ctx_t *ctx, term_t *goal,
   } else {
     term_t *args[MAX_ARGS];
     for (int i = 0; i < ar; i++) {
-      char vname[MAX_NAME];
-      snprintf(vname, sizeof(vname), "_F%d_%d", i, ++ctx->var_counter);
-      args[i] = make_var(ctx, vname);
+      args[i] = make_var(ctx, NULL, ctx->var_counter++);
     }
     t = make_func(ctx, fname, args, ar);
   }
@@ -782,8 +780,7 @@ static builtin_result_t builtin_univ(prolog_ctx_t *ctx, term_t *goal,
 static builtin_result_t builtin_copy_term(prolog_ctx_t *ctx, term_t *goal,
                                           env_t *env) {
   term_t *orig = substitute(ctx, env, deref(env, goal->args[0]));
-  int id = ++ctx->var_counter;
-  term_t *copy = rename_vars(ctx, orig, id);
+  term_t *copy = rename_vars(ctx, orig);
   return unify(ctx, goal->args[1], copy, env) ? BUILTIN_OK : BUILTIN_FAIL;
 }
 
@@ -841,11 +838,9 @@ static builtin_result_t builtin_retract(prolog_ctx_t *ctx, term_t *goal,
           ? deref(env, arg->args[0])
           : arg;
   for (int i = 0; i < ctx->db_count; i++) {
-    int id = ++ctx->var_counter;
     int env_mark = env->count;
     int trm_save = ctx->term_count;
-    if (unify(ctx, head_pat, rename_vars(ctx, ctx->database[i].head, id),
-              env)) {
+    if (unify(ctx, head_pat, rename_vars(ctx, ctx->database[i].head), env)) {
       for (int j = i; j < ctx->db_count - 1; j++)
         ctx->database[j] = ctx->database[j + 1];
       ctx->db_count--;
@@ -862,11 +857,10 @@ static builtin_result_t builtin_retractall(prolog_ctx_t *ctx, term_t *goal,
   term_t *head_pat = deref(env, goal->args[0]);
   int i = 0;
   while (i < ctx->db_count) {
-    int id = ++ctx->var_counter;
     int env_mark = env->count;
     int trm_save = ctx->term_count;
     bool matched =
-        unify(ctx, head_pat, rename_vars(ctx, ctx->database[i].head, id), env);
+        unify(ctx, head_pat, rename_vars(ctx, ctx->database[i].head), env);
     env->count = env_mark;
     ctx->term_count = trm_save;
     if (matched) {

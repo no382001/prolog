@@ -165,3 +165,67 @@ teardown() {
     [ "$status" -eq 0 ]
     [[ "$output" == *"X = jim"* ]]
 }
+
+# --- anonymous variable tests ---
+
+@test "anon: single _ matches anything" {
+    printf 'foo(a, b).\n' > "$tmpfile"
+    run $PROLOG -f "$tmpfile" -e '?- foo(_, b)'
+    [ "$status" -eq 0 ]
+    [ "$output" = "true" ]
+}
+
+@test "anon: two _ in same query are independent" {
+    printf 'foo(a, b).\n' > "$tmpfile"
+    run $PROLOG -f "$tmpfile" -e '?- foo(_, _)'
+    [ "$status" -eq 0 ]
+    [ "$output" = "true" ]
+}
+
+@test "anon: two _ do not share bindings across different values" {
+    printf 'pair(a, b).\n' > "$tmpfile"
+    run $PROLOG -f "$tmpfile" -e '?- pair(_, _)'
+    [ "$status" -eq 0 ]
+    [ "$output" = "true" ]
+}
+
+@test "anon: _ in rule head does not constrain" {
+    printf 'first([H|_], H).\n' > "$tmpfile"
+    run $PROLOG -f "$tmpfile" -e '?- first([1,2,3], X)'
+    [ "$status" -eq 0 ]
+    [ "$output" = "X = 1" ]
+}
+
+@test "anon: multiple _ in rule head are independent" {
+    printf 'second([_,X|_], X).\n' > "$tmpfile"
+    run $PROLOG -f "$tmpfile" -e '?- second([a,b,c], X)'
+    [ "$status" -eq 0 ]
+    [ "$output" = "X = b" ]
+}
+
+@test "anon: _ not shown in output bindings" {
+    run $PROLOG -e '?- _ = foo'
+    [ "$status" -eq 0 ]
+    [ "$output" = "true" ]
+}
+
+@test "anon: _ unifies with anything including compound" {
+    printf 'wrap(f(a,b)).\n' > "$tmpfile"
+    run $PROLOG -f "$tmpfile" -e '?- wrap(_)'
+    [ "$status" -eq 0 ]
+    [ "$output" = "true" ]
+}
+
+@test "anon: _ in body does not propagate" {
+    printf 'foo(a).\nbar :- foo(_).\n' > "$tmpfile"
+    run $PROLOG -f "$tmpfile" -e '?- bar'
+    [ "$status" -eq 0 ]
+    [ "$output" = "true" ]
+}
+
+@test "anon: two _ in rule body are independent" {
+    printf 'foo(a).\nfoo(b).\nboth :- foo(_), foo(_).\n' > "$tmpfile"
+    run $PROLOG -f "$tmpfile" -e '?- both'
+    [ "$status" -eq 0 ]
+    [ "$output" = "true" ]
+}

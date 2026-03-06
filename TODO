@@ -1,13 +1,19 @@
 streaming findall solutions
 lazy list
-int ids instead of string names, this will increase the string pool
-bump allocator + container_of for variable-size terms (const 16B, var 16B, func 96B, string 16B -> ~75% pool reduction)
+[x] int ids instead of string names
+- bump allocator + container_of for variable-size terms (const 16B, var 16B, func 96B, string 16B -> ~75% pool reduction)
+  - VAR would get an explicit var_id field instead of repurposing arity; FUNC keeps arity + args[]
+  - the arity/var_id overload in term_t is a stopgap until then
 
 - arithmetic: bitwise ops (>>, <<, \/, /\)
 - readline/history in repl
 - assert/1 as alias for assertz/1 is missing
 
-- if there are more than one "_" named anonymus variable in the eval scope, they are going to unify.
+[x] anonymous variable _ unification bug
 - trailing unparseable input in a query is silently ignored instead of erroring (e.g. ?- X is 5 \/ 3 gives X = 5)
+- i dont think there are /**/ comments
 
 https://www.complang.tuwien.ac.at/ulrich/iso-prolog/prologue
+
+- add instantiation errors and exceptions, in iso prolog fashion while we are at it
+- 

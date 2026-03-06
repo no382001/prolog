@@ -1,32 +1,36 @@
 #include "platform_impl.h"
 
-term_t *lookup(env_t *env, const char *name) {
+term_t *lookup(env_t *env, int var_id) {
   assert(env != NULL && "Environment is NULL");
-  assert(name != NULL && "Name is NULL");
 
   for (int i = env->count - 1; i >= 0; i--) {
-    if (strcmp(env->bindings[i].name, name) == 0) {
+    if (env->bindings[i].var_id == var_id) {
       return env->bindings[i].value;
     }
   }
   return NULL;
 }
 
-void bind(prolog_ctx_t *ctx, env_t *env, const char *name, term_t *value) {
+void bind(prolog_ctx_t *ctx, env_t *env, term_t *var, term_t *value) {
   assert(ctx != NULL && "Context is NULL");
   assert(env != NULL && "Environment is NULL");
-  assert(name != NULL && "Name is NULL");
+  assert(var != NULL && "Var is NULL");
+  assert(var->type == VAR && "bind called on non-VAR term");
   assert(value != NULL && "Value is NULL");
   assert(env->count < MAX_BINDINGS && "Binding table full");
 
   if (ctx->debug_enabled) {
-    debug(ctx, "  BIND: %s = ", name);
+    if (var->name)
+      debug(ctx, "  BIND: %s(%d) = ", var->name, var->arity);
+    else
+      debug(ctx, "  BIND: _G%d = ", var->arity);
     debug_term_raw(ctx, value);
     debug(ctx, "\n");
   }
 
   binding_t *b = &env->bindings[env->count++];
-  b->name = intern_name(ctx, name);
+  b->var_id = var->arity;
+  b->name = var->name; // already interned (or NULL for internal vars)
   b->value = value;
 }
 
@@ -34,7 +38,7 @@ term_t *deref(env_t *env, term_t *t) {
   assert(env != NULL && "Environment is NULL");
 
   while (t && t->type == VAR) {
-    term_t *val = lookup(env, t->name);
+    term_t *val = lookup(env, t->arity);
     if (!val)
       break;
     t = val;

@@ -65,9 +65,12 @@ term_t *make_const(prolog_ctx_t *ctx, const char *name) {
   return make_term(ctx, CONST, name, NULL, 0);
 }
 
-term_t *make_var(prolog_ctx_t *ctx, const char *name) {
-  assert(name != NULL && "Variable name cannot be NULL");
-  return make_term(ctx, VAR, name, NULL, 0);
+term_t *make_var(prolog_ctx_t *ctx, const char *name, int var_id) {
+  term_t *t = ctx_alloc_term(ctx);
+  t->type = VAR;
+  t->name = name ? intern_name(ctx, name) : NULL;
+  t->arity = var_id; // var_id stored in arity field for VAR terms
+  return t;
 }
 
 term_t *make_func(prolog_ctx_t *ctx, const char *name, term_t **args,
@@ -97,30 +100,32 @@ term_t *make_string(prolog_ctx_t *ctx, const char *str) {
   return t;
 }
 
-term_t *rename_vars(prolog_ctx_t *ctx, term_t *t, int id) {
+term_t *rename_vars_mapped(prolog_ctx_t *ctx, term_t *t, var_id_map_t *map) {
   if (!t)
     return NULL;
-
-  if (t->type == CONST)
+  if (t->type == CONST || t->type == STRING)
     return t;
-
-  if (t->type == STRING)
-    return t;
-
   if (t->type == VAR) {
-    char new_name[MAX_NAME];
-    int written = snprintf(new_name, MAX_NAME, "%s#%d", t->name,
-                           id); // use # instead of _
-    assert(written > 0 && written < MAX_NAME &&
-           "Variable name too long after renaming");
-    return make_var(ctx, new_name);
+    int old_id = t->arity;
+    for (int i = 0; i < map->count; i++) {
+      if (map->entries[i].old_id == old_id)
+        return make_var(ctx, NULL, map->entries[i].new_id);
+    }
+    int new_id = ctx->var_counter++;
+    assert(map->count < MAX_CLAUSE_VARS && "Too many variables in clause");
+    map->entries[map->count].old_id = old_id;
+    map->entries[map->count].new_id = new_id;
+    map->count++;
+    return make_var(ctx, NULL, new_id);
   }
-
-  assert(t->type == FUNC && "Invalid term type in rename_vars");
-
+  assert(t->type == FUNC && "Invalid term type in rename_vars_mapped");
   term_t *args[MAX_ARGS];
-  for (int i = 0; i < t->arity; i++) {
-    args[i] = rename_vars(ctx, t->args[i], id);
-  }
+  for (int i = 0; i < t->arity; i++)
+    args[i] = rename_vars_mapped(ctx, t->args[i], map);
   return make_func(ctx, t->name, args, t->arity);
+}
+
+term_t *rename_vars(prolog_ctx_t *ctx, term_t *t) {
+  var_id_map_t map = {0};
+  return rename_vars_mapped(ctx, t, &map);
 }

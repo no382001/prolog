@@ -363,7 +363,23 @@ static term_t *parse_primary(prolog_ctx_t *ctx) {
 
   if (isupper(name[0]) || name[0] == '_') {
     debug(ctx, "DEBUG parse_primary: variable %s\n", name);
-    return make_var(ctx, name);
+    // anonymous variable: each _ is distinct; never shared.
+    if (name[0] == '_' && name[1] == '\0') {
+      return make_var(ctx, "_", ctx->var_counter++);
+    }
+    // named variable: share var_id within the clause/query.
+    const char *iname = intern_name(ctx, name);
+    for (int i = 0; i < ctx->clause_var_count; i++) {
+      if (ctx->clause_vars[i].name == iname)
+        return make_var(ctx, iname, ctx->clause_vars[i].var_id);
+    }
+    assert(ctx->clause_var_count < MAX_CLAUSE_VARS &&
+           "Too many variables in clause");
+    int vid = ctx->var_counter++;
+    ctx->clause_vars[ctx->clause_var_count].name = iname;
+    ctx->clause_vars[ctx->clause_var_count].var_id = vid;
+    ctx->clause_var_count++;
+    return make_var(ctx, iname, vid);
   }
   debug(ctx, "DEBUG parse_primary: constant %s\n", name);
   return make_const(ctx, name);
@@ -473,6 +489,7 @@ bool prolog_exec_query(prolog_ctx_t *ctx, char *query) {
   parse_error_clear(ctx);
   ctx->input_ptr = query;
   ctx->input_start = query;
+  ctx->clause_var_count = 0;
 
   int term_mark = ctx->term_count;
   int string_mark = ctx->string_pool_offset;
@@ -525,6 +542,7 @@ bool prolog_exec_query_multi(prolog_ctx_t *ctx, char *query,
   parse_error_clear(ctx);
   ctx->input_ptr = query;
   ctx->input_start = query;
+  ctx->clause_var_count = 0;
 
   int term_mark = ctx->term_count;
   int string_mark = ctx->string_pool_offset;
@@ -713,6 +731,7 @@ void parse_clause(prolog_ctx_t *ctx, char *line) {
   parse_error_clear(ctx);
   ctx->input_ptr = line;
   ctx->input_start = line;
+  ctx->clause_var_count = 0;
 
   if (ctx->db_count >= MAX_CLAUSES) {
     parse_error(ctx, "database full (max %d clauses)", MAX_CLAUSES);

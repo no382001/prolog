@@ -24,12 +24,12 @@ bool unify(prolog_ctx_t *ctx, term_t *a, term_t *b, env_t *env) {
   }
 
   if (a->type == VAR) {
-    bind(ctx, env, a->name, b);
+    bind(ctx, env, a, b);
     debug(ctx, "  -> OK (bind var a)\n");
     return true;
   }
   if (b->type == VAR) {
-    bind(ctx, env, b->name, a);
+    bind(ctx, env, b, a);
     debug(ctx, "  -> OK (bind var b)\n");
     return true;
   }

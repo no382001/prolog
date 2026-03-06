@@ -54,6 +54,16 @@ void print_term(prolog_ctx_t *ctx, term_t *t, env_t *env, bool quoted) {
     return;
   }
 
+  if (t->type == VAR) {
+    if (t->name)
+      io_write_str(ctx, t->name);
+    else {
+      char buf[32];
+      snprintf(buf, sizeof(buf), "_G%d", t->arity);
+      io_write_str(ctx, buf);
+    }
+    return;
+  }
   io_write_str(ctx, t->name);
   if (t->type == FUNC && t->arity > 0) {
     io_write_str(ctx, "(");
@@ -70,9 +80,7 @@ void print_bindings(prolog_ctx_t *ctx, env_t *env) {
   bool printed = false;
   for (int i = 0; i < env->count; i++) {
     const char *name = env->bindings[i].name;
-    if (strchr(name, '#'))
-      continue;
-    if (name[0] == '_')
+    if (!name || name[0] == '_')
       continue;
     if (printed)
       io_write_str(ctx, ", ");

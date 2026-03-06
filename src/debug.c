@@ -22,7 +22,10 @@ void print_term_raw(term_t *t) {
     printf("CONST(%s)", t->name);
     break;
   case VAR:
-    printf("VAR(%s)", t->name);
+    if (t->name)
+      printf("VAR(%s,%d)", t->name, t->arity);
+    else
+      printf("VAR(_G%d)", t->arity);
     break;
   case STRING:
     printf("STRING(\"%s\")", t->string_data);

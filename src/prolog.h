@@ -47,6 +47,7 @@ typedef __builtin_va_list va_list;
 #define MAX_STRING_POOL 65536
 #define MAX_FILE_PATH 512
 #define MAX_MAKE_FILES 16
+#define MAX_CLAUSE_VARS 64
 
 typedef struct prolog_ctx prolog_ctx_t;
 typedef struct term term_t;
@@ -103,14 +104,25 @@ struct term {
   term_type type;
   const char *name;
   struct term *args[MAX_ARGS];
-  int arity;
+  int arity; // is repurposed for var_id VAR
   char *string_data;
 };
 
 typedef struct {
-  const char *name;
+  int var_id;       // variable identity (matches term_t.arity for VAR terms)
+  const char *name; // display name only; NULL for internal renamed vars
   term_t *value;
 } binding_t;
+
+typedef struct {
+  int old_id;
+  int new_id;
+} var_id_map_entry_t;
+
+typedef struct {
+  var_id_map_entry_t entries[MAX_CLAUSE_VARS];
+  int count;
+} var_id_map_t;
 
 struct env {
   binding_t bindings[MAX_BINDINGS];
@@ -175,6 +187,14 @@ struct prolog_ctx {
   int make_string_mark;
   int include_depth;
 
+  // per-clause variable table: maps name -> var_id within one clause/query.
+  // reset at the start of each clause or top-level query parse.
+  struct {
+    const char *name; // interned variable name
+    int var_id;
+  } clause_vars[MAX_CLAUSE_VARS];
+  int clause_var_count;
+
   struct {
     int terms_allocated;
     int terms_peak;
@@ -226,7 +246,9 @@ void debug_term_raw(prolog_ctx_t *ctx, term_t *t);
 term_t *make_term(prolog_ctx_t *ctx, term_type type, const char *name,
                   term_t **args, int arity);
 term_t *make_const(prolog_ctx_t *ctx, const char *name);
-term_t *make_var(prolog_ctx_t *ctx, const char *name);
+// for VAR terms, arity field stores the var_id (unique integer per variable).
+// name may be NULL for internal renamed variables (not shown in output).
+term_t *make_var(prolog_ctx_t *ctx, const char *name, int var_id);
 term_t *make_func(prolog_ctx_t *ctx, const char *name, term_t **args,
                   int arity);
 term_t *make_string(prolog_ctx_t *ctx, const char *str);
@@ -238,14 +260,19 @@ void parse_clause(prolog_ctx_t *ctx, char *line);
 bool prolog_load_file(prolog_ctx_t *ctx, const char *filename);
 bool prolog_load_string(prolog_ctx_t *ctx, const char *src);
 
-term_t *lookup(env_t *env, const char *name);
-void bind(prolog_ctx_t *ctx, env_t *env, const char *name, term_t *value);
+term_t *lookup(env_t *env, int var_id);
+void bind(prolog_ctx_t *ctx, env_t *env, term_t *var, term_t *value);
 term_t *deref(env_t *env, term_t *t);
 term_t *substitute(prolog_ctx_t *ctx, env_t *env, term_t *t);
 
 bool unify(prolog_ctx_t *ctx, term_t *a, term_t *b, env_t *env);
 
-term_t *rename_vars(prolog_ctx_t *ctx, term_t *t, int id);
+// rename_vars_mapped: rename all VARs in t, mapping old var_ids to fresh ones.
+// the map is shared across multiple calls for the same clause instance so that
+// the same variable in head and body gets the same renamed id.
+term_t *rename_vars_mapped(prolog_ctx_t *ctx, term_t *t, var_id_map_t *map);
+// Convenience wrapper: creates a fresh map for single-term rename.
+term_t *rename_vars(prolog_ctx_t *ctx, term_t *t);
 
 bool son(prolog_ctx_t *ctx, goal_stmt_t *cn, int *clause_idx, env_t *env,
          int env_mark, goal_stmt_t *resolvent);
@@ -271,11 +298,11 @@ void parse_error_print(prolog_ctx_t *ctx);
 
 builtin_result_t try_builtin(prolog_ctx_t *ctx, term_t *goal, env_t *env);
 
-// I/O hook management
+// i/o hook management
 void io_hooks_init_default(prolog_ctx_t *ctx);
 void io_hooks_set(prolog_ctx_t *ctx, io_hooks_t *hooks);
 
-// I/O functions (use hooks internally)
+// i/o functions (use hooks internally)
 void io_write_str(prolog_ctx_t *ctx, const char *str);
 void io_write_term(prolog_ctx_t *ctx, term_t *t, env_t *env);
 void io_write_term_quoted(prolog_ctx_t *ctx, term_t *t, env_t *env);
@@ -283,7 +310,7 @@ void io_writef(prolog_ctx_t *ctx, const char *fmt, ...);
 int io_read_char(prolog_ctx_t *ctx);
 char *io_read_line(prolog_ctx_t *ctx, char *buf, int size);
 
-// FFI: Register custom builtins
+// ffi: Register custom builtins
 bool ffi_register_builtin(prolog_ctx_t *ctx, const char *name, int arity,
                           builtin_handler_t handler, void *userdata);
 void ffi_clear_builtins(prolog_ctx_t *ctx);
