@@ -123,7 +123,7 @@ term_t *parse_list(prolog_ctx_t *ctx) {
     return make_const(ctx, "[]");
   }
 
-  term_t *elements[MAX_ARGS];
+  term_t *elements[MAX_LIST_LIT]; // scratch buffer
   int count = 0;
   term_t *tail = NULL;
 
@@ -150,8 +150,8 @@ term_t *parse_list(prolog_ctx_t *ctx) {
     ctx->input_ptr++;
     skip_ws(ctx);
 
-    if (count >= MAX_ARGS) {
-      parse_error(ctx, "too many list elements (max %d)", MAX_ARGS);
+    if (count >= MAX_LIST_LIT) {
+      parse_error(ctx, "too many list elements (max %d)", MAX_LIST_LIT);
       return NULL;
     }
 

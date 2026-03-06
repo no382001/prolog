@@ -161,6 +161,8 @@ static builtin_result_t builtin_stats(prolog_ctx_t *ctx, term_t *goal,
             ctx->stats.unify_fails);
   io_writef(ctx, "solve: %d son calls, %d backtracks\n", ctx->stats.son_calls,
             ctx->stats.backtracks);
+  io_writef(ctx, "string pool: %d / %d bytes\n", ctx->string_pool_offset,
+            MAX_STRING_POOL);
   return BUILTIN_OK;
 }
 

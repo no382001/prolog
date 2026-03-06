@@ -37,6 +37,7 @@ typedef __builtin_va_list va_list;
 
 #define MAX_NAME 64
 #define MAX_ARGS 8
+#define MAX_LIST_LIT 1024
 #define MAX_CLAUSES 256
 #define MAX_BINDINGS 256
 #define MAX_GOALS 64
