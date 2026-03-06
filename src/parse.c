@@ -23,6 +23,16 @@ void parse_error_clear(prolog_ctx_t *ctx) {
 
 bool parse_has_error(prolog_ctx_t *ctx) { return ctx->error.has_error; }
 
+void ctx_runtime_error(prolog_ctx_t *ctx, const char *fmt, ...) {
+  if (ctx->has_runtime_error)
+    return; // keep first error
+  ctx->has_runtime_error = true;
+  va_list args;
+  va_start(args, fmt);
+  vsnprintf(ctx->runtime_error, MAX_ERROR_MSG, fmt, args);
+  va_end(args);
+}
+
 void parse_error_print(prolog_ctx_t *ctx) {
   if (!ctx->error.has_error)
     return;
@@ -487,6 +497,7 @@ static bool has_complete_clause(const char *buf) {
 
 static bool parse_goals(prolog_ctx_t *ctx, char *query, goal_stmt_t *goals) {
   parse_error_clear(ctx);
+  ctx->has_runtime_error = false;
   ctx->input_ptr = query;
   ctx->input_start = query;
   ctx->clause_var_count = 0;
@@ -524,7 +535,12 @@ bool prolog_exec_query(prolog_ctx_t *ctx, char *query) {
 
   env_t env = {0};
   bool ok = solve(ctx, &goals, &env);
-  if (ok) {
+
+  if (ctx->has_runtime_error) {
+    io_writef(ctx, "ERROR: %s\n", ctx->runtime_error);
+    ctx->has_runtime_error = false;
+    ok = false;
+  } else if (ok) {
     print_bindings(ctx, &env);
     io_write_str(ctx, "\n");
   } else {
@@ -554,6 +570,12 @@ bool prolog_exec_query_multi(prolog_ctx_t *ctx, char *query,
 
   env_t env = {0};
   bool found = solve_all(ctx, &goals, &env, cb, ud);
+
+  if (ctx->has_runtime_error) {
+    io_writef(ctx, "ERROR: %s\n", ctx->runtime_error);
+    // leave has_runtime_error set so the caller can suppress "false"
+    found = false;
+  }
 
   if (ctx->db_count == db_mark) {
     ctx->term_count = term_mark;

@@ -82,8 +82,9 @@ static bool toplevel_cb(prolog_ctx_t *ctx, env_t *env, void *ud,
 static void exec_query(prolog_ctx_t *ctx, char *query, bool interactive) {
   toplevel_state_t st = {.interactive = interactive, .want_more = false};
   bool found = prolog_exec_query_multi(ctx, query, toplevel_cb, &st);
-  if (!found || st.want_more)
+  if (!ctx->has_runtime_error && (!found || st.want_more))
     io_write_str(ctx, "false\n");
+  ctx->has_runtime_error = false;
 }
 
 static void process_line(prolog_ctx_t *ctx, char *line, bool *should_exit,

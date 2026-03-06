@@ -139,10 +139,10 @@ teardown() {
 
 # --- is/2 failures ---
 
-@test "is: unbound variable in expression fails" {
+@test "is: unbound variable in expression errors" {
     run bash -c "echo '?- X is Y + 1' | $PROLOG"
     [ "$status" -eq 0 ]
-    [[ "$output" == *"false"* ]]
+    [[ "$output" == *"instantiation_error"* ]]
 }
 
 @test "is: non-numeric atom fails" {

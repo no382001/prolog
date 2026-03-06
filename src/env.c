@@ -30,8 +30,8 @@ void bind(prolog_ctx_t *ctx, env_t *env, term_t *var, term_t *value) {
 
   env->bindings[env->count++] = (binding_t){
       .var_id = var->arity,
-      .name   = var->name, // already interned (or NULL for internal vars)
-      .value  = value,
+      .name = var->name, // already interned (or NULL for internal vars)
+      .value = value,
   };
 }
 

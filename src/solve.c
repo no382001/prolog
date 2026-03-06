@@ -203,11 +203,15 @@ B:
       goto A;
     } else {
       debug(ctx, "*** SON failed, going to C ***\n");
+      if (ctx->has_runtime_error)
+        return false;
       goto C;
     }
   }
 
 C:
+  if (ctx->has_runtime_error)
+    return false;
   ctx->stats.backtracks++;
   debug(ctx, "\n*** LABEL C: backtracking, sp=%d ***\n", sp);
   sp--;

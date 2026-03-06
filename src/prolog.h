@@ -59,6 +59,7 @@ typedef enum {
   BUILTIN_NOT_HANDLED = 0,
   BUILTIN_OK = 1,
   BUILTIN_CUT = 2,
+  BUILTIN_ERROR = 3, // runtime error: ctx->runtime_error is set
 } builtin_result_t;
 
 typedef builtin_result_t (*builtin_handler_t)(prolog_ctx_t *ctx, term_t *goal,
@@ -206,6 +207,9 @@ struct prolog_ctx {
     int son_calls;
     int backtracks;
   } stats;
+
+  bool has_runtime_error;
+  char runtime_error[MAX_ERROR_MSG];
 };
 
 static inline bool is_cons(const term_t *t) {
@@ -298,6 +302,8 @@ void parse_error(prolog_ctx_t *ctx, const char *fmt, ...);
 void parse_error_clear(prolog_ctx_t *ctx);
 bool parse_has_error(prolog_ctx_t *ctx);
 void parse_error_print(prolog_ctx_t *ctx);
+
+void ctx_runtime_error(prolog_ctx_t *ctx, const char *fmt, ...);
 
 builtin_result_t try_builtin(prolog_ctx_t *ctx, term_t *goal, env_t *env);
 

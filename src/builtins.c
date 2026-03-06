@@ -14,19 +14,30 @@ static int arith_max(int a, int b) { return a > b ? a : b; }
 static int arith_min(int a, int b) { return a < b ? a : b; }
 
 static const arith_op_t arith_ops[] = {
-    {"+", arith_add}, {"-", arith_sub}, {"*", arith_mul},
-    {"/", arith_div}, {"mod", arith_mod}, {"//", arith_div},
+    {"+", arith_add},   {"-", arith_sub},   {"*", arith_mul},
+    {"/", arith_div},   {"mod", arith_mod}, {"//", arith_div},
     {"max", arith_max}, {"min", arith_min}, {NULL, NULL}};
 
-static bool eval_arith(prolog_ctx_t *ctx, term_t *t, env_t *env, int *result) {
+static bool eval_arith(prolog_ctx_t *ctx, term_t *t, env_t *env, int *result,
+                       const char *pred) {
   t = deref(env, t);
 
   if (term_as_int(t, result))
     return true;
 
+  if (t->type == VAR) {
+    if (t->name)
+      ctx_runtime_error(ctx, "instantiation_error in %s: %s is unbound", pred,
+                        t->name);
+    else
+      ctx_runtime_error(ctx, "instantiation_error in %s: variable is unbound",
+                        pred);
+    return false;
+  }
+
   if (t->type == FUNC && t->arity == 1) {
     int val;
-    if (!eval_arith(ctx, t->args[0], env, &val))
+    if (!eval_arith(ctx, t->args[0], env, &val, pred))
       return false;
     if (strcmp(t->name, "-") == 0) {
       *result = -val;
@@ -41,9 +52,9 @@ static bool eval_arith(prolog_ctx_t *ctx, term_t *t, env_t *env, int *result) {
 
   if (t->type == FUNC && t->arity == 2) {
     int left, right;
-    if (!eval_arith(ctx, t->args[0], env, &left))
+    if (!eval_arith(ctx, t->args[0], env, &left, pred))
       return false;
-    if (!eval_arith(ctx, t->args[1], env, &right))
+    if (!eval_arith(ctx, t->args[1], env, &right, pred))
       return false;
 
     for (const arith_op_t *op = arith_ops; op->op; op++) {
@@ -82,8 +93,8 @@ static builtin_result_t builtin_fail(prolog_ctx_t *ctx, term_t *goal,
 static builtin_result_t builtin_is(prolog_ctx_t *ctx, term_t *goal,
                                    env_t *env) {
   int result;
-  if (!eval_arith(ctx, goal->args[1], env, &result))
-    return BUILTIN_FAIL;
+  if (!eval_arith(ctx, goal->args[1], env, &result, "is/2"))
+    return ctx->has_runtime_error ? BUILTIN_ERROR : BUILTIN_FAIL;
   char buf[32];
   snprintf(buf, sizeof(buf), "%d", result);
   term_t *result_term = make_const(ctx, buf);
@@ -105,22 +116,22 @@ static builtin_result_t builtin_not_unify(prolog_ctx_t *ctx, term_t *goal,
   return unified ? -1 : 1;
 }
 
-#define ARITH_CMP_BUILTIN(name, op)                                            \
+#define ARITH_CMP_BUILTIN(name, op, pred)                                      \
   static builtin_result_t name(prolog_ctx_t *ctx, term_t *goal, env_t *env) {  \
     int left, right;                                                           \
-    if (!eval_arith(ctx, goal->args[0], env, &left))                           \
-      return BUILTIN_NOT_HANDLED;                                              \
-    if (!eval_arith(ctx, goal->args[1], env, &right))                          \
-      return BUILTIN_NOT_HANDLED;                                              \
+    if (!eval_arith(ctx, goal->args[0], env, &left, pred))                     \
+      return ctx->has_runtime_error ? BUILTIN_ERROR : BUILTIN_NOT_HANDLED;     \
+    if (!eval_arith(ctx, goal->args[1], env, &right, pred))                    \
+      return ctx->has_runtime_error ? BUILTIN_ERROR : BUILTIN_NOT_HANDLED;     \
     return left op right ? BUILTIN_OK : BUILTIN_FAIL;                          \
   }
 
-ARITH_CMP_BUILTIN(builtin_lt, <)
-ARITH_CMP_BUILTIN(builtin_gt, >)
-ARITH_CMP_BUILTIN(builtin_le, <=)
-ARITH_CMP_BUILTIN(builtin_ge, >=)
-ARITH_CMP_BUILTIN(builtin_arith_eq, ==)
-ARITH_CMP_BUILTIN(builtin_arith_ne, !=)
+ARITH_CMP_BUILTIN(builtin_lt, <, "</2")
+ARITH_CMP_BUILTIN(builtin_gt, >, ">/2")
+ARITH_CMP_BUILTIN(builtin_le, <=, "=</2")
+ARITH_CMP_BUILTIN(builtin_ge, >=, ">=/2")
+ARITH_CMP_BUILTIN(builtin_arith_eq, ==, "=:=/2")
+ARITH_CMP_BUILTIN(builtin_arith_ne, !=, "=\\=/2")
 
 #undef ARITH_CMP_BUILTIN
 
@@ -227,7 +238,9 @@ static builtin_result_t builtin_once(prolog_ctx_t *ctx, term_t *goal,
   term_t *inner = deref(env, goal->args[0]);
   goal_stmt_t goals = {0};
   goals.goals[goals.count++] = inner;
-  return solve(ctx, &goals, env) ? BUILTIN_OK : BUILTIN_FAIL;
+  if (solve(ctx, &goals, env))
+    return BUILTIN_OK;
+  return ctx->has_runtime_error ? BUILTIN_ERROR : BUILTIN_FAIL;
 }
 
 static builtin_result_t builtin_not(prolog_ctx_t *ctx, term_t *goal,
@@ -239,7 +252,9 @@ static builtin_result_t builtin_not(prolog_ctx_t *ctx, term_t *goal,
   bool found = false;
   solve_all(ctx, &goals, env, not_found_callback, &found);
   env->count = env_mark;
-  return found ? -1 : 1;
+  if (ctx->has_runtime_error)
+    return BUILTIN_ERROR;
+  return found ? BUILTIN_FAIL : BUILTIN_OK;
 }
 
 static bool is_integer_str(const char *s) {
@@ -515,7 +530,8 @@ static builtin_result_t builtin_atom_chars(prolog_ctx_t *ctx, term_t *goal,
   if (atom->type != VAR) {
     const char *s = term_atom_str(atom);
     return (s && unify(ctx, goal->args[1], str_to_char_list(ctx, s), env))
-               ? BUILTIN_OK : BUILTIN_FAIL;
+               ? BUILTIN_OK
+               : BUILTIN_FAIL;
   }
   char buf[MAX_NAME] = {0};
   if (!char_list_to_str(env, deref(env, goal->args[1]), buf, MAX_NAME))
@@ -530,7 +546,8 @@ static builtin_result_t builtin_atom_codes(prolog_ctx_t *ctx, term_t *goal,
   if (atom->type != VAR) {
     const char *s = term_atom_str(atom);
     return (s && unify(ctx, goal->args[1], str_to_code_list(ctx, s), env))
-               ? BUILTIN_OK : BUILTIN_FAIL;
+               ? BUILTIN_OK
+               : BUILTIN_FAIL;
   }
   char buf[MAX_NAME] = {0};
   if (!code_list_to_str(env, deref(env, goal->args[1]), buf, MAX_NAME))
@@ -591,7 +608,8 @@ static builtin_result_t builtin_number_codes(prolog_ctx_t *ctx, term_t *goal,
     if (!is_integer_str(num->name))
       return BUILTIN_FAIL;
     return unify(ctx, goal->args[1], str_to_code_list(ctx, num->name), env)
-               ? BUILTIN_OK : BUILTIN_FAIL;
+               ? BUILTIN_OK
+               : BUILTIN_FAIL;
   }
   char buf[MAX_NAME] = {0};
   if (!code_list_to_str(env, deref(env, goal->args[1]), buf, MAX_NAME) ||
@@ -608,7 +626,8 @@ static builtin_result_t builtin_number_chars(prolog_ctx_t *ctx, term_t *goal,
     if (!is_integer_str(num->name))
       return BUILTIN_FAIL;
     return unify(ctx, goal->args[1], str_to_char_list(ctx, num->name), env)
-               ? BUILTIN_OK : BUILTIN_FAIL;
+               ? BUILTIN_OK
+               : BUILTIN_FAIL;
   }
   char buf[MAX_NAME] = {0};
   if (!char_list_to_str(env, deref(env, goal->args[1]), buf, MAX_NAME) ||
@@ -624,6 +643,14 @@ static builtin_result_t builtin_functor(prolog_ctx_t *ctx, term_t *goal,
   term_t *term = deref(env, goal->args[0]);
   term_t *name = goal->args[1];
   term_t *arity = goal->args[2];
+  term_t *n = deref(env, name);
+  term_t *a = deref(env, arity);
+  if (term->type == VAR && n->type == VAR) {
+    ctx_runtime_error(ctx,
+                      "instantiation_error in functor/3: bind Term to "
+                      "decompose it, or bind Name and Arity to construct one");
+    return BUILTIN_ERROR;
+  }
   if (term->type != VAR) {
     const char *fname;
     int ar;
@@ -644,10 +671,16 @@ static builtin_result_t builtin_functor(prolog_ctx_t *ctx, term_t *goal,
                : -1;
   }
   /* compose */
-  term_t *n = deref(env, name);
-  term_t *a = deref(env, arity);
-  if (n->type == VAR || a->type == VAR)
-    return BUILTIN_FAIL;
+  if (n->type == VAR || a->type == VAR) {
+    term_t *unbound = (n->type == VAR) ? n : a;
+    if (unbound->name)
+      ctx_runtime_error(ctx, "instantiation_error in functor/3: %s is unbound",
+                        unbound->name);
+    else
+      ctx_runtime_error(
+          ctx, "instantiation_error in functor/3: variable is unbound");
+    return BUILTIN_ERROR;
+  }
   const char *fname = term_atom_str(n);
   if (!fname)
     return BUILTIN_FAIL;
