@@ -191,89 +191,65 @@ static int builtin_stats(prolog_ctx_t *ctx, term_t *goal, env_t *env) {
 typedef struct {
   prolog_ctx_t *ctx;
   term_t *template;
-  term_t **results;
+  term_t *list;
   int count;
-  int max;
 } findall_state_t;
 
 static bool findall_callback(prolog_ctx_t *ctx, env_t *env, void *userdata,
                              bool has_more) {
   (void)has_more;
-  findall_state_t *state = (findall_state_t *)userdata;
-
-  if (state->count < state->max) {
-    state->results[state->count++] = substitute(ctx, env, state->template);
-  }
-
-  return true; // continue finding more
+  findall_state_t *state = userdata;
+  term_t *val = substitute(ctx, env, state->template);
+  term_t *args[2] = {val, state->list};
+  state->list = make_func(ctx, ".", args, 2);
+  state->count++;
+  return true;
 }
 
-static term_t *build_list(prolog_ctx_t *ctx, term_t **items, int count) {
-  term_t *list = make_const(ctx, "[]");
-  for (int i = count - 1; i >= 0; i--) {
-    term_t *args[2] = {items[i], list};
-    list = make_func(ctx, ".", args, 2);
+static term_t *reverse_list(prolog_ctx_t *ctx, term_t *list) {
+  term_t *result = make_const(ctx, "[]");
+  while (list->type == FUNC && strcmp(list->name, ".") == 0) {
+    term_t *args[2] = {list->args[0], result};
+    result = make_func(ctx, ".", args, 2);
+    list = list->args[1];
   }
-  return list;
+  return result;
+}
+
+static int collect_solutions(prolog_ctx_t *ctx, term_t *goal, env_t *env,
+                             bool fail_on_empty) {
+  term_t *template = deref(env, goal->args[0]);
+  term_t *query = deref(env, goal->args[1]);
+  term_t *result_var = goal->args[2];
+
+  int id = ++ctx->var_counter;
+  template = rename_vars(ctx, template, id);
+  query = rename_vars(ctx, query, id);
+
+  goal_stmt_t goals = {0};
+  goals.goals[goals.count++] = query;
+
+  findall_state_t state = {.ctx = ctx,
+                           .template = template,
+                           .list = make_const(ctx, "[]"),
+                           .count = 0};
+
+  env_t query_env = {0};
+  solve_all(ctx, &goals, &query_env, findall_callback, &state);
+
+  if (fail_on_empty && state.count == 0)
+    return -1;
+
+  term_t *result = reverse_list(ctx, state.list);
+  return unify(ctx, result_var, result, env) ? 1 : -1;
 }
 
 static int builtin_findall(prolog_ctx_t *ctx, term_t *goal, env_t *env) {
-  term_t *template = deref(env, goal->args[0]);
-  term_t *query = deref(env, goal->args[1]);
-  term_t *result_list = goal->args[2];
-
-  // rename variables to avoid conflicts
-  int id = ++ctx->var_counter;
-  template = rename_vars(ctx, template, id);
-  query = rename_vars(ctx, query, id);
-
-  // build goal statement
-  goal_stmt_t goals = {0};
-  goals.goals[goals.count++] = query;
-
-  // collect solutions
-  term_t *results[MAX_TERMS];
-  findall_state_t state = {.ctx = ctx,
-                           .template = template,
-                           .results = results,
-                           .count = 0,
-                           .max = MAX_TERMS};
-
-  env_t query_env = {0};
-  solve_all(ctx, &goals, &query_env, findall_callback, &state);
-
-  term_t *list = build_list(ctx, results, state.count);
-  return unify(ctx, result_list, list, env) ? 1 : -1;
+  return collect_solutions(ctx, goal, env, false);
 }
 
 static int builtin_bagof(prolog_ctx_t *ctx, term_t *goal, env_t *env) {
-  term_t *template = deref(env, goal->args[0]);
-  term_t *query = deref(env, goal->args[1]);
-  term_t *result_list = goal->args[2];
-
-  int id = ++ctx->var_counter;
-  template = rename_vars(ctx, template, id);
-  query = rename_vars(ctx, query, id);
-
-  goal_stmt_t goals = {0};
-  goals.goals[goals.count++] = query;
-
-  term_t *results[MAX_TERMS];
-  findall_state_t state = {.ctx = ctx,
-                           .template = template,
-                           .results = results,
-                           .count = 0,
-                           .max = MAX_TERMS};
-
-  env_t query_env = {0};
-  solve_all(ctx, &goals, &query_env, findall_callback, &state);
-
-  // bagof fails if no solutions
-  if (state.count == 0)
-    return -1;
-
-  term_t *list = build_list(ctx, results, state.count);
-  return unify(ctx, result_list, list, env) ? 1 : -1;
+  return collect_solutions(ctx, goal, env, true);
 }
 
 static bool not_found_callback(prolog_ctx_t *ctx, env_t *env, void *userdata,
