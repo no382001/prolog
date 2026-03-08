@@ -177,6 +177,54 @@ A:
     goto A;
   }
 
+  // inline catch/3: catch(Goal, Catcher, Recovery)
+  if (first_goal->type == FUNC && strcmp(first_goal->name, "catch") == 0 &&
+      first_goal->arity == 3) {
+    term_t *sub_goal = deref(env, first_goal->args[0]);
+    term_t *catcher = first_goal->args[1];
+    term_t *recovery = deref(env, first_goal->args[2]);
+    int emark = env->count;
+
+    goal_stmt_t sub_goals = {0};
+    sub_goals.goals[sub_goals.count++] = sub_goal;
+
+    if (solve(ctx, &sub_goals, env)) {
+      // goal succeeded — continue with remaining goals
+      goal_stmt_t new_cn = {0};
+      for (int i = 1; i < cn.count; i++)
+        new_cn.goals[new_cn.count++] = cn.goals[i];
+      cn = new_cn;
+      goto A;
+    }
+
+    if (ctx->thrown_ball) {
+      // exception was thrown — try to catch it
+      term_t *ball = ctx->thrown_ball;
+      ctx->thrown_ball = NULL;
+      ctx->has_runtime_error = false;
+      env->count = emark;
+
+      if (unify(ctx, catcher, ball, env)) {
+        // caught - execute Recovery
+        goal_stmt_t new_cn = {0};
+        new_cn.goals[new_cn.count++] = recovery;
+        for (int i = 1; i < cn.count; i++)
+          new_cn.goals[new_cn.count++] = cn.goals[i];
+        cn = new_cn;
+        goto A;
+      }
+      // catcher didn't match - re-throw
+      ctx->thrown_ball = ball;
+      ctx->has_runtime_error = true;
+      env->count = emark;
+      return false;
+    }
+
+    // goal failed normally (no exception)
+    env->count = emark;
+    goto C;
+  }
+
   // inline ;/2 (disjunction / if-then-else)
   if (first_goal->type == FUNC && strcmp(first_goal->name, ";") == 0 &&
       first_goal->arity == 2) {

@@ -236,6 +236,7 @@ struct prolog_ctx {
 
   bool has_runtime_error;
   char runtime_error[MAX_ERROR_MSG];
+  term_t *thrown_ball; // exception term set by throw/1
 };
 
 static inline bool is_cons(const term_t *t) {

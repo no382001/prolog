@@ -363,6 +363,15 @@ static bool not_found_callback(prolog_ctx_t *ctx, env_t *env, void *userdata,
   return false;
 }
 
+static builtin_result_t builtin_throw(prolog_ctx_t *ctx, term_t *goal,
+                                      env_t *env) {
+  term_t *ball = deref(env, goal->args[0]);
+  ctx->thrown_ball = ball;
+  ctx->has_runtime_error = true;
+  snprintf(ctx->runtime_error, MAX_ERROR_MSG, "unhandled exception");
+  return BUILTIN_ERROR;
+}
+
 static builtin_result_t builtin_once(prolog_ctx_t *ctx, term_t *goal,
                                      env_t *env) {
   term_t *inner = deref(env, goal->args[0]);
@@ -1176,6 +1185,7 @@ static const builtin_t builtins[] = {
     {"=:=", 2, builtin_arith_eq},
     {"=\\=", 2, builtin_arith_ne},
     // 1-arity
+    {"throw", 1, builtin_throw},
     {"once", 1, builtin_once},
     {"\\+", 1, builtin_not},
     {"var", 1, builtin_var},

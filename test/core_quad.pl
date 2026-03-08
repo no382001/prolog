@@ -350,3 +350,47 @@ color(blue).
 
 ?- sort([c, a, b, a, c], X).
    X = [a, b, c].
+
+% --- throw/1 and catch/3 ---
+
+?- catch(true, _, fail).
+   true.
+
+?- catch(fail, _, true).
+   false.
+
+?- catch(throw(oops), E, true).
+   E = oops.
+
+?- catch(throw(hello), hello, true).
+   true.
+
+?- catch(throw(foo), bar, true).
+   error(unhandled exception).
+
+?- catch(throw(error(type, ctx)), error(type, X), true).
+   X = ctx.
+
+throw_bound(X) :- X = 1, throw(X).
+
+?- catch(throw_bound(X), 1, true).
+   true.
+
+?- catch(throw(a), E, (E == a)).
+   E = a.
+
+throw_first :- throw(first), throw(second).
+
+?- catch(throw_first, E, true).
+   E = first.
+
+?- catch(catch(throw(inner), inner, throw(outer)), outer, true).
+   true.
+
+?- catch(catch(throw(deep), no_match, true), deep, true).
+   true.
+
+bind_and_succeed(X) :- X = 42.
+
+?- catch(bind_and_succeed(X), _, fail).
+   X = 42.
