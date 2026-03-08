@@ -316,3 +316,37 @@ color(blue).
 
 ?- a @< f(a).
    true.
+
+% --- msort/2 ---
+
+?- msort([], X).
+   X = [].
+
+?- msort([3, 1, 2], X).
+   X = [1, 2, 3].
+
+?- msort([b, a, c], X).
+   X = [a, b, c].
+
+?- msort([b, a, c, a], X).
+   X = [a, a, b, c].
+
+?- msort([1, a, f(x)], X).
+   X = [1, a, f(x)].
+
+% --- sort/2 ---
+
+?- sort([], X).
+   X = [].
+
+?- sort([3, 1, 2], X).
+   X = [1, 2, 3].
+
+?- sort([b, a, c, a], X).
+   X = [a, b, c].
+
+?- sort([1, 1, 1], X).
+   X = [1].
+
+?- sort([c, a, b, a, c], X).
+   X = [a, b, c].

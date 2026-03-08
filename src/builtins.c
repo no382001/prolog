@@ -1041,6 +1041,76 @@ static builtin_result_t builtin_plus(prolog_ctx_t *ctx, term_t *goal,
   return BUILTIN_FAIL;
 }
 
+/* ── sorting ────────────────────────────────────────────────────────── */
+static int list_to_array(env_t *env, term_t *list, term_t **arr, int max) {
+  int n = 0;
+  list = deref(env, list);
+  while (is_cons(list)) {
+    if (n >= max)
+      return -1;
+    arr[n++] = deref(env, list->args[0]);
+    list = deref(env, list->args[1]);
+  }
+  return is_nil(list) ? n : -1;
+}
+
+static term_t *array_to_list(prolog_ctx_t *ctx, term_t **arr, int n) {
+  term_t *list = make_const(ctx, "[]");
+  for (int i = n - 1; i >= 0; i--) {
+    term_t *args[2] = {arr[i], list};
+    list = make_func(ctx, ".", args, 2);
+  }
+  return list;
+}
+
+static builtin_result_t builtin_msort(prolog_ctx_t *ctx, term_t *goal,
+                                      env_t *env) {
+  term_t *elems[MAX_LIST_LIT];
+  int n = list_to_array(env, goal->args[0], elems, MAX_LIST_LIT);
+  if (n < 0)
+    return BUILTIN_FAIL;
+  // insertion sort by term_order
+  for (int i = 1; i < n; i++) {
+    term_t *key = elems[i];
+    int j = i - 1;
+    while (j >= 0 && term_order(elems[j], key, env) > 0) {
+      elems[j + 1] = elems[j];
+      j--;
+    }
+    elems[j + 1] = key;
+  }
+  return unify(ctx, goal->args[1], array_to_list(ctx, elems, n), env)
+             ? BUILTIN_OK
+             : BUILTIN_FAIL;
+}
+
+static builtin_result_t builtin_sort(prolog_ctx_t *ctx, term_t *goal,
+                                     env_t *env) {
+  term_t *elems[MAX_LIST_LIT];
+  int n = list_to_array(env, goal->args[0], elems, MAX_LIST_LIT);
+  if (n < 0)
+    return BUILTIN_FAIL;
+  // insertion sort
+  for (int i = 1; i < n; i++) {
+    term_t *key = elems[i];
+    int j = i - 1;
+    while (j >= 0 && term_order(elems[j], key, env) > 0) {
+      elems[j + 1] = elems[j];
+      j--;
+    }
+    elems[j + 1] = key;
+  }
+  // remove duplicates
+  int out = 0;
+  for (int i = 0; i < n; i++) {
+    if (i == 0 || term_order(elems[i], elems[out - 1], env) != 0)
+      elems[out++] = elems[i];
+  }
+  return unify(ctx, goal->args[1], array_to_list(ctx, elems, out), env)
+             ? BUILTIN_OK
+             : BUILTIN_FAIL;
+}
+
 static builtin_result_t builtin_make(prolog_ctx_t *ctx, term_t *goal,
                                      env_t *env) {
   (void)goal;
@@ -1151,6 +1221,9 @@ static const builtin_t builtins[] = {
     // arithmetic helpers
     {"succ", 2, builtin_succ},
     {"plus", 3, builtin_plus},
+    // sorting
+    {"msort", 2, builtin_msort},
+    {"sort", 2, builtin_sort},
     {NULL, 0, NULL}};
 
 builtin_result_t try_builtin(prolog_ctx_t *ctx, term_t *goal, env_t *env) {
