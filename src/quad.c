@@ -10,6 +10,7 @@ typedef struct {
   char name[256];
   bool pass;
   char failure[MAX_FAIL_MSG];
+  double elapsed_sec;
 } test_record_t;
 
 typedef struct {
@@ -212,6 +213,9 @@ static bool run_one_test(prolog_ctx_t *ctx, const char *query_raw,
   int string_mark = ctx->string_pool_offset;
   int db_mark = ctx->db_count;
 
+  // time the query execution
+  double t_start = io_clock_monotonic(ctx);
+
   // suppress output during query execution (write/1, nl/0, errors)
   capture_buf_t query_out;
   cap_reset(&query_out);
@@ -240,6 +244,8 @@ static bool run_one_test(prolog_ctx_t *ctx, const char *query_raw,
 
   // restore hooks
   ctx->io_hooks = saved_hooks;
+
+  double elapsed = io_clock_monotonic(ctx) - t_start;
 
   // restore pools if no new clauses were added
   if (ctx->db_count == db_mark) {
@@ -287,21 +293,26 @@ static bool run_one_test(prolog_ctx_t *ctx, const char *query_raw,
     }
   }
 
+  res->total_time += elapsed;
+
   // record test result
   if (rec) {
     snprintf(rec->name, sizeof(rec->name), "%.*s", (int)(sizeof(rec->name) - 1),
              display);
     rec->pass = pass;
     rec->failure[0] = '\0';
+    rec->elapsed_sec = elapsed;
   }
 
   // output TAP
   if (pass) {
     res->passed++;
-    io_writef(ctx, "ok %d - ?- %s\n", test_num, display);
+    io_writef(ctx, "ok %d - ?- %s (%.3fms)\n", test_num, display,
+              elapsed * 1000.0);
   } else {
     res->failed++;
-    io_writef(ctx, "not ok %d - ?- %s\n", test_num, display);
+    io_writef(ctx, "not ok %d - ?- %s (%.3fms)\n", test_num, display,
+              elapsed * 1000.0);
 
     char failbuf[MAX_FAIL_MSG] = {0};
     int fpos = 0;
@@ -420,8 +431,8 @@ static void write_junit_xml(prolog_ctx_t *ctx, const char *filename,
   io_file_write(ctx, xf, "<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n");
   snprintf(line, sizeof(line),
            "<testsuite name=\"%s\" tests=\"%d\" failures=\"%d\" "
-           "errors=\"0\">\n",
-           suite_name, res->total, res->failed);
+           "errors=\"0\" time=\"%.3f\">\n",
+           suite_name, res->total, res->failed, res->total_time);
   io_file_write(ctx, xf, line);
 
   char esc_name[512];
@@ -430,14 +441,14 @@ static void write_junit_xml(prolog_ctx_t *ctx, const char *filename,
     xml_escape(records[i].name, esc_name, sizeof(esc_name));
     if (records[i].pass) {
       snprintf(line, sizeof(line),
-               "  <testcase name=\"%s\" classname=\"%s\"/>\n", esc_name,
-               suite_name);
+               "  <testcase name=\"%s\" classname=\"%s\" time=\"%.3f\"/>\n",
+               esc_name, suite_name, records[i].elapsed_sec);
       io_file_write(ctx, xf, line);
     } else {
       xml_escape(records[i].failure, esc_fail, sizeof(esc_fail));
       snprintf(line, sizeof(line),
-               "  <testcase name=\"%s\" classname=\"%s\">\n", esc_name,
-               suite_name);
+               "  <testcase name=\"%s\" classname=\"%s\" time=\"%.3f\">\n",
+               esc_name, suite_name, records[i].elapsed_sec);
       io_file_write(ctx, xf, line);
       snprintf(line, sizeof(line), "    <failure message=\"%s\"/>\n", esc_fail);
       io_file_write(ctx, xf, line);
@@ -533,8 +544,8 @@ static quad_results_t run_quad_file_impl(prolog_ctx_t *ctx,
 
   io_file_close(ctx, f);
 
-  io_writef(ctx, "# %s: %d tests, %d passed, %d failed\n", filename, res.total,
-            res.passed, res.failed);
+  io_writef(ctx, "# %s: %d tests, %d passed, %d failed (%.3fs)\n", filename,
+            res.total, res.passed, res.failed, res.total_time);
 
   // write JUnit XML if requested
   if (junit_dir && records) {

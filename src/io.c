@@ -85,6 +85,14 @@ static long long default_file_mtime(prolog_ctx_t *ctx, const char *path,
   return (stat(path, &st) == 0) ? (long long)st.st_mtime : -1LL;
 }
 
+static double default_clock_monotonic(prolog_ctx_t *ctx, void *userdata) {
+  (void)ctx;
+  (void)userdata;
+  struct timespec ts;
+  clock_gettime(CLOCK_MONOTONIC, &ts);
+  return (double)ts.tv_sec + (double)ts.tv_nsec / 1e9;
+}
+
 void io_hooks_init_default(prolog_ctx_t *ctx) {
   ctx->io_hooks.write_str = default_write_str;
   ctx->io_hooks.write_term = default_write_term;
@@ -98,6 +106,7 @@ void io_hooks_init_default(prolog_ctx_t *ctx) {
   ctx->io_hooks.file_write = default_file_write;
   ctx->io_hooks.file_exists = default_file_exists;
   ctx->io_hooks.file_mtime = default_file_mtime;
+  ctx->io_hooks.clock_monotonic = default_clock_monotonic;
   ctx->io_hooks.userdata = NULL;
 }
 
@@ -126,6 +135,8 @@ void io_hooks_set(prolog_ctx_t *ctx, io_hooks_t *hooks) {
     ctx->io_hooks.file_exists = hooks->file_exists;
   if (hooks->file_mtime)
     ctx->io_hooks.file_mtime = hooks->file_mtime;
+  if (hooks->clock_monotonic)
+    ctx->io_hooks.clock_monotonic = hooks->clock_monotonic;
 
   ctx->io_hooks.userdata = hooks->userdata;
 }
@@ -212,4 +223,10 @@ long long io_file_mtime(prolog_ctx_t *ctx, const char *path) {
   if (ctx->io_hooks.file_mtime)
     return ctx->io_hooks.file_mtime(ctx, path, ctx->io_hooks.userdata);
   return -1LL;
+}
+
+double io_clock_monotonic(prolog_ctx_t *ctx) {
+  if (ctx->io_hooks.clock_monotonic)
+    return ctx->io_hooks.clock_monotonic(ctx, ctx->io_hooks.userdata);
+  return 0.0;
 }

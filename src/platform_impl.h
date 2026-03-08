@@ -1,3 +1,9 @@
+#ifndef PROLOG_FREESTANDING
+#ifndef _POSIX_C_SOURCE
+#define _POSIX_C_SOURCE 200809L
+#endif
+#endif
+
 #include "prolog.h"
 
 #ifndef PROLOG_FREESTANDING
@@ -7,6 +13,7 @@
 #include <stdlib.h>
 #include <string.h>
 #include <sys/stat.h>
+#include <time.h>
 
 static inline long long prolog_file_mtime(const char *path) {
   struct stat st;
