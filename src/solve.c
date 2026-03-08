@@ -177,6 +177,86 @@ A:
     goto A;
   }
 
+  // inline ;/2 (disjunction / if-then-else)
+  if (first_goal->type == FUNC && strcmp(first_goal->name, ";") == 0 &&
+      first_goal->arity == 2) {
+    term_t *left = deref(env, first_goal->args[0]);
+    term_t *right = deref(env, first_goal->args[1]);
+
+    if (left->type == FUNC && strcmp(left->name, "->") == 0 &&
+        left->arity == 2) {
+      // if-then-else: ;(->(Cond, Then), Else)
+      term_t *cond = deref(env, left->args[0]);
+      term_t *then_branch = deref(env, left->args[1]);
+      int emark = env->count;
+
+      goal_stmt_t cond_goals = {0};
+      cond_goals.goals[cond_goals.count++] = cond;
+      if (solve(ctx, &cond_goals, env)) {
+        // Cond succeeded — commit to Then branch
+        goal_stmt_t new_cn = {0};
+        new_cn.goals[new_cn.count++] = then_branch;
+        for (int i = 1; i < cn.count; i++)
+          new_cn.goals[new_cn.count++] = cn.goals[i];
+        cn = new_cn;
+      } else {
+        // Cond failed — take Else branch
+        env->count = emark;
+        goal_stmt_t new_cn = {0};
+        new_cn.goals[new_cn.count++] = right;
+        for (int i = 1; i < cn.count; i++)
+          new_cn.goals[new_cn.count++] = cn.goals[i];
+        cn = new_cn;
+      }
+      goto A;
+    }
+
+    // plain disjunction: ;(A, B)
+    // push choice point for B, then try A
+    {
+      goal_stmt_t alt_cn = {0};
+      alt_cn.goals[alt_cn.count++] = right;
+      for (int i = 1; i < cn.count; i++)
+        alt_cn.goals[alt_cn.count++] = cn.goals[i];
+
+      assert(sp < MAX_STACK && "Stack overflow");
+      stack[sp].goals = alt_cn;
+      stack[sp].clause_index = 0;
+      stack[sp].env_mark = env->count;
+      stack[sp].cut_point = cut_point;
+      sp++;
+
+      goal_stmt_t new_cn = {0};
+      new_cn.goals[new_cn.count++] = left;
+      for (int i = 1; i < cn.count; i++)
+        new_cn.goals[new_cn.count++] = cn.goals[i];
+      cn = new_cn;
+      goto A;
+    }
+  }
+
+  // inline ->/2 (standalone if-then, no else — fails if Cond fails)
+  if (first_goal->type == FUNC && strcmp(first_goal->name, "->") == 0 &&
+      first_goal->arity == 2) {
+    term_t *cond = deref(env, first_goal->args[0]);
+    term_t *then_branch = deref(env, first_goal->args[1]);
+    int emark = env->count;
+
+    goal_stmt_t cond_goals = {0};
+    cond_goals.goals[cond_goals.count++] = cond;
+    if (solve(ctx, &cond_goals, env)) {
+      goal_stmt_t new_cn = {0};
+      new_cn.goals[new_cn.count++] = then_branch;
+      for (int i = 1; i < cn.count; i++)
+        new_cn.goals[new_cn.count++] = cn.goals[i];
+      cn = new_cn;
+      goto A;
+    } else {
+      env->count = emark;
+      goto C;
+    }
+  }
+
   clause_idx = 0;
   env_mark = env->count;
 

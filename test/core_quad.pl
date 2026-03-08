@@ -152,3 +152,74 @@ color(blue).
 
 ?- \+ true.
    false.
+
+% --- disjunction ;/2 ---
+
+?- (true ; true).
+   true
+;  true.
+
+?- (fail ; true).
+   true.
+
+?- (true ; fail).
+   true.
+
+?- (fail ; fail).
+   false.
+
+?- (X = a ; X = b).
+   X = a
+;  X = b.
+
+?- findall(X, (X = a ; X = b), L).
+   L = [a, b].
+
+?- findall(X, (X = a ; X = b ; X = c), L).
+   L = [a, b, c].
+
+?- (fail ; X = hello).
+   X = hello.
+
+% --- if-then -> ---
+
+?- (true -> X = yes).
+   X = yes.
+
+?- (fail -> X = yes).
+   false.
+
+% --- if-then-else (-> ;) ---
+
+?- (true -> X = yes ; X = no).
+   X = yes.
+
+?- (fail -> X = yes ; X = no).
+   X = no.
+
+?- (true -> true ; fail).
+   true.
+
+?- (fail -> true ; true).
+   true.
+
+?- (fail -> true ; fail).
+   false.
+
+% -> commits: only first solution of condition
+?- findall(X, ((X = a ; X = b) -> true ; true), L).
+   L = [a].
+
+% nested if-then-else
+?- (true -> (true -> X = deep ; X = no) ; X = outer).
+   X = deep.
+
+?- (fail -> X = yes ; (true -> X = inner ; X = no)).
+   X = inner.
+
+% if-then-else with arithmetic
+?- (1 =:= 1 -> X = equal ; X = not_equal).
+   X = equal.
+
+?- (1 =:= 2 -> X = equal ; X = not_equal).
+   X = not_equal.
