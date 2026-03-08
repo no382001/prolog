@@ -1,9 +1,9 @@
 name: CI
 on:
   push:
-    branches: [ main ]
+    branches: [ main, dev ]
   pull_request:
-    branches: [ main ]
+    branches: [ main, dev ]
 
 permissions:
   contents: read
@@ -49,20 +49,15 @@ jobs:
         with:
           name: prolog-build
 
-      - name: install test deps
+      - name: run quad tests
         run: |
-          sudo apt-get update
-          sudo apt-get install -y bats
           chmod +x ./prolog
-
-      - name: run tests
-        run: bats --formatter junit test/*.sh > bats-results.xml
-        continue-on-error: true
+          make quad-junit
 
       - name: publish test results
         uses: dorny/test-reporter@v1
         if: always()
         with:
-          name: BATS Tests
-          path: bats-results.xml
+          name: Quad Tests
+          path: _build/test-results/*.xml
           reporter: java-junit
