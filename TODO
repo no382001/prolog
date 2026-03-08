@@ -16,3 +16,4 @@ lazy list
 https://www.complang.tuwien.ac.at/ulrich/iso-prolog/prologue
 
 - add instantiation errors and exceptions, in iso prolog fashion while we are at it
+- think more about what needs to be exposed in the i/o hooks, file writing is pretty basic

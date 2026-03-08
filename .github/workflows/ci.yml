@@ -61,3 +61,14 @@ jobs:
           name: Quad Tests
           path: _build/test-results/*.xml
           reporter: java-junit
+
+  freestanding:
+    runs-on: ubuntu-latest
+    steps:
+      - name: checkout code
+        uses: actions/checkout@v4
+
+      - name: build freestanding
+        run: |
+          mkdir -p _build
+          make freestanding

@@ -20,7 +20,7 @@ OBJS := $(SRCS:src/%.c=$(BUILD_DIR)/%.o)
 LIB_OBJS := $(filter-out $(BUILD_DIR)/main.o,$(OBJS))
 
 EXAMPLE_SRCS := $(wildcard $(EXAMPLES_DIR)/*.c)
-EXAMPLE_BINS := $(EXAMPLE_SRCS:$(EXAMPLES_DIR)/%.c=$(BUILD_DIR)/%)
+EXAMPLE_BINS := $(filter-out $(BUILD_DIR)/freestanding,$(EXAMPLE_SRCS:$(EXAMPLES_DIR)/%.c=$(BUILD_DIR)/%))
 
 all: format $(TARGET) $(EXAMPLE_BINS)
 
@@ -74,3 +74,10 @@ quad-junit: $(TARGET)
 		./$(TARGET) -q "$$f" -j _build/test-results || exit 1; \
 	done
 	@echo "JUnit reports written to _build/test-results/"
+
+.PHONY: freestanding
+freestanding: | $(BUILD_DIR)
+	$(CC) -std=c11 -Wall -Wextra -Wpedantic -Werror -g \
+		-DPROLOG_FREESTANDING -DNDEBUG \
+		-ffreestanding -nostdlib \
+		$(EXAMPLES_DIR)/freestanding.c -o $(BUILD_DIR)/freestanding

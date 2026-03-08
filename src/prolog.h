@@ -28,7 +28,8 @@ typedef __builtin_va_list va_list;
 #endif
 
 // user must define these as macros pointing to their implementations:
-// strcmp, strncmp, strlen, strchr, strcspn, strncpy
+// strcmp, strncmp, strlen, strcspn, strncpy, strncat, strrchr
+// memcpy, memset
 // isspace, isdigit, isalpha, isalnum
 // vsnprintf, snprintf
 // assert (or define NDEBUG to disable)

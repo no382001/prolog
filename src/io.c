@@ -1,5 +1,7 @@
 #include "platform_impl.h"
 
+#ifndef PROLOG_FREESTANDING
+
 static void default_write_str(prolog_ctx_t *ctx, const char *str,
                               void *userdata) {
   (void)ctx;
@@ -110,6 +112,8 @@ void io_hooks_init_default(prolog_ctx_t *ctx) {
   ctx->io_hooks.userdata = NULL;
 }
 
+#endif // !PROLOG_FREESTANDING
+
 void io_hooks_set(prolog_ctx_t *ctx, io_hooks_t *hooks) {
   if (hooks->write_str)
     ctx->io_hooks.write_str = hooks->write_str;
@@ -179,7 +183,7 @@ int io_read_char(prolog_ctx_t *ctx) {
   if (ctx->io_hooks.read_char) {
     return ctx->io_hooks.read_char(ctx, ctx->io_hooks.userdata);
   }
-  return EOF;
+  return -1; // EOF
 }
 
 char *io_read_line(prolog_ctx_t *ctx, char *buf, int size) {
