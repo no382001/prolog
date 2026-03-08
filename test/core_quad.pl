@@ -223,3 +223,44 @@ color(blue).
 
 ?- (1 =:= 2 -> X = equal ; X = not_equal).
    X = not_equal.
+
+% --- structural equality ==/2 and \==/2 ---
+
+?- a == a.
+   true.
+
+?- a == b.
+   false.
+
+?- f(a, b) == f(a, b).
+   true.
+
+?- f(a, b) == f(a, c).
+   false.
+
+?- X = a, X == a.
+   X = a.
+
+?- X == Y.
+   false.
+
+?- X = Y, X == Y.
+   X = Y.
+
+?- a \== b.
+   true.
+
+?- a \== a.
+   false.
+
+?- f(X) \== f(Y).
+   true.
+
+?- X = a, X \== a.
+   false.
+
+?- [1, 2, 3] == [1, 2, 3].
+   true.
+
+?- [1, 2] == [1, 2, 3].
+   false.

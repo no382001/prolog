@@ -116,6 +116,42 @@ static builtin_result_t builtin_not_unify(prolog_ctx_t *ctx, term_t *goal,
   return unified ? -1 : 1;
 }
 
+static bool terms_identical(term_t *a, term_t *b, env_t *env) {
+  a = deref(env, a);
+  b = deref(env, b);
+  if (a == b)
+    return true;
+  if (a->type != b->type)
+    return false;
+  if (a->type == VAR)
+    return a->arity == b->arity;
+  if (a->type == STRING)
+    return strcmp(a->string_data, b->string_data) == 0;
+  if (strcmp(a->name, b->name) != 0)
+    return false;
+  if (a->arity != b->arity)
+    return false;
+  for (int i = 0; i < a->arity; i++) {
+    if (!terms_identical(a->args[i], b->args[i], env))
+      return false;
+  }
+  return true;
+}
+
+static builtin_result_t builtin_struct_eq(prolog_ctx_t *ctx, term_t *goal,
+                                          env_t *env) {
+  (void)ctx;
+  return terms_identical(goal->args[0], goal->args[1], env) ? BUILTIN_OK
+                                                            : BUILTIN_FAIL;
+}
+
+static builtin_result_t builtin_struct_neq(prolog_ctx_t *ctx, term_t *goal,
+                                           env_t *env) {
+  (void)ctx;
+  return terms_identical(goal->args[0], goal->args[1], env) ? BUILTIN_FAIL
+                                                            : BUILTIN_OK;
+}
+
 #define ARITH_CMP_BUILTIN(name, op, pred)                                      \
   static builtin_result_t name(prolog_ctx_t *ctx, term_t *goal, env_t *env) {  \
     int left, right;                                                           \
@@ -963,6 +999,8 @@ static const builtin_t builtins[] = {
     {"is", 2, builtin_is},
     {"=", 2, builtin_unify},
     {"\\=", 2, builtin_not_unify},
+    {"==", 2, builtin_struct_eq},
+    {"\\==", 2, builtin_struct_neq},
     {"<", 2, builtin_lt},
     {">", 2, builtin_gt},
     {"=<", 2, builtin_le},
