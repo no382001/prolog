@@ -152,6 +152,100 @@ static builtin_result_t builtin_struct_neq(prolog_ctx_t *ctx, term_t *goal,
                                                             : BUILTIN_OK;
 }
 
+// ISO standard order: var < number < atom < string < compound
+// within same type: var by id, number by value, atom/string lexicographic,
+// compound by arity then functor then args left-to-right
+static int term_order(term_t *a, term_t *b, env_t *env) {
+  a = deref(env, a);
+  b = deref(env, b);
+  if (a == b)
+    return 0;
+
+  // type ordering ranks
+  static const int rank[] = {
+      [CONST] = 2, // will split into number(1) vs atom(2) below
+      [VAR] = 0,
+      [FUNC] = 4,
+      [STRING] = 3,
+  };
+
+  int ra = rank[a->type], rb = rank[b->type];
+
+  // split CONST into number vs atom
+  int ia, ib;
+  bool a_num = (a->type == CONST && term_as_int(a, &ia));
+  bool b_num = (b->type == CONST && term_as_int(b, &ib));
+  if (a_num)
+    ra = 1;
+  if (b_num)
+    rb = 1;
+
+  if (ra != rb)
+    return ra < rb ? -1 : 1;
+
+  // same type category
+  if (a->type == VAR)
+    return a->arity < b->arity ? -1 : (a->arity > b->arity ? 1 : 0);
+
+  if (a_num && b_num)
+    return ia < ib ? -1 : (ia > ib ? 1 : 0);
+
+  if (a->type == STRING)
+    return strcmp(a->string_data, b->string_data);
+
+  if (a->type == CONST)
+    return strcmp(a->name, b->name);
+
+  // compound: arity first, then functor, then args
+  if (a->arity != b->arity)
+    return a->arity < b->arity ? -1 : 1;
+  int cmp = strcmp(a->name, b->name);
+  if (cmp != 0)
+    return cmp;
+  for (int i = 0; i < a->arity; i++) {
+    cmp = term_order(a->args[i], b->args[i], env);
+    if (cmp != 0)
+      return cmp;
+  }
+  return 0;
+}
+
+static builtin_result_t builtin_compare(prolog_ctx_t *ctx, term_t *goal,
+                                        env_t *env) {
+  int cmp = term_order(goal->args[1], goal->args[2], env);
+  const char *ord = cmp < 0 ? "<" : (cmp > 0 ? ">" : "=");
+  return unify(ctx, goal->args[0], make_const(ctx, ord), env) ? BUILTIN_OK
+                                                              : BUILTIN_FAIL;
+}
+
+static builtin_result_t builtin_term_lt(prolog_ctx_t *ctx, term_t *goal,
+                                        env_t *env) {
+  (void)ctx;
+  return term_order(goal->args[0], goal->args[1], env) < 0 ? BUILTIN_OK
+                                                           : BUILTIN_FAIL;
+}
+
+static builtin_result_t builtin_term_gt(prolog_ctx_t *ctx, term_t *goal,
+                                        env_t *env) {
+  (void)ctx;
+  return term_order(goal->args[0], goal->args[1], env) > 0 ? BUILTIN_OK
+                                                           : BUILTIN_FAIL;
+}
+
+static builtin_result_t builtin_term_le(prolog_ctx_t *ctx, term_t *goal,
+                                        env_t *env) {
+  (void)ctx;
+  return term_order(goal->args[0], goal->args[1], env) <= 0 ? BUILTIN_OK
+                                                            : BUILTIN_FAIL;
+}
+
+static builtin_result_t builtin_term_ge(prolog_ctx_t *ctx, term_t *goal,
+                                        env_t *env) {
+  (void)ctx;
+  return term_order(goal->args[0], goal->args[1], env) >= 0 ? BUILTIN_OK
+                                                            : BUILTIN_FAIL;
+}
+
 #define ARITH_CMP_BUILTIN(name, op, pred)                                      \
   static builtin_result_t name(prolog_ctx_t *ctx, term_t *goal, env_t *env) {  \
     int left, right;                                                           \
@@ -1001,6 +1095,10 @@ static const builtin_t builtins[] = {
     {"\\=", 2, builtin_not_unify},
     {"==", 2, builtin_struct_eq},
     {"\\==", 2, builtin_struct_neq},
+    {"@<", 2, builtin_term_lt},
+    {"@>", 2, builtin_term_gt},
+    {"@=<", 2, builtin_term_le},
+    {"@>=", 2, builtin_term_ge},
     {"<", 2, builtin_lt},
     {">", 2, builtin_gt},
     {"=<", 2, builtin_le},
@@ -1024,6 +1122,7 @@ static const builtin_t builtins[] = {
     // 3-arity
     {"findall", 3, builtin_findall},
     {"bagof", 3, builtin_bagof},
+    {"compare", 3, builtin_compare},
     // type checks
     {"compound", 1, builtin_compound},
     {"callable", 1, builtin_callable},

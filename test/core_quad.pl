@@ -264,3 +264,55 @@ color(blue).
 
 ?- [1, 2] == [1, 2, 3].
    false.
+
+% --- compare/3 ---
+
+?- compare(Order, a, b).
+   Order = <.
+
+?- compare(Order, b, a).
+   Order = >.
+
+?- compare(Order, a, a).
+   Order = =.
+
+?- compare(Order, 1, 2).
+   Order = <.
+
+?- compare(Order, 3, 1).
+   Order = >.
+
+?- compare(Order, 1, a).
+   Order = <.
+
+?- compare(Order, f(1), f(2)).
+   Order = <.
+
+?- compare(Order, f(a, b), g(a, b)).
+   Order = <.
+
+?- compare(Order, f(a), f(a, b)).
+   Order = <.
+
+% --- term ordering @</2 @>/2 @=</2 @>=/2 ---
+
+?- a @< b.
+   true.
+
+?- b @< a.
+   false.
+
+?- a @> b.
+   false.
+
+?- a @=< a.
+   true.
+
+?- a @>= a.
+   true.
+
+?- 1 @< a.
+   true.
+
+?- a @< f(a).
+   true.
