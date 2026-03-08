@@ -173,7 +173,37 @@ A:
   // inline call/1: call(G) -> G
   if (first_goal->type == FUNC && strcmp(first_goal->name, "call") == 0 &&
       first_goal->arity == 1) {
-    cn.goals[0] = deref(env, first_goal->args[0]);
+    term_t *arg = deref(env, first_goal->args[0]);
+    if (arg->type == VAR) {
+      ctx_runtime_error(ctx, "instantiation_error in call/1");
+      term_t *ie = make_const(ctx, "instantiation_error");
+      term_t *ea[2] = {ie, make_const(ctx, "call/1")};
+      ctx->thrown_ball = make_func(ctx, "error", ea, 2);
+      return false;
+    }
+    if (arg->type != FUNC && arg->type != CONST) {
+      ctx_runtime_error(ctx, "type_error(callable) in call/1");
+      term_t *ta[2] = {make_const(ctx, "callable"), arg};
+      term_t *te = make_func(ctx, "type_error", ta, 2);
+      term_t *ea[2] = {te, make_const(ctx, "call/1")};
+      ctx->thrown_ball = make_func(ctx, "error", ea, 2);
+      return false;
+    }
+    cn.goals[0] = arg;
+    goto A;
+  }
+
+  // inline ,/2 (conjunction): ','(A,B) -> A, B
+  if (first_goal->type == FUNC && strcmp(first_goal->name, ",") == 0 &&
+      first_goal->arity == 2) {
+    term_t *left = deref(env, first_goal->args[0]);
+    term_t *right = deref(env, first_goal->args[1]);
+    goal_stmt_t new_cn = {0};
+    new_cn.goals[new_cn.count++] = left;
+    new_cn.goals[new_cn.count++] = right;
+    for (int i = 1; i < cn.count; i++)
+      new_cn.goals[new_cn.count++] = cn.goals[i];
+    cn = new_cn;
     goto A;
   }
 

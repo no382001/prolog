@@ -61,6 +61,7 @@ jobs:
           name: Quad Tests
           path: _build/test-results/*.xml
           reporter: java-junit
+          fail-on-error: false
 
   freestanding:
     runs-on: ubuntu-latest

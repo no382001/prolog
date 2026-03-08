@@ -248,6 +248,38 @@ static term_t *parse_primary(prolog_ctx_t *ctx) {
           ctx->input_ptr++; // closing quote
           break;
         }
+      } else if (*ctx->input_ptr == '\\' && ctx->input_ptr[1]) {
+        // ISO 6.4.2.1 escape sequences
+        ctx->input_ptr++;
+        char esc = *ctx->input_ptr++;
+        if (i < MAX_NAME - 1) {
+          switch (esc) {
+          case '\\':
+            name[i++] = '\\';
+            break;
+          case 'n':
+            name[i++] = '\n';
+            break;
+          case 't':
+            name[i++] = '\t';
+            break;
+          case 'a':
+            name[i++] = '\a';
+            break;
+          case 'b':
+            name[i++] = '\b';
+            break;
+          case 'r':
+            name[i++] = '\r';
+            break;
+          case 'f':
+            name[i++] = '\f';
+            break;
+          default:
+            name[i++] = esc;
+            break;
+          }
+        }
       } else {
         if (i < MAX_NAME - 1)
           name[i++] = *ctx->input_ptr;
@@ -255,6 +287,41 @@ static term_t *parse_primary(prolog_ctx_t *ctx) {
       }
     }
     name[i] = '\0';
+
+    // quoted atom followed by '(' is a functor call (ISO 6.3.3)
+    skip_ws(ctx);
+    if (*ctx->input_ptr == '(') {
+      ctx->input_ptr++;
+      term_t *args[MAX_ARGS];
+      int arity = 0;
+      skip_ws(ctx);
+      if (*ctx->input_ptr != ')') {
+        do {
+          skip_ws(ctx);
+          if (arity >= MAX_ARGS) {
+            parse_error(ctx, "too many arguments (max %d)", MAX_ARGS);
+            return NULL;
+          }
+          args[arity] = parse_term(ctx);
+          if (!args[arity]) {
+            if (!parse_has_error(ctx))
+              parse_error(ctx, "failed to parse argument %d", arity + 1);
+            return NULL;
+          }
+          arity++;
+          skip_ws(ctx);
+        } while (*ctx->input_ptr == ',' && ctx->input_ptr++);
+      }
+      skip_ws(ctx);
+      if (*ctx->input_ptr != ')') {
+        parse_error(ctx, "expected ')' after arguments, got '%c'",
+                    *ctx->input_ptr ? *ctx->input_ptr : '?');
+        return NULL;
+      }
+      ctx->input_ptr++;
+      return make_func(ctx, name, args, arity);
+    }
+
     return make_const(ctx, name);
   }
 

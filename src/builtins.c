@@ -362,6 +362,16 @@ static int collect_solutions(prolog_ctx_t *ctx, term_t *goal, env_t *env,
   term_t *query = deref(env, goal->args[1]);
   term_t *result_var = goal->args[2];
 
+  // goal must be instantiated and callable
+  if (query->type == VAR) {
+    throw_instantiation_error(ctx, "findall/3");
+    return BUILTIN_ERROR;
+  }
+  if (query->type != FUNC && query->type != CONST) {
+    throw_type_error(ctx, "callable", query, "findall/3");
+    return BUILTIN_ERROR;
+  }
+
   var_id_map_t _map = {0};
   template = rename_vars_mapped(ctx, template, &_map);
   query = rename_vars_mapped(ctx, query, &_map);
@@ -1199,80 +1209,69 @@ static builtin_result_t builtin_make(prolog_ctx_t *ctx, term_t *goal,
   return BUILTIN_OK;
 }
 
-static const builtin_t builtins[] = {
-    // 0-arity
-    {"true", 0, builtin_true},
-    {"fail", 0, builtin_fail},
-    {"!", 0, builtin_cut},
-    {"stats", 0, builtin_stats},
-    {"make", 0, builtin_make},
-    // 2-arity
-    {"is", 2, builtin_is},
-    {"=", 2, builtin_unify},
-    {"\\=", 2, builtin_not_unify},
-    {"==", 2, builtin_struct_eq},
-    {"\\==", 2, builtin_struct_neq},
-    {"@<", 2, builtin_term_lt},
-    {"@>", 2, builtin_term_gt},
-    {"@=<", 2, builtin_term_le},
-    {"@>=", 2, builtin_term_ge},
-    {"<", 2, builtin_lt},
-    {">", 2, builtin_gt},
-    {"=<", 2, builtin_le},
-    {">=", 2, builtin_ge},
-    {"=:=", 2, builtin_arith_eq},
-    {"=\\=", 2, builtin_arith_ne},
-    // 1-arity
-    {"throw", 1, builtin_throw},
-    {"once", 1, builtin_once},
-    {"\\+", 1, builtin_not},
-    {"var", 1, builtin_var},
-    {"nonvar", 1, builtin_nonvar},
-    {"atom", 1, builtin_atom},
-    {"integer", 1, builtin_integer},
-    {"is_list", 1, builtin_is_list},
-    {"nl", 0, builtin_nl},
-    {"write", 1, builtin_write},
-    {"writeln", 1, builtin_writeln},
-    {"writeq", 1, builtin_writeq},
-    {"consult", 1, builtin_consult},
-    {"include", 1, builtin_include},
-    // 3-arity
-    {"findall", 3, builtin_findall},
-    {"bagof", 3, builtin_bagof},
-    {"compare", 3, builtin_compare},
-    // type checks
-    {"compound", 1, builtin_compound},
-    {"callable", 1, builtin_callable},
-    {"number", 1, builtin_number},
-    {"atomic", 1, builtin_atomic},
-    {"string", 1, builtin_string},
-    // atom / string
-    {"atom_length", 2, builtin_atom_length},
-    {"atom_concat", 3, builtin_atom_concat},
-    {"atom_chars", 2, builtin_atom_chars},
-    {"atom_codes", 2, builtin_atom_codes},
-    {"char_code", 2, builtin_char_code},
-    {"atom_number", 2, builtin_atom_number},
-    {"number_codes", 2, builtin_number_codes},
-    {"number_chars", 2, builtin_number_chars},
-    // term introspection
-    {"functor", 3, builtin_functor},
-    {"arg", 3, builtin_arg},
-    {"=..", 2, builtin_univ},
-    {"copy_term", 2, builtin_copy_term},
-    // dynamic database
-    {"assertz", 1, builtin_assertz},
-    {"asserta", 1, builtin_asserta},
-    {"retract", 1, builtin_retract},
-    {"retractall", 1, builtin_retractall},
-    // arithmetic helpers
-    {"succ", 2, builtin_succ},
-    {"plus", 3, builtin_plus},
-    // sorting
-    {"msort", 2, builtin_msort},
-    {"sort", 2, builtin_sort},
-    {NULL, 0, NULL}};
+static const builtin_t builtins[] = {{"true", 0, builtin_true},
+                                     {"fail", 0, builtin_fail},
+                                     {"!", 0, builtin_cut},
+                                     {"stats", 0, builtin_stats},
+                                     {"make", 0, builtin_make},
+                                     {"nl", 0, builtin_nl},
+                                     {"is", 2, builtin_is},
+                                     {"=", 2, builtin_unify},
+                                     {"\\=", 2, builtin_not_unify},
+                                     {"==", 2, builtin_struct_eq},
+                                     {"\\==", 2, builtin_struct_neq},
+                                     {"@<", 2, builtin_term_lt},
+                                     {"@>", 2, builtin_term_gt},
+                                     {"@=<", 2, builtin_term_le},
+                                     {"@>=", 2, builtin_term_ge},
+                                     {"<", 2, builtin_lt},
+                                     {">", 2, builtin_gt},
+                                     {"=<", 2, builtin_le},
+                                     {">=", 2, builtin_ge},
+                                     {"=:=", 2, builtin_arith_eq},
+                                     {"=\\=", 2, builtin_arith_ne},
+                                     {"throw", 1, builtin_throw},
+                                     {"once", 1, builtin_once},
+                                     {"\\+", 1, builtin_not},
+                                     {"var", 1, builtin_var},
+                                     {"nonvar", 1, builtin_nonvar},
+                                     {"atom", 1, builtin_atom},
+                                     {"integer", 1, builtin_integer},
+                                     {"is_list", 1, builtin_is_list},
+                                     {"write", 1, builtin_write},
+                                     {"writeln", 1, builtin_writeln},
+                                     {"writeq", 1, builtin_writeq},
+                                     {"consult", 1, builtin_consult},
+                                     {"include", 1, builtin_include},
+                                     {"findall", 3, builtin_findall},
+                                     {"bagof", 3, builtin_bagof},
+                                     {"compare", 3, builtin_compare},
+                                     {"compound", 1, builtin_compound},
+                                     {"callable", 1, builtin_callable},
+                                     {"number", 1, builtin_number},
+                                     {"atomic", 1, builtin_atomic},
+                                     {"string", 1, builtin_string},
+                                     {"atom_length", 2, builtin_atom_length},
+                                     {"atom_concat", 3, builtin_atom_concat},
+                                     {"atom_chars", 2, builtin_atom_chars},
+                                     {"atom_codes", 2, builtin_atom_codes},
+                                     {"char_code", 2, builtin_char_code},
+                                     {"atom_number", 2, builtin_atom_number},
+                                     {"number_codes", 2, builtin_number_codes},
+                                     {"number_chars", 2, builtin_number_chars},
+                                     {"functor", 3, builtin_functor},
+                                     {"arg", 3, builtin_arg},
+                                     {"=..", 2, builtin_univ},
+                                     {"copy_term", 2, builtin_copy_term},
+                                     {"assertz", 1, builtin_assertz},
+                                     {"asserta", 1, builtin_asserta},
+                                     {"retract", 1, builtin_retract},
+                                     {"retractall", 1, builtin_retractall},
+                                     {"succ", 2, builtin_succ},
+                                     {"plus", 3, builtin_plus},
+                                     {"msort", 2, builtin_msort},
+                                     {"sort", 2, builtin_sort},
+                                     {NULL, 0, NULL}};
 
 builtin_result_t try_builtin(prolog_ctx_t *ctx, term_t *goal, env_t *env) {
   goal = deref(env, goal);
