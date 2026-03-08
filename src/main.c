@@ -45,15 +45,15 @@ static int read_key(void) {
   return c;
 }
 
-static void print_usage(const char *prog) {
-  fprintf(stderr, "Usage: %s [-d] [-f <file>] [-e <expression>]\n", prog);
-  fprintf(stderr, "  -d            Enable debug mode\n");
-  fprintf(stderr, "  -f <file>     Load clauses from file\n");
-  fprintf(stderr, "  -e <expr>     Execute expression and exit\n");
-  fprintf(stderr, "  -h            Show this help\n");
-  fprintf(stderr, "\nInteractive commands:\n");
-  fprintf(stderr, "  debug.        Toggle debug mode\n");
-  fprintf(stderr, "  halt.         Exit the interpreter\n");
+static void print_usage(prolog_ctx_t *ctx, const char *prog) {
+  io_writef_err(ctx, "Usage: %s [-d] [-f <file>] [-e <expression>]\n", prog);
+  io_writef_err(ctx, "  -d            Enable debug mode\n");
+  io_writef_err(ctx, "  -f <file>     Load clauses from file\n");
+  io_writef_err(ctx, "  -e <expr>     Execute expression and exit\n");
+  io_writef_err(ctx, "  -h            Show this help\n");
+  io_writef_err(ctx, "\nInteractive commands:\n");
+  io_writef_err(ctx, "  debug.        Toggle debug mode\n");
+  io_writef_err(ctx, "  halt.         Exit the interpreter\n");
 }
 
 typedef struct {
@@ -99,7 +99,8 @@ static void process_line(prolog_ctx_t *ctx, char *line, bool *should_exit,
 
   if (strcmp(line, "debug.") == 0) {
     ctx->debug_enabled = !ctx->debug_enabled;
-    printf("Debug mode %s\n", ctx->debug_enabled ? "enabled" : "disabled");
+    io_writef(ctx, "Debug mode %s\n",
+              ctx->debug_enabled ? "enabled" : "disabled");
     return;
   }
 
@@ -129,7 +130,7 @@ int main(int argc, char *argv[]) {
     switch (opt) {
     case 'd':
       ctx->debug_enabled = true;
-      fprintf(stderr, "Debug mode enabled\n");
+      io_writef_err(ctx, "Debug mode enabled\n");
       break;
     case 'f':
       input_file = optarg;
@@ -138,10 +139,10 @@ int main(int argc, char *argv[]) {
       expression = optarg;
       break;
     case 'h':
-      print_usage(argv[0]);
+      print_usage(ctx, argv[0]);
       return 0;
     default:
-      print_usage(argv[0]);
+      print_usage(ctx, argv[0]);
       return 1;
     }
   }
@@ -166,7 +167,7 @@ int main(int argc, char *argv[]) {
 
   while (!should_exit) {
     if (interactive) {
-      printf("?- ");
+      io_write_str(ctx, "?- ");
       fflush(stdout);
     }
 

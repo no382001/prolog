@@ -20,6 +20,13 @@ static void default_writef(prolog_ctx_t *ctx, const char *fmt, va_list args,
   vprintf(fmt, args);
 }
 
+static void default_writef_err(prolog_ctx_t *ctx, const char *fmt, va_list args,
+                               void *userdata) {
+  (void)ctx;
+  (void)userdata;
+  vfprintf(stderr, fmt, args);
+}
+
 static int default_read_char(prolog_ctx_t *ctx, void *userdata) {
   (void)ctx;
   (void)userdata;
@@ -37,6 +44,7 @@ void io_hooks_init_default(prolog_ctx_t *ctx) {
   ctx->io_hooks.write_str = default_write_str;
   ctx->io_hooks.write_term = default_write_term;
   ctx->io_hooks.writef = default_writef;
+  ctx->io_hooks.writef_err = default_writef_err;
   ctx->io_hooks.read_char = default_read_char;
   ctx->io_hooks.read_line = default_read_line;
   ctx->io_hooks.userdata = NULL;
@@ -49,6 +57,8 @@ void io_hooks_set(prolog_ctx_t *ctx, io_hooks_t *hooks) {
     ctx->io_hooks.write_term = hooks->write_term;
   if (hooks->writef)
     ctx->io_hooks.writef = hooks->writef;
+  if (hooks->writef_err)
+    ctx->io_hooks.writef_err = hooks->writef_err;
   if (hooks->read_char)
     ctx->io_hooks.read_char = hooks->read_char;
   if (hooks->read_line)
@@ -78,6 +88,15 @@ void io_writef(prolog_ctx_t *ctx, const char *fmt, ...) {
     va_list args;
     va_start(args, fmt);
     ctx->io_hooks.writef(ctx, fmt, args, ctx->io_hooks.userdata);
+    va_end(args);
+  }
+}
+
+void io_writef_err(prolog_ctx_t *ctx, const char *fmt, ...) {
+  if (ctx->io_hooks.writef_err) {
+    va_list args;
+    va_start(args, fmt);
+    ctx->io_hooks.writef_err(ctx, fmt, args, ctx->io_hooks.userdata);
     va_end(args);
   }
 }

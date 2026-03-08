@@ -11,33 +11,33 @@ void debug(prolog_ctx_t *ctx, const char *fmt, ...) {
   va_end(args);
 }
 
-void print_term_raw(term_t *t) {
+void print_term_raw(prolog_ctx_t *ctx, term_t *t) {
   if (!t) {
-    printf("NULL");
+    io_writef_err(ctx, "NULL");
     return;
   }
 
   switch (t->type) {
   case CONST:
-    printf("CONST(%s)", t->name);
+    io_writef_err(ctx, "CONST(%s)", t->name);
     break;
   case VAR:
     if (t->name)
-      printf("VAR(%s,%d)", t->name, t->arity);
+      io_writef_err(ctx, "VAR(%s,%d)", t->name, t->arity);
     else
-      printf("VAR(_G%d)", t->arity);
+      io_writef_err(ctx, "VAR(_G%d)", t->arity);
     break;
   case STRING:
-    printf("STRING(\"%s\")", t->string_data);
+    io_writef_err(ctx, "STRING(\"%s\")", t->string_data);
     break;
   case FUNC:
-    printf("FUNC(%s,%d,[", t->name, t->arity);
+    io_writef_err(ctx, "FUNC(%s,%d,[", t->name, t->arity);
     for (int i = 0; i < t->arity; i++) {
       if (i > 0)
-        printf(",");
-      print_term_raw(t->args[i]);
+        io_writef_err(ctx, ",");
+      print_term_raw(ctx, t->args[i]);
     }
-    printf("])");
+    io_writef_err(ctx, "])");
     break;
   default:
     assert(false && "Invalid term type");
@@ -47,5 +47,5 @@ void print_term_raw(term_t *t) {
 void debug_term_raw(prolog_ctx_t *ctx, term_t *t) {
   if (!ctx->debug_enabled)
     return;
-  print_term_raw(t);
+  print_term_raw(ctx, t);
 }

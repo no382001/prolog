@@ -39,13 +39,13 @@ void parse_error_print(prolog_ctx_t *ctx) {
 
   if (ctx->input_start && ctx->error.column > 0) {
     // show the offending line and point to the error
-    fprintf(stderr, "  %s\n", ctx->input_start);
-    fprintf(stderr, "  %*s^\n", ctx->error.column - 1, "");
-    fprintf(stderr, "error: %s\n", ctx->error.message);
+    io_writef_err(ctx, "  %s\n", ctx->input_start);
+    io_writef_err(ctx, "  %*s^\n", ctx->error.column - 1, "");
+    io_writef_err(ctx, "error: %s\n", ctx->error.message);
   } else {
     // fallback for non-interactive / no context
-    fprintf(stderr, "error: line %d, column %d: %s\n", ctx->error.line,
-            ctx->error.column, ctx->error.message);
+    io_writef_err(ctx, "error: line %d, column %d: %s\n", ctx->error.line,
+                  ctx->error.column, ctx->error.message);
   }
 }
 
@@ -518,7 +518,7 @@ static bool parse_goals(prolog_ctx_t *ctx, char *query, goal_stmt_t *goals) {
   } while (*ctx->input_ptr == ',' && ctx->input_ptr++);
 
   if (goals->count == 0) {
-    fprintf(stderr, "Error: empty query\n");
+    io_writef_err(ctx, "Error: empty query\n");
     return false;
   }
   return true;
@@ -629,14 +629,14 @@ static bool load_clauses_from_fp(prolog_ctx_t *ctx, FILE *f,
   while (isspace((unsigned char)*p))
     p++;
   if (*p != '\0')
-    fprintf(stderr, "Warning: unterminated clause at end of '%s'\n", label);
+    io_writef_err(ctx, "Warning: unterminated clause at end of '%s'\n", label);
   return true;
 }
 
 bool prolog_load_file(prolog_ctx_t *ctx, const char *filename) {
   FILE *f = fopen(filename, "r");
   if (!f) {
-    fprintf(stderr, "Error: cannot open file '%s'\n", filename);
+    io_writef_err(ctx, "Error: cannot open file '%s'\n", filename);
     return false;
   }
 

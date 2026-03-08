@@ -86,6 +86,7 @@ typedef struct {
   io_write_callback_t write_str;
   io_write_term_callback_t write_term;
   io_writef_callback_t writef;
+  io_writef_callback_t writef_err;
   io_read_char_callback_t read_char;
   io_read_line_callback_t read_line;
   void *userdata;
@@ -247,7 +248,7 @@ term_t *ctx_alloc_term(prolog_ctx_t *ctx);
 const char *intern_name(prolog_ctx_t *ctx, const char *name);
 
 void debug(prolog_ctx_t *ctx, const char *fmt, ...);
-void print_term_raw(term_t *t);
+void print_term_raw(prolog_ctx_t *ctx, term_t *t);
 void debug_term_raw(prolog_ctx_t *ctx, term_t *t);
 
 term_t *make_term(prolog_ctx_t *ctx, term_type type, const char *name,
@@ -316,6 +317,7 @@ void io_write_str(prolog_ctx_t *ctx, const char *str);
 void io_write_term(prolog_ctx_t *ctx, term_t *t, env_t *env);
 void io_write_term_quoted(prolog_ctx_t *ctx, term_t *t, env_t *env);
 void io_writef(prolog_ctx_t *ctx, const char *fmt, ...);
+void io_writef_err(prolog_ctx_t *ctx, const char *fmt, ...);
 int io_read_char(prolog_ctx_t *ctx);
 char *io_read_line(prolog_ctx_t *ctx, char *buf, int size);
 
