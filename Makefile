@@ -69,3 +69,12 @@ quad: $(TARGET)
 		[ -f "$$f" ] || continue; \
 		./$(TARGET) -q "$$f" || exit 1; \
 	done
+
+.PHONY: quad-junit
+quad-junit: $(TARGET)
+	@mkdir -p _build/test-results
+	@for f in test/*_quad.pl; do \
+		[ -f "$$f" ] || continue; \
+		./$(TARGET) -q "$$f" -j _build/test-results || exit 1; \
+	done
+	@echo "JUnit reports written to _build/test-results/"

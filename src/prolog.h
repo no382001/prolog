@@ -82,6 +82,21 @@ typedef int (*io_read_char_callback_t)(prolog_ctx_t *ctx, void *userdata);
 typedef char *(*io_read_line_callback_t)(prolog_ctx_t *ctx, char *buf, int size,
                                          void *userdata);
 
+// file i/o hooks (opaque handle = void*)
+typedef void *(*io_file_open_callback_t)(prolog_ctx_t *ctx, const char *path,
+                                         const char *mode, void *userdata);
+typedef void (*io_file_close_callback_t)(prolog_ctx_t *ctx, void *handle,
+                                         void *userdata);
+typedef char *(*io_file_read_line_callback_t)(prolog_ctx_t *ctx, void *handle,
+                                              char *buf, int size,
+                                              void *userdata);
+typedef bool (*io_file_write_callback_t)(prolog_ctx_t *ctx, void *handle,
+                                         const char *str, void *userdata);
+typedef bool (*io_file_exists_callback_t)(prolog_ctx_t *ctx, const char *path,
+                                          void *userdata);
+typedef long long (*io_file_mtime_callback_t)(prolog_ctx_t *ctx,
+                                              const char *path, void *userdata);
+
 typedef struct {
   io_write_callback_t write_str;
   io_write_term_callback_t write_term;
@@ -89,6 +104,12 @@ typedef struct {
   io_writef_callback_t writef_err;
   io_read_char_callback_t read_char;
   io_read_line_callback_t read_line;
+  io_file_open_callback_t file_open;
+  io_file_close_callback_t file_close;
+  io_file_read_line_callback_t file_read_line;
+  io_file_write_callback_t file_write;
+  io_file_exists_callback_t file_exists;
+  io_file_mtime_callback_t file_mtime;
   void *userdata;
 } io_hooks_t;
 
@@ -323,6 +344,14 @@ void io_writef_err(prolog_ctx_t *ctx, const char *fmt, ...);
 int io_read_char(prolog_ctx_t *ctx);
 char *io_read_line(prolog_ctx_t *ctx, char *buf, int size);
 
+// file i/o wrappers
+void *io_file_open(prolog_ctx_t *ctx, const char *path, const char *mode);
+void io_file_close(prolog_ctx_t *ctx, void *handle);
+char *io_file_read_line(prolog_ctx_t *ctx, void *handle, char *buf, int size);
+bool io_file_write(prolog_ctx_t *ctx, void *handle, const char *str);
+bool io_file_exists(prolog_ctx_t *ctx, const char *path);
+long long io_file_mtime(prolog_ctx_t *ctx, const char *path);
+
 // ffi: Register custom builtins
 bool ffi_register_builtin(prolog_ctx_t *ctx, const char *name, int arity,
                           builtin_handler_t handler, void *userdata);
@@ -337,3 +366,6 @@ typedef struct {
 } quad_results_t;
 
 quad_results_t prolog_run_quad_file(prolog_ctx_t *ctx, const char *filename);
+quad_results_t prolog_run_quad_file_junit(prolog_ctx_t *ctx,
+                                          const char *filename,
+                                          const char *junit_dir);

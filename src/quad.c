@@ -3,6 +3,14 @@
 #define QUAD_BUF_SIZE 16384
 #define MAX_QUAD_ANSWERS 64
 #define MAX_ANSWER_LEN 1024
+#define MAX_QUAD_TESTS 512
+#define MAX_FAIL_MSG 512
+
+typedef struct {
+  char name[256];
+  bool pass;
+  char failure[MAX_FAIL_MSG];
+} test_record_t;
 
 typedef struct {
   char buf[4096];
@@ -166,7 +174,7 @@ static int parse_expected(const char *desc, char out[][MAX_ANSWER_LEN],
 
 static bool run_one_test(prolog_ctx_t *ctx, const char *query_raw,
                          const char *answer_raw, int test_num,
-                         quad_results_t *res) {
+                         quad_results_t *res, test_record_t *rec) {
   // parse expected answers
   char answer_buf[QUAD_BUF_SIZE];
   strncpy(answer_buf, answer_raw, sizeof(answer_buf) - 1);
@@ -279,6 +287,14 @@ static bool run_one_test(prolog_ctx_t *ctx, const char *query_raw,
     }
   }
 
+  // record test result
+  if (rec) {
+    snprintf(rec->name, sizeof(rec->name), "%.*s", (int)(sizeof(rec->name) - 1),
+             display);
+    rec->pass = pass;
+    rec->failure[0] = '\0';
+  }
+
   // output TAP
   if (pass) {
     res->passed++;
@@ -287,20 +303,38 @@ static bool run_one_test(prolog_ctx_t *ctx, const char *query_raw,
     res->failed++;
     io_writef(ctx, "not ok %d - ?- %s\n", test_num, display);
 
+    char failbuf[MAX_FAIL_MSG] = {0};
+    int fpos = 0;
+
     if (expect_error) {
       io_writef_err(ctx, "#   expected: %s\n", expected[0]);
-      if (had_error)
+      fpos += snprintf(failbuf + fpos, sizeof(failbuf) - fpos, "expected: %s\n",
+                       expected[0]);
+      if (had_error) {
         io_writef_err(ctx, "#   got: error(%s)\n", error_msg);
-      else if (col.count > 0)
+        snprintf(failbuf + fpos, sizeof(failbuf) - fpos, "got: error(%s)",
+                 error_msg);
+      } else if (col.count > 0) {
         io_writef_err(ctx, "#   got: %s (no error)\n", col.answers[0]);
-      else
+        snprintf(failbuf + fpos, sizeof(failbuf) - fpos, "got: %s (no error)",
+                 col.answers[0]);
+      } else {
         io_writef_err(ctx, "#   got: (no error)\n");
+        snprintf(failbuf + fpos, sizeof(failbuf) - fpos, "got: (no error)");
+      }
     } else if (expect_false) {
       io_writef_err(ctx, "#   expected: false\n");
-      if (had_error)
+      fpos +=
+          snprintf(failbuf + fpos, sizeof(failbuf) - fpos, "expected: false\n");
+      if (had_error) {
         io_writef_err(ctx, "#   got: error: %s\n", error_msg);
-      else if (col.count > 0)
+        snprintf(failbuf + fpos, sizeof(failbuf) - fpos, "got: error: %s",
+                 error_msg);
+      } else if (col.count > 0) {
         io_writef_err(ctx, "#   got: %s\n", col.answers[0]);
+        snprintf(failbuf + fpos, sizeof(failbuf) - fpos, "got: %s",
+                 col.answers[0]);
+      }
     } else {
       for (int i = 0; i < exp_count || i < col.count; i++) {
         const char *exp_s = i < exp_count ? expected[i] : NULL;
@@ -309,29 +343,126 @@ static bool run_one_test(prolog_ctx_t *ctx, const char *query_raw,
         if (exp_s && got_s && strcmp(exp_s, got_s) != 0) {
           io_writef_err(ctx, "#   expected[%d]: %s\n", i + 1, exp_s);
           io_writef_err(ctx, "#        got[%d]: %s\n", i + 1, got_s);
+          fpos += snprintf(failbuf + fpos, sizeof(failbuf) - fpos,
+                           "expected[%d]: %s, got[%d]: %s\n", i + 1, exp_s,
+                           i + 1, got_s);
         } else if (exp_s && !got_s) {
           io_writef_err(ctx, "#   expected[%d]: %s\n", i + 1, exp_s);
           io_writef_err(ctx, "#        got[%d]: (none)\n", i + 1);
+          fpos += snprintf(failbuf + fpos, sizeof(failbuf) - fpos,
+                           "expected[%d]: %s, got[%d]: (none)\n", i + 1, exp_s,
+                           i + 1);
         } else if (!exp_s && got_s) {
           io_writef_err(ctx, "#   unexpected[%d]: %s\n", i + 1, got_s);
+          fpos += snprintf(failbuf + fpos, sizeof(failbuf) - fpos,
+                           "unexpected[%d]: %s\n", i + 1, got_s);
         }
       }
-      if (had_error)
+      if (had_error) {
         io_writef_err(ctx, "#   error: %s\n", error_msg);
+        snprintf(failbuf + fpos, sizeof(failbuf) - fpos, "error: %s",
+                 error_msg);
+      }
     }
+
+    if (rec)
+      strncpy(rec->failure, failbuf, sizeof(rec->failure) - 1);
   }
 
   return pass;
 }
 
-quad_results_t prolog_run_quad_file(prolog_ctx_t *ctx, const char *filename) {
+// escape XML special characters into a buffer
+static void xml_escape(const char *src, char *dst, int dstlen) {
+  int o = 0;
+  for (const char *p = src; *p && o < dstlen - 1; p++) {
+    switch (*p) {
+    case '<':
+      if (o + 4 < dstlen) {
+        memcpy(dst + o, "&lt;", 4);
+        o += 4;
+      }
+      break;
+    case '>':
+      if (o + 4 < dstlen) {
+        memcpy(dst + o, "&gt;", 4);
+        o += 4;
+      }
+      break;
+    case '&':
+      if (o + 5 < dstlen) {
+        memcpy(dst + o, "&amp;", 5);
+        o += 5;
+      }
+      break;
+    case '"':
+      if (o + 6 < dstlen) {
+        memcpy(dst + o, "&quot;", 6);
+        o += 6;
+      }
+      break;
+    default:
+      dst[o++] = *p;
+      break;
+    }
+  }
+  dst[o] = '\0';
+}
+
+static void write_junit_xml(prolog_ctx_t *ctx, const char *filename,
+                            const char *suite_name, test_record_t *records,
+                            int count, quad_results_t *res) {
+  void *xf = io_file_open(ctx, filename, "w");
+  if (!xf)
+    return;
+
+  char line[2048];
+  io_file_write(ctx, xf, "<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n");
+  snprintf(line, sizeof(line),
+           "<testsuite name=\"%s\" tests=\"%d\" failures=\"%d\" "
+           "errors=\"0\">\n",
+           suite_name, res->total, res->failed);
+  io_file_write(ctx, xf, line);
+
+  char esc_name[512];
+  char esc_fail[1024];
+  for (int i = 0; i < count; i++) {
+    xml_escape(records[i].name, esc_name, sizeof(esc_name));
+    if (records[i].pass) {
+      snprintf(line, sizeof(line),
+               "  <testcase name=\"%s\" classname=\"%s\"/>\n", esc_name,
+               suite_name);
+      io_file_write(ctx, xf, line);
+    } else {
+      xml_escape(records[i].failure, esc_fail, sizeof(esc_fail));
+      snprintf(line, sizeof(line),
+               "  <testcase name=\"%s\" classname=\"%s\">\n", esc_name,
+               suite_name);
+      io_file_write(ctx, xf, line);
+      snprintf(line, sizeof(line), "    <failure message=\"%s\"/>\n", esc_fail);
+      io_file_write(ctx, xf, line);
+      io_file_write(ctx, xf, "  </testcase>\n");
+    }
+  }
+
+  io_file_write(ctx, xf, "</testsuite>\n");
+  io_file_close(ctx, xf);
+}
+
+static quad_results_t run_quad_file_impl(prolog_ctx_t *ctx,
+                                         const char *filename,
+                                         const char *junit_dir) {
   quad_results_t res = {0};
 
-  FILE *f = fopen(filename, "r");
+  void *f = io_file_open(ctx, filename, "r");
   if (!f) {
     io_writef_err(ctx, "Error: cannot open quad file '%s'\n", filename);
     return res;
   }
+
+  test_record_t *records = NULL;
+  if (junit_dir)
+    records = calloc(MAX_QUAD_TESTS, sizeof(test_record_t));
 
   char line[1024];
   char clause_buf[QUAD_BUF_SIZE] = {0};
@@ -340,7 +471,7 @@ quad_results_t prolog_run_quad_file(prolog_ctx_t *ctx, const char *filename) {
   int test_num = 0;
   bool in_answer = false;
 
-  while (fgets(line, sizeof(line), f)) {
+  while (io_file_read_line(ctx, f, line, sizeof(line))) {
     line[strcspn(line, "\n")] = 0;
     strip_line_comment(line);
 
@@ -357,8 +488,10 @@ quad_results_t prolog_run_quad_file(prolog_ctx_t *ctx, const char *filename) {
       strncat(answer_buf, line, sizeof(answer_buf) - strlen(answer_buf) - 1);
 
       if (has_complete_clause(answer_buf)) {
+        test_record_t *rec =
+            (records && test_num < MAX_QUAD_TESTS) ? &records[test_num] : NULL;
         test_num++;
-        run_one_test(ctx, query_buf, answer_buf, test_num, &res);
+        run_one_test(ctx, query_buf, answer_buf, test_num, &res, rec);
         in_answer = false;
         answer_buf[0] = '\0';
       }
@@ -398,10 +531,42 @@ quad_results_t prolog_run_quad_file(prolog_ctx_t *ctx, const char *filename) {
     clause_buf[0] = '\0';
   }
 
-  fclose(f);
+  io_file_close(ctx, f);
 
   io_writef(ctx, "# %s: %d tests, %d passed, %d failed\n", filename, res.total,
             res.passed, res.failed);
 
+  // write JUnit XML if requested
+  if (junit_dir && records) {
+    // extract suite name from filename (basename without extension)
+    const char *base = filename;
+    for (const char *p = filename; *p; p++) {
+      if (*p == '/')
+        base = p + 1;
+    }
+    char suite_name[256];
+    strncpy(suite_name, base, sizeof(suite_name) - 1);
+    suite_name[sizeof(suite_name) - 1] = '\0';
+    char *dot = strrchr(suite_name, '.');
+    if (dot)
+      *dot = '\0';
+
+    // build output path: junit_dir/suite_name.xml
+    char xml_path[2048];
+    snprintf(xml_path, sizeof(xml_path), "%s/%s.xml", junit_dir, suite_name);
+    write_junit_xml(ctx, xml_path, suite_name, records, test_num, &res);
+  }
+
+  free(records);
   return res;
+}
+
+quad_results_t prolog_run_quad_file(prolog_ctx_t *ctx, const char *filename) {
+  return run_quad_file_impl(ctx, filename, NULL);
+}
+
+quad_results_t prolog_run_quad_file_junit(prolog_ctx_t *ctx,
+                                          const char *filename,
+                                          const char *junit_dir) {
+  return run_quad_file_impl(ctx, filename, junit_dir);
 }

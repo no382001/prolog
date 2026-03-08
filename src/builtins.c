@@ -921,7 +921,7 @@ static builtin_result_t builtin_make(prolog_ctx_t *ctx, term_t *goal,
   // check which files have changed since they were loaded
   int changed = 0;
   for (int i = 0; i < ctx->make_file_count; i++) {
-    long long cur = prolog_file_mtime(ctx->make_files[i].path);
+    long long cur = io_file_mtime(ctx, ctx->make_files[i].path);
     if (cur == -1LL || cur != ctx->make_files[i].mtime)
       changed++;
   }

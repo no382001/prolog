@@ -610,12 +610,12 @@ static bool process_clause_line(prolog_ctx_t *ctx, char *clause, size_t sz,
   return !parse_has_error(ctx);
 }
 
-static bool load_clauses_from_fp(prolog_ctx_t *ctx, FILE *f,
+static bool load_clauses_from_fp(prolog_ctx_t *ctx, void *f,
                                  const char *label) {
   char line[1024];
   char clause[16384] = {0};
 
-  while (fgets(line, sizeof(line), f)) {
+  while (io_file_read_line(ctx, f, line, sizeof(line))) {
     line[strcspn(line, "\n")] = 0;
     strip_line_comment(line);
     char *trimmed = line;
@@ -634,7 +634,7 @@ static bool load_clauses_from_fp(prolog_ctx_t *ctx, FILE *f,
 }
 
 bool prolog_load_file(prolog_ctx_t *ctx, const char *filename) {
-  FILE *f = fopen(filename, "r");
+  void *f = io_file_open(ctx, filename, "r");
   if (!f) {
     io_writef_err(ctx, "Error: cannot open file '%s'\n", filename);
     return false;
@@ -660,7 +660,7 @@ bool prolog_load_file(prolog_ctx_t *ctx, const char *filename) {
         int idx = ctx->make_file_count++;
         strncpy(ctx->make_files[idx].path, filename, MAX_FILE_PATH - 1);
         ctx->make_files[idx].path[MAX_FILE_PATH - 1] = '\0';
-        ctx->make_files[idx].mtime = prolog_file_mtime(filename);
+        ctx->make_files[idx].mtime = io_file_mtime(ctx, filename);
       }
     }
   }
@@ -683,7 +683,7 @@ bool prolog_load_file(prolog_ctx_t *ctx, const char *filename) {
   bool ok = load_clauses_from_fp(ctx, f, filename);
 
   strncpy(ctx->load_dir, old_load_dir, sizeof(ctx->load_dir) - 1);
-  fclose(f);
+  io_file_close(ctx, f);
   ctx->include_depth--;
   return ok;
 }

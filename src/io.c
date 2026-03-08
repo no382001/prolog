@@ -40,6 +40,51 @@ static char *default_read_line(prolog_ctx_t *ctx, char *buf, int size,
   return fgets(buf, size, stdin);
 }
 
+static void *default_file_open(prolog_ctx_t *ctx, const char *path,
+                               const char *mode, void *userdata) {
+  (void)ctx;
+  (void)userdata;
+  return fopen(path, mode);
+}
+
+static void default_file_close(prolog_ctx_t *ctx, void *handle,
+                               void *userdata) {
+  (void)ctx;
+  (void)userdata;
+  if (handle)
+    fclose(handle);
+}
+
+static char *default_file_read_line(prolog_ctx_t *ctx, void *handle, char *buf,
+                                    int size, void *userdata) {
+  (void)ctx;
+  (void)userdata;
+  return fgets(buf, size, handle);
+}
+
+static bool default_file_write(prolog_ctx_t *ctx, void *handle, const char *str,
+                               void *userdata) {
+  (void)ctx;
+  (void)userdata;
+  return fputs(str, handle) >= 0;
+}
+
+static bool default_file_exists(prolog_ctx_t *ctx, const char *path,
+                                void *userdata) {
+  (void)ctx;
+  (void)userdata;
+  struct stat st;
+  return stat(path, &st) == 0;
+}
+
+static long long default_file_mtime(prolog_ctx_t *ctx, const char *path,
+                                    void *userdata) {
+  (void)ctx;
+  (void)userdata;
+  struct stat st;
+  return (stat(path, &st) == 0) ? (long long)st.st_mtime : -1LL;
+}
+
 void io_hooks_init_default(prolog_ctx_t *ctx) {
   ctx->io_hooks.write_str = default_write_str;
   ctx->io_hooks.write_term = default_write_term;
@@ -47,6 +92,12 @@ void io_hooks_init_default(prolog_ctx_t *ctx) {
   ctx->io_hooks.writef_err = default_writef_err;
   ctx->io_hooks.read_char = default_read_char;
   ctx->io_hooks.read_line = default_read_line;
+  ctx->io_hooks.file_open = default_file_open;
+  ctx->io_hooks.file_close = default_file_close;
+  ctx->io_hooks.file_read_line = default_file_read_line;
+  ctx->io_hooks.file_write = default_file_write;
+  ctx->io_hooks.file_exists = default_file_exists;
+  ctx->io_hooks.file_mtime = default_file_mtime;
   ctx->io_hooks.userdata = NULL;
 }
 
@@ -63,6 +114,18 @@ void io_hooks_set(prolog_ctx_t *ctx, io_hooks_t *hooks) {
     ctx->io_hooks.read_char = hooks->read_char;
   if (hooks->read_line)
     ctx->io_hooks.read_line = hooks->read_line;
+  if (hooks->file_open)
+    ctx->io_hooks.file_open = hooks->file_open;
+  if (hooks->file_close)
+    ctx->io_hooks.file_close = hooks->file_close;
+  if (hooks->file_read_line)
+    ctx->io_hooks.file_read_line = hooks->file_read_line;
+  if (hooks->file_write)
+    ctx->io_hooks.file_write = hooks->file_write;
+  if (hooks->file_exists)
+    ctx->io_hooks.file_exists = hooks->file_exists;
+  if (hooks->file_mtime)
+    ctx->io_hooks.file_mtime = hooks->file_mtime;
 
   ctx->io_hooks.userdata = hooks->userdata;
 }
@@ -113,4 +176,40 @@ char *io_read_line(prolog_ctx_t *ctx, char *buf, int size) {
     return ctx->io_hooks.read_line(ctx, buf, size, ctx->io_hooks.userdata);
   }
   return NULL;
+}
+
+void *io_file_open(prolog_ctx_t *ctx, const char *path, const char *mode) {
+  if (ctx->io_hooks.file_open)
+    return ctx->io_hooks.file_open(ctx, path, mode, ctx->io_hooks.userdata);
+  return NULL;
+}
+
+void io_file_close(prolog_ctx_t *ctx, void *handle) {
+  if (ctx->io_hooks.file_close)
+    ctx->io_hooks.file_close(ctx, handle, ctx->io_hooks.userdata);
+}
+
+char *io_file_read_line(prolog_ctx_t *ctx, void *handle, char *buf, int size) {
+  if (ctx->io_hooks.file_read_line)
+    return ctx->io_hooks.file_read_line(ctx, handle, buf, size,
+                                        ctx->io_hooks.userdata);
+  return NULL;
+}
+
+bool io_file_write(prolog_ctx_t *ctx, void *handle, const char *str) {
+  if (ctx->io_hooks.file_write)
+    return ctx->io_hooks.file_write(ctx, handle, str, ctx->io_hooks.userdata);
+  return false;
+}
+
+bool io_file_exists(prolog_ctx_t *ctx, const char *path) {
+  if (ctx->io_hooks.file_exists)
+    return ctx->io_hooks.file_exists(ctx, path, ctx->io_hooks.userdata);
+  return false;
+}
+
+long long io_file_mtime(prolog_ctx_t *ctx, const char *path) {
+  if (ctx->io_hooks.file_mtime)
+    return ctx->io_hooks.file_mtime(ctx, path, ctx->io_hooks.userdata);
+  return -1LL;
 }
