@@ -204,6 +204,15 @@ static bool run_one_test(prolog_ctx_t *ctx, const char *query_raw,
   int string_mark = ctx->string_pool_offset;
   int db_mark = ctx->db_count;
 
+  // suppress output during query execution (write/1, nl/0, errors)
+  capture_buf_t query_out;
+  cap_reset(&query_out);
+  io_hooks_t saved_hooks = ctx->io_hooks;
+  ctx->io_hooks.write_str = cap_write_str;
+  ctx->io_hooks.writef = cap_writef;
+  ctx->io_hooks.writef_err = cap_writef;
+  ctx->io_hooks.userdata = &query_out;
+
   // run query
   parse_error_clear(ctx);
   ctx->has_runtime_error = false;
@@ -221,6 +230,9 @@ static bool run_one_test(prolog_ctx_t *ctx, const char *query_raw,
     ctx->has_runtime_error = false;
   }
 
+  // restore hooks
+  ctx->io_hooks = saved_hooks;
+
   // restore pools if no new clauses were added
   if (ctx->db_count == db_mark) {
     ctx->term_count = term_mark;
@@ -233,7 +245,25 @@ static bool run_one_test(prolog_ctx_t *ctx, const char *query_raw,
 
   bool expect_false = (exp_count == 1 && strcmp(expected[0], "false") == 0);
 
-  if (expect_false) {
+  // check for error(...) expected answer
+  bool expect_error = false;
+  char expected_error_type[MAX_ERROR_MSG] = {0};
+  if (exp_count == 1 && strncmp(expected[0], "error(", 6) == 0) {
+    expect_error = true;
+    const char *start = expected[0] + 6;
+    const char *end = strrchr(start, ')');
+    if (end && end > start) {
+      int len = (int)(end - start);
+      if (len > (int)sizeof(expected_error_type) - 1)
+        len = (int)sizeof(expected_error_type) - 1;
+      memcpy(expected_error_type, start, len);
+      expected_error_type[len] = '\0';
+    }
+  }
+
+  if (expect_error) {
+    pass = had_error && strstr(error_msg, expected_error_type) != NULL;
+  } else if (expect_false) {
     pass = !found && !had_error;
   } else if (had_error) {
     pass = false;
@@ -255,7 +285,15 @@ static bool run_one_test(prolog_ctx_t *ctx, const char *query_raw,
     res->failed++;
     io_writef(ctx, "not ok %d - ?- %s\n", test_num, display);
 
-    if (expect_false) {
+    if (expect_error) {
+      io_writef_err(ctx, "#   expected: %s\n", expected[0]);
+      if (had_error)
+        io_writef_err(ctx, "#   got: error(%s)\n", error_msg);
+      else if (col.count > 0)
+        io_writef_err(ctx, "#   got: %s (no error)\n", col.answers[0]);
+      else
+        io_writef_err(ctx, "#   got: (no error)\n");
+    } else if (expect_false) {
       io_writef_err(ctx, "#   expected: false\n");
       if (had_error)
         io_writef_err(ctx, "#   got: error: %s\n", error_msg);
