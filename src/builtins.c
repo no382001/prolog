@@ -165,7 +165,7 @@ static bool terms_identical(term_t *a, term_t *b, env_t *env) {
     return a->arity == b->arity;
   if (a->type == STRING)
     return strcmp(a->string_data, b->string_data) == 0;
-  if (strcmp(a->name, b->name) != 0)
+  if (a->name != b->name)
     return false;
   if (a->arity != b->arity)
     return false;
@@ -232,16 +232,18 @@ static int term_order(term_t *a, term_t *b, env_t *env) {
     return strcmp(a->string_data, b->string_data);
 
   if (a->type == CONST)
-    return strcmp(a->name, b->name);
+    return a->name == b->name ? 0 : strcmp(a->name, b->name);
 
   // compound: arity first, then functor, then args
   if (a->arity != b->arity)
     return a->arity < b->arity ? -1 : 1;
-  int cmp = strcmp(a->name, b->name);
-  if (cmp != 0)
-    return cmp;
+  if (a->name != b->name) {
+    int cmp = strcmp(a->name, b->name);
+    if (cmp != 0)
+      return cmp;
+  }
   for (int i = 0; i < a->arity; i++) {
-    cmp = term_order(a->args[i], b->args[i], env);
+    int cmp = term_order(a->args[i], b->args[i], env);
     if (cmp != 0)
       return cmp;
   }

@@ -102,7 +102,7 @@ static bool has_more_alternatives(prolog_ctx_t *ctx, term_t *goal, env_t *env,
     // cheap arity/name check before trying unify
     int goal_arity = (goal->type == FUNC) ? goal->arity : 0;
     int head_arity = (c->head->type == FUNC) ? c->head->arity : 0;
-    if (strcmp(goal->name, c->head->name) == 0 && goal_arity == head_arity) {
+    if (goal->name == c->head->name && goal_arity == head_arity) {
       return true;
     }
   }

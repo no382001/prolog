@@ -35,7 +35,7 @@ bool unify(prolog_ctx_t *ctx, term_t *a, term_t *b, env_t *env) {
   }
 
   if (a->type == CONST && b->type == CONST) {
-    bool result = strcmp(a->name, b->name) == 0;
+    bool result = a->name == b->name;
     debug(ctx, "  -> %s (const=%s vs %s)\n", result ? "OK" : "FAIL", a->name,
           b->name);
     return result;
@@ -89,7 +89,7 @@ bool unify(prolog_ctx_t *ctx, term_t *a, term_t *b, env_t *env) {
   }
 
   if (a->type == FUNC && b->type == FUNC) {
-    if (strcmp(a->name, b->name) != 0 || a->arity != b->arity) {
+    if (a->name != b->name || a->arity != b->arity) {
       debug(ctx, "  -> FAIL (func mismatch: %s/%d vs %s/%d)\n", a->name,
             a->arity, b->name, b->arity);
       ctx->stats.unify_fails++;
