@@ -62,3 +62,10 @@ debug: $(TARGET)
 .PHONY: test
 test: $(TARGET)
 	bats test/*.sh
+
+.PHONY: quad
+quad: $(TARGET)
+	@for f in test/*_quad.pl; do \
+		[ -f "$$f" ] || continue; \
+		./$(TARGET) -q "$$f" || exit 1; \
+	done

@@ -450,7 +450,7 @@ term_t *parse_term(prolog_ctx_t *ctx) {
   return parse_infix(ctx, left, 0);
 }
 
-static void strip_line_comment(char *line) {
+void strip_line_comment(char *line) {
   bool in_string = false;
   for (char *p = line; *p; p++) {
     if (in_string) {
@@ -469,7 +469,7 @@ static void strip_line_comment(char *line) {
   }
 }
 
-static bool has_complete_clause(const char *buf) {
+bool has_complete_clause(const char *buf) {
   bool in_string = false;
   int depth = 0;
   for (const char *p = buf; *p; p++) {

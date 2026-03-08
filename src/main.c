@@ -46,10 +46,12 @@ static int read_key(void) {
 }
 
 static void print_usage(prolog_ctx_t *ctx, const char *prog) {
-  io_writef_err(ctx, "Usage: %s [-d] [-f <file>] [-e <expression>]\n", prog);
+  io_writef_err(
+      ctx, "Usage: %s [-d] [-f <file>] [-e <expression>] [-q <file>]\n", prog);
   io_writef_err(ctx, "  -d            Enable debug mode\n");
   io_writef_err(ctx, "  -f <file>     Load clauses from file\n");
   io_writef_err(ctx, "  -e <expr>     Execute expression and exit\n");
+  io_writef_err(ctx, "  -q <file>     Run quad tests from file\n");
   io_writef_err(ctx, "  -h            Show this help\n");
   io_writef_err(ctx, "\nInteractive commands:\n");
   io_writef_err(ctx, "  debug.        Toggle debug mode\n");
@@ -124,9 +126,10 @@ int main(int argc, char *argv[]) {
 
   const char *input_file = NULL;
   const char *expression = NULL;
+  const char *quad_file = NULL;
   int opt;
 
-  while ((opt = getopt(argc, argv, "df:e:h")) != -1) {
+  while ((opt = getopt(argc, argv, "df:e:q:h")) != -1) {
     switch (opt) {
     case 'd':
       ctx->debug_enabled = true;
@@ -137,6 +140,9 @@ int main(int argc, char *argv[]) {
       break;
     case 'e':
       expression = optarg;
+      break;
+    case 'q':
+      quad_file = optarg;
       break;
     case 'h':
       print_usage(ctx, argv[0]);
@@ -159,6 +165,11 @@ int main(int argc, char *argv[]) {
     bool should_exit = false;
     process_line(ctx, line, &should_exit, false);
     return parse_has_error(ctx) ? 1 : 0;
+  }
+
+  if (quad_file) {
+    quad_results_t res = prolog_run_quad_file(ctx, quad_file);
+    return res.failed > 0 ? 1 : 0;
   }
 
   char line[1024];

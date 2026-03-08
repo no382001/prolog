@@ -265,6 +265,8 @@ void skip_ws(prolog_ctx_t *ctx);
 term_t *parse_term(prolog_ctx_t *ctx);
 term_t *parse_list(prolog_ctx_t *ctx);
 void parse_clause(prolog_ctx_t *ctx, char *line);
+void strip_line_comment(char *line);
+bool has_complete_clause(const char *buf);
 bool prolog_load_file(prolog_ctx_t *ctx, const char *filename);
 bool prolog_load_string(prolog_ctx_t *ctx, const char *src);
 
@@ -326,3 +328,12 @@ bool ffi_register_builtin(prolog_ctx_t *ctx, const char *name, int arity,
                           builtin_handler_t handler, void *userdata);
 void ffi_clear_builtins(prolog_ctx_t *ctx);
 custom_builtin_t *ffi_get_builtin_userdata(prolog_ctx_t *ctx, term_t *goal);
+
+// quad tests
+typedef struct {
+  int total;
+  int passed;
+  int failed;
+} quad_results_t;
+
+quad_results_t prolog_run_quad_file(prolog_ctx_t *ctx, const char *filename);
