@@ -18,6 +18,42 @@ static const arith_op_t arith_ops[] = {
     {"/", arith_div},   {"mod", arith_mod}, {"//", arith_div},
     {"max", arith_max}, {"min", arith_min}, {NULL, NULL}};
 
+static void throw_error(prolog_ctx_t *ctx, term_t *error_type,
+                        const char *context) {
+  term_t *ctx_atom = make_const(ctx, context);
+  term_t *args[2] = {error_type, ctx_atom};
+  term_t *err = make_func(ctx, "error", args, 2);
+  ctx->thrown_ball = err;
+  ctx->has_runtime_error = true;
+  // set readable string (prefix-compatible with existing quad tests)
+  const char *etype = error_type->name;
+  if (error_type->type == FUNC)
+    snprintf(ctx->runtime_error, MAX_ERROR_MSG, "%s in %s", etype, context);
+  else
+    snprintf(ctx->runtime_error, MAX_ERROR_MSG, "%s in %s", etype, context);
+}
+
+static void throw_instantiation_error(prolog_ctx_t *ctx, const char *context) {
+  throw_error(ctx, make_const(ctx, "instantiation_error"), context);
+}
+
+static void throw_type_error(prolog_ctx_t *ctx, const char *expected,
+                             term_t *got, const char *context)
+    __attribute__((unused));
+static void throw_type_error(prolog_ctx_t *ctx, const char *expected,
+                             term_t *got, const char *context) {
+  term_t *targs[2] = {make_const(ctx, expected), got};
+  term_t *te = make_func(ctx, "type_error", targs, 2);
+  throw_error(ctx, te, context);
+}
+
+static void throw_evaluation_error(prolog_ctx_t *ctx, const char *kind,
+                                   const char *context) {
+  term_t *kargs[1] = {make_const(ctx, kind)};
+  term_t *ee = make_func(ctx, "evaluation_error", kargs, 1);
+  throw_error(ctx, ee, context);
+}
+
 static bool eval_arith(prolog_ctx_t *ctx, term_t *t, env_t *env, int *result,
                        const char *pred) {
   t = deref(env, t);
@@ -26,12 +62,7 @@ static bool eval_arith(prolog_ctx_t *ctx, term_t *t, env_t *env, int *result,
     return true;
 
   if (t->type == VAR) {
-    if (t->name)
-      ctx_runtime_error(ctx, "instantiation_error in %s: %s is unbound", pred,
-                        t->name);
-    else
-      ctx_runtime_error(ctx, "instantiation_error in %s: variable is unbound",
-                        pred);
+    throw_instantiation_error(ctx, pred);
     return false;
   }
 
@@ -56,6 +87,13 @@ static bool eval_arith(prolog_ctx_t *ctx, term_t *t, env_t *env, int *result,
       return false;
     if (!eval_arith(ctx, t->args[1], env, &right, pred))
       return false;
+
+    if (right == 0 &&
+        (strcmp(t->name, "/") == 0 || strcmp(t->name, "//") == 0 ||
+         strcmp(t->name, "mod") == 0)) {
+      throw_evaluation_error(ctx, "zero_divisor", pred);
+      return false;
+    }
 
     for (const arith_op_t *op = arith_ops; op->op; op++) {
       if (strcmp(t->name, op->op) == 0) {
@@ -368,7 +406,13 @@ static builtin_result_t builtin_throw(prolog_ctx_t *ctx, term_t *goal,
   term_t *ball = deref(env, goal->args[0]);
   ctx->thrown_ball = ball;
   ctx->has_runtime_error = true;
-  snprintf(ctx->runtime_error, MAX_ERROR_MSG, "unhandled exception");
+  // extract readable string from error(Type, _) if ISO form
+  if (ball->type == FUNC && strcmp(ball->name, "error") == 0 &&
+      ball->arity == 2) {
+    snprintf(ctx->runtime_error, MAX_ERROR_MSG, "%s", ball->args[0]->name);
+  } else {
+    snprintf(ctx->runtime_error, MAX_ERROR_MSG, "unhandled exception");
+  }
   return BUILTIN_ERROR;
 }
 
@@ -785,9 +829,7 @@ static builtin_result_t builtin_functor(prolog_ctx_t *ctx, term_t *goal,
   term_t *n = deref(env, name);
   term_t *a = deref(env, arity);
   if (term->type == VAR && n->type == VAR) {
-    ctx_runtime_error(ctx,
-                      "instantiation_error in functor/3: bind Term to "
-                      "decompose it, or bind Name and Arity to construct one");
+    throw_instantiation_error(ctx, "functor/3");
     return BUILTIN_ERROR;
   }
   if (term->type != VAR) {
@@ -811,13 +853,7 @@ static builtin_result_t builtin_functor(prolog_ctx_t *ctx, term_t *goal,
   }
   /* compose */
   if (n->type == VAR || a->type == VAR) {
-    term_t *unbound = (n->type == VAR) ? n : a;
-    if (unbound->name)
-      ctx_runtime_error(ctx, "instantiation_error in functor/3: %s is unbound",
-                        unbound->name);
-    else
-      ctx_runtime_error(
-          ctx, "instantiation_error in functor/3: variable is unbound");
+    throw_instantiation_error(ctx, "functor/3");
     return BUILTIN_ERROR;
   }
   const char *fname = term_atom_str(n);

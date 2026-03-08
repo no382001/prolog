@@ -228,6 +228,7 @@ static bool run_one_test(prolog_ctx_t *ctx, const char *query_raw,
   // run query
   parse_error_clear(ctx);
   ctx->has_runtime_error = false;
+  ctx->thrown_ball = NULL;
 
   collector_t col;
   memset(&col, 0, sizeof(col));

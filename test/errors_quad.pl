@@ -76,3 +76,43 @@
 
 ?- Y = 3, Y < 5.
    Y = 3.
+
+% --- division by zero ---
+
+?- X is 5 / 0.
+   error(evaluation_error).
+
+?- X is 10 mod 0.
+   error(evaluation_error).
+
+?- X is 10 // 0.
+   error(evaluation_error).
+
+% --- ISO error terms are catchable ---
+
+catch_inst(C) :- catch(X is Y, error(instantiation_error, C), true), X = 0, Y = 0.
+
+?- catch_inst(C).
+   C = is/2.
+
+catch_div(C) :- catch(X is 5 / 0, error(evaluation_error(zero_divisor), C), true), X = 0.
+
+?- catch_div(C).
+   C = is/2.
+
+catch_functor(C) :- catch(functor(X, Y, Z), error(instantiation_error, C), true), X = 0, Y = 0, Z = 0.
+
+?- catch_functor(C).
+   C = functor/3.
+
+% --- catching generic error(_,_) ---
+
+catch_any_inst(E) :- catch(X is Y, error(E, _), true), X = 0, Y = 0.
+
+?- catch_any_inst(E).
+   E = instantiation_error.
+
+% --- uncaught ISO error still reports ---
+
+?- X is Y.
+   error(instantiation_error).
