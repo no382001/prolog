@@ -262,7 +262,9 @@ static bool run_one_test(prolog_ctx_t *ctx, const char *query_raw,
   }
 
   if (expect_error) {
-    pass = had_error && strstr(error_msg, expected_error_type) != NULL;
+    int elen = (int)strlen(expected_error_type);
+    pass = had_error && strncmp(error_msg, expected_error_type, elen) == 0 &&
+           (error_msg[elen] == '\0' || error_msg[elen] == ' ');
   } else if (expect_false) {
     pass = !found && !had_error;
   } else if (had_error) {
