@@ -49,6 +49,7 @@ typedef __builtin_va_list va_list;
 #define MAX_STRING_POOL 65536
 #define MAX_FILE_PATH 512
 #define MAX_MAKE_FILES 16
+#define MAX_OPEN_STREAMS 16
 #define MAX_CLAUSE_VARS 64
 
 typedef struct prolog_ctx prolog_ctx_t;
@@ -233,6 +234,9 @@ struct prolog_ctx {
     int son_calls;
     int backtracks;
   } stats;
+
+  // open file streams (handles from io_file_open); NULL = free slot
+  void *open_streams[MAX_OPEN_STREAMS];
 
   bool has_runtime_error;
   char runtime_error[MAX_ERROR_MSG];

@@ -49,7 +49,13 @@ Standard Prolog syntax. Integers, atoms, functors, lists, rules and facts.
 | `sort/2` `msort/2` | sorting |
 | `atom_length/2` `atom_concat/3` `atom_chars/2` `atom_codes/2` | atoms |
 | `char_code/2` `atom_number/2` `number_chars/2` `number_codes/2` | conversion |
+| `atom_to_term/3` `term_to_atom/2` | term <-> atom |
 | `write/1` `writeln/1` `writeq/1` `nl` | output |
+| `with_output_to(+Sink, +Goal)` | capture output; Sink: `atom(A)`, `string(S)`, `codes(Cs)`, `chars(Chs)` |
+| `open(+Path, +Mode, -Stream)` `close(+Stream)` | file streams; Mode: `read`, `write`, `append` |
+| `read_line_to_atom(+Stream, -Atom)` | read one line; unifies `end_of_file` at EOF |
+| `read_term(+Stream, -Term)` | read and parse one term from a stream |
+| `get_char(-Char)` | read one character from stdin |
 
 **Standard library (`core.pl`, loaded automatically)**
 

@@ -832,7 +832,6 @@ static builtin_result_t builtin_number_chars(prolog_ctx_t *ctx, term_t *goal,
                                                               : BUILTIN_FAIL;
 }
 
-/* ── term introspection ─────────────────────────────────────────────── */
 static builtin_result_t builtin_functor(prolog_ctx_t *ctx, term_t *goal,
                                         env_t *env) {
   term_t *term = deref(env, goal->args[0]);
@@ -1043,7 +1042,6 @@ static builtin_result_t builtin_retractall(prolog_ctx_t *ctx, term_t *goal,
   return BUILTIN_OK; /* always succeeds */
 }
 
-/* ── arithmetic helpers ─────────────────────────────────────────────── */
 static builtin_result_t builtin_succ(prolog_ctx_t *ctx, term_t *goal,
                                      env_t *env) {
   term_t *x = deref(env, goal->args[0]);
@@ -1098,7 +1096,6 @@ static builtin_result_t builtin_plus(prolog_ctx_t *ctx, term_t *goal,
   return BUILTIN_FAIL;
 }
 
-/* ── sorting ────────────────────────────────────────────────────────── */
 static int list_to_array(env_t *env, term_t *list, term_t **arr, int max) {
   int n = 0;
   list = deref(env, list);
@@ -1168,6 +1165,376 @@ static builtin_result_t builtin_sort(prolog_ctx_t *ctx, term_t *goal,
              : BUILTIN_FAIL;
 }
 
+#define BCAP_SIZE 4096
+typedef struct {
+  io_hooks_t saved;
+  char buf[BCAP_SIZE];
+  int pos;
+} bcap_t;
+
+static void bcap_write_str(prolog_ctx_t *ctx, const char *str, void *ud) {
+  (void)ctx;
+  bcap_t *c = ud;
+  int len = (int)strlen(str);
+  int rem = BCAP_SIZE - c->pos - 1;
+  if (len > rem)
+    len = rem;
+  if (len > 0) {
+    memcpy(c->buf + c->pos, str, len);
+    c->pos += len;
+    c->buf[c->pos] = '\0';
+  }
+}
+
+static void bcap_writef(prolog_ctx_t *ctx, const char *fmt, va_list args,
+                        void *ud) {
+  (void)ctx;
+  bcap_t *c = ud;
+  int rem = BCAP_SIZE - c->pos - 1;
+  if (rem > 0) {
+    int n = vsnprintf(c->buf + c->pos, rem, fmt, args);
+    if (n > 0) {
+      c->pos += (n >= rem ? rem : n);
+      c->buf[c->pos] = '\0';
+    }
+  }
+}
+
+static void bcap_start(prolog_ctx_t *ctx, bcap_t *c) {
+  c->saved = ctx->io_hooks;
+  c->pos = 0;
+  c->buf[0] = '\0';
+  ctx->io_hooks.write_str = bcap_write_str;
+  ctx->io_hooks.writef = bcap_writef;
+  ctx->io_hooks.writef_err = bcap_writef;
+  ctx->io_hooks.userdata = c;
+}
+
+static void bcap_end(prolog_ctx_t *ctx, bcap_t *c) { ctx->io_hooks = c->saved; }
+
+static term_t *make_stream_term(prolog_ctx_t *ctx, int id) {
+  char buf[16];
+  snprintf(buf, sizeof(buf), "%d", id);
+  term_t *n = make_const(ctx, buf);
+  term_t *args[1] = {n};
+  return make_func(ctx, "$stream", args, 1);
+}
+
+static bool get_stream_id(env_t *env, term_t *t, int *id) {
+  t = deref(env, t);
+  if (!t || t->type != FUNC || strcmp(t->name, "$stream") != 0 || t->arity != 1)
+    return false;
+  return term_as_int(t->args[0], id);
+}
+
+static builtin_result_t builtin_with_output_to(prolog_ctx_t *ctx, term_t *goal,
+                                               env_t *env) {
+  term_t *sink = deref(env, goal->args[0]);
+  term_t *g = deref(env, goal->args[1]);
+
+  if (!sink || sink->type != FUNC || sink->arity != 1)
+    return BUILTIN_FAIL;
+
+  const char *sname = sink->name;
+  bool is_atom = strcmp(sname, "atom") == 0;
+  bool is_string = strcmp(sname, "string") == 0;
+  bool is_codes = strcmp(sname, "codes") == 0;
+  bool is_chars = strcmp(sname, "chars") == 0;
+  if (!is_atom && !is_string && !is_codes && !is_chars)
+    return BUILTIN_FAIL;
+
+  bcap_t cap;
+  bcap_start(ctx, &cap);
+  goal_stmt_t cn = {0};
+  cn.goals[cn.count++] = g;
+  bool ok = solve(ctx, &cn, env);
+  bcap_end(ctx, &cap);
+
+  if (!ok)
+    return BUILTIN_FAIL;
+
+  term_t *result;
+  if (is_string) {
+    result = make_string(ctx, cap.buf);
+  } else if (is_codes) {
+    int len = (int)strlen(cap.buf);
+    result = make_const(ctx, "[]");
+    for (int i = len - 1; i >= 0; i--) {
+      char nb[8];
+      snprintf(nb, sizeof(nb), "%d", (unsigned char)cap.buf[i]);
+      term_t *a2[2] = {make_const(ctx, nb), result};
+      result = make_func(ctx, ".", a2, 2);
+    }
+  } else if (is_chars) {
+    int len = (int)strlen(cap.buf);
+    result = make_const(ctx, "[]");
+    for (int i = len - 1; i >= 0; i--) {
+      char cb[2] = {cap.buf[i], '\0'};
+      term_t *a2[2] = {make_const(ctx, cb), result};
+      result = make_func(ctx, ".", a2, 2);
+    }
+  } else {
+    result = make_const(ctx, cap.buf);
+  }
+
+  return unify(ctx, sink->args[0], result, env) ? BUILTIN_OK : BUILTIN_FAIL;
+}
+
+// ---------------------------------------------------------------------------
+// term_to_atom(+Term, ?Atom)
+// ---------------------------------------------------------------------------
+
+static builtin_result_t builtin_term_to_atom(prolog_ctx_t *ctx, term_t *goal,
+                                             env_t *env) {
+  term_t *term_arg = deref(env, goal->args[0]);
+  term_t *atom_arg = deref(env, goal->args[1]);
+
+  // atom → term direction
+  if (term_arg->type == VAR && atom_arg->type != VAR) {
+    const char *str =
+        (atom_arg->type == STRING) ? atom_arg->string_data : atom_arg->name;
+    if (!str)
+      return BUILTIN_FAIL;
+
+    char *sp = ctx->input_ptr, *ss = ctx->input_start;
+    int sl = ctx->input_line, sv = ctx->clause_var_count;
+
+    ctx->input_ptr = (char *)str;
+    ctx->input_start = (char *)str;
+    ctx->input_line = 1;
+    ctx->clause_var_count = 0;
+    parse_error_clear(ctx);
+    term_t *parsed = parse_term(ctx);
+    ctx->input_ptr = sp;
+    ctx->input_start = ss;
+    ctx->input_line = sl;
+    ctx->clause_var_count = sv;
+
+    if (!parsed || parse_has_error(ctx))
+      return BUILTIN_FAIL;
+    return unify(ctx, term_arg, parsed, env) ? BUILTIN_OK : BUILTIN_FAIL;
+  }
+
+  // term → atom direction
+  bcap_t cap;
+  bcap_start(ctx, &cap);
+  print_term(ctx, term_arg, env, true);
+  bcap_end(ctx, &cap);
+
+  return unify(ctx, atom_arg, make_const(ctx, cap.buf), env) ? BUILTIN_OK
+                                                             : BUILTIN_FAIL;
+}
+
+static builtin_result_t builtin_atom_to_term(prolog_ctx_t *ctx, term_t *goal,
+                                             env_t *env) {
+  term_t *atom_arg = deref(env, goal->args[0]);
+  const char *str =
+      (atom_arg->type == STRING) ? atom_arg->string_data : atom_arg->name;
+  if (!str)
+    return BUILTIN_FAIL;
+
+  // save parser state
+  char *sp = ctx->input_ptr, *ss = ctx->input_start;
+  int sl = ctx->input_line, sv = ctx->clause_var_count;
+  struct {
+    const char *name;
+    int var_id;
+  } saved_vars[MAX_CLAUSE_VARS];
+  memcpy(saved_vars, ctx->clause_vars, sizeof(saved_vars));
+
+  ctx->input_ptr = (char *)str;
+  ctx->input_start = (char *)str;
+  ctx->input_line = 1;
+  ctx->clause_var_count = 0;
+  parse_error_clear(ctx);
+  term_t *parsed = parse_term(ctx);
+
+  // build bindings list before restoring
+  term_t *bindings = make_const(ctx, "[]");
+  for (int i = ctx->clause_var_count - 1; i >= 0; i--) {
+    const char *vname = ctx->clause_vars[i].name;
+    if (!vname || strcmp(vname, "_") == 0)
+      continue;
+    term_t *vt = make_var(ctx, vname, ctx->clause_vars[i].var_id);
+    term_t *eq[2] = {make_const(ctx, vname), vt};
+    term_t *pair = make_func(ctx, "=", eq, 2);
+    term_t *cell[2] = {pair, bindings};
+    bindings = make_func(ctx, ".", cell, 2);
+  }
+
+  ctx->input_ptr = sp;
+  ctx->input_start = ss;
+  ctx->input_line = sl;
+  ctx->clause_var_count = sv;
+  memcpy(ctx->clause_vars, saved_vars, sizeof(saved_vars));
+
+  if (!parsed || parse_has_error(ctx))
+    return BUILTIN_FAIL;
+  if (!unify(ctx, goal->args[1], parsed, env))
+    return BUILTIN_FAIL;
+  return unify(ctx, goal->args[2], bindings, env) ? BUILTIN_OK : BUILTIN_FAIL;
+}
+
+static builtin_result_t builtin_open(prolog_ctx_t *ctx, term_t *goal,
+                                     env_t *env) {
+  term_t *path_t = deref(env, goal->args[0]);
+  term_t *mode_t = deref(env, goal->args[1]);
+  if (!path_t || !mode_t || mode_t->type != CONST)
+    return BUILTIN_FAIL;
+
+  const char *path =
+      (path_t->type == STRING) ? path_t->string_data : path_t->name;
+  if (!path)
+    return BUILTIN_FAIL;
+
+  const char *fmode;
+  if (strcmp(mode_t->name, "read") == 0)
+    fmode = "r";
+  else if (strcmp(mode_t->name, "write") == 0)
+    fmode = "w";
+  else if (strcmp(mode_t->name, "append") == 0)
+    fmode = "a";
+  else
+    return BUILTIN_FAIL;
+
+  int slot = -1;
+  for (int i = 0; i < MAX_OPEN_STREAMS; i++) {
+    if (!ctx->open_streams[i]) {
+      slot = i;
+      break;
+    }
+  }
+  if (slot < 0)
+    return BUILTIN_FAIL;
+
+  void *handle = io_file_open(ctx, path, fmode);
+  if (!handle)
+    return BUILTIN_FAIL;
+
+  ctx->open_streams[slot] = handle;
+  return unify(ctx, goal->args[2], make_stream_term(ctx, slot), env)
+             ? BUILTIN_OK
+             : BUILTIN_FAIL;
+}
+
+static builtin_result_t builtin_close(prolog_ctx_t *ctx, term_t *goal,
+                                      env_t *env) {
+  int id;
+  if (!get_stream_id(env, goal->args[0], &id))
+    return BUILTIN_FAIL;
+  if (id < 0 || id >= MAX_OPEN_STREAMS || !ctx->open_streams[id])
+    return BUILTIN_FAIL;
+  io_file_close(ctx, ctx->open_streams[id]);
+  ctx->open_streams[id] = NULL;
+  return BUILTIN_OK;
+}
+
+// ---------------------------------------------------------------------------
+// read_line_to_atom(+Stream, -Atom)
+// Unifies with the next line (newline stripped), or end_of_file.
+// ---------------------------------------------------------------------------
+
+static builtin_result_t builtin_read_line_to_atom(prolog_ctx_t *ctx,
+                                                  term_t *goal, env_t *env) {
+  int id;
+  if (!get_stream_id(env, goal->args[0], &id))
+    return BUILTIN_FAIL;
+  if (id < 0 || id >= MAX_OPEN_STREAMS || !ctx->open_streams[id])
+    return BUILTIN_FAIL;
+
+  char line[1024];
+  char *r = io_file_read_line(ctx, ctx->open_streams[id], line, sizeof(line));
+  term_t *result;
+  if (!r) {
+    result = make_const(ctx, "end_of_file");
+  } else {
+    line[strcspn(line, "\n")] = '\0';
+    result = make_const(ctx, line);
+  }
+  return unify(ctx, goal->args[1], result, env) ? BUILTIN_OK : BUILTIN_FAIL;
+}
+
+// ---------------------------------------------------------------------------
+// get_char(-Char)   reads one character from stdin
+// ---------------------------------------------------------------------------
+
+static builtin_result_t builtin_get_char(prolog_ctx_t *ctx, term_t *goal,
+                                         env_t *env) {
+  int c = io_read_char(ctx);
+  term_t *result;
+  if (c == -1) {
+    result = make_const(ctx, "end_of_file");
+  } else {
+    char buf[2] = {(char)c, '\0'};
+    result = make_const(ctx, buf);
+  }
+  return unify(ctx, goal->args[0], result, env) ? BUILTIN_OK : BUILTIN_FAIL;
+}
+
+// ---------------------------------------------------------------------------
+// read_term(+Stream, -Term)
+// Accumulates lines until a complete clause is ready, then parses as a term.
+// ---------------------------------------------------------------------------
+
+static builtin_result_t builtin_read_term(prolog_ctx_t *ctx, term_t *goal,
+                                          env_t *env) {
+  int id;
+  if (!get_stream_id(env, goal->args[0], &id))
+    return BUILTIN_FAIL;
+  if (id < 0 || id >= MAX_OPEN_STREAMS || !ctx->open_streams[id])
+    return BUILTIN_FAIL;
+
+  char clause_buf[BCAP_SIZE] = {0};
+  char line[1024];
+
+  while (io_file_read_line(ctx, ctx->open_streams[id], line, sizeof(line))) {
+    line[strcspn(line, "\n")] = '\0';
+    strip_line_comment(line);
+    char *trimmed = line;
+    while (*trimmed == ' ' || *trimmed == '\t')
+      trimmed++;
+    if (*trimmed == '\0' && clause_buf[0] == '\0')
+      continue;
+    if (clause_buf[0] != '\0' && *trimmed != '\0')
+      strncat(clause_buf, " ", sizeof(clause_buf) - strlen(clause_buf) - 1);
+    strncat(clause_buf, trimmed, sizeof(clause_buf) - strlen(clause_buf) - 1);
+    if (has_complete_clause(clause_buf))
+      break;
+  }
+
+  if (clause_buf[0] == '\0')
+    return unify(ctx, goal->args[1], make_const(ctx, "end_of_file"), env)
+               ? BUILTIN_OK
+               : BUILTIN_FAIL;
+
+  // strip terminating dot
+  int len = (int)strlen(clause_buf);
+  while (len > 0 && (clause_buf[len - 1] == ' ' || clause_buf[len - 1] == '\t'))
+    len--;
+  if (len > 0 && clause_buf[len - 1] == '.')
+    len--;
+  clause_buf[len] = '\0';
+
+  char *sp = ctx->input_ptr, *ss = ctx->input_start;
+  int sl = ctx->input_line, sv = ctx->clause_var_count;
+
+  ctx->input_ptr = clause_buf;
+  ctx->input_start = clause_buf;
+  ctx->input_line = 1;
+  ctx->clause_var_count = 0;
+  parse_error_clear(ctx);
+  term_t *parsed = parse_term(ctx);
+
+  ctx->input_ptr = sp;
+  ctx->input_start = ss;
+  ctx->input_line = sl;
+  ctx->clause_var_count = sv;
+
+  if (!parsed || parse_has_error(ctx))
+    return BUILTIN_FAIL;
+  return unify(ctx, goal->args[1], parsed, env) ? BUILTIN_OK : BUILTIN_FAIL;
+}
+
 static builtin_result_t builtin_make(prolog_ctx_t *ctx, term_t *goal,
                                      env_t *env) {
   (void)goal;
@@ -1209,69 +1576,78 @@ static builtin_result_t builtin_make(prolog_ctx_t *ctx, term_t *goal,
   return BUILTIN_OK;
 }
 
-static const builtin_t builtins[] = {{"true", 0, builtin_true},
-                                     {"fail", 0, builtin_fail},
-                                     {"!", 0, builtin_cut},
-                                     {"stats", 0, builtin_stats},
-                                     {"make", 0, builtin_make},
-                                     {"nl", 0, builtin_nl},
-                                     {"is", 2, builtin_is},
-                                     {"=", 2, builtin_unify},
-                                     {"\\=", 2, builtin_not_unify},
-                                     {"==", 2, builtin_struct_eq},
-                                     {"\\==", 2, builtin_struct_neq},
-                                     {"@<", 2, builtin_term_lt},
-                                     {"@>", 2, builtin_term_gt},
-                                     {"@=<", 2, builtin_term_le},
-                                     {"@>=", 2, builtin_term_ge},
-                                     {"<", 2, builtin_lt},
-                                     {">", 2, builtin_gt},
-                                     {"=<", 2, builtin_le},
-                                     {">=", 2, builtin_ge},
-                                     {"=:=", 2, builtin_arith_eq},
-                                     {"=\\=", 2, builtin_arith_ne},
-                                     {"throw", 1, builtin_throw},
-                                     {"once", 1, builtin_once},
-                                     {"\\+", 1, builtin_not},
-                                     {"var", 1, builtin_var},
-                                     {"nonvar", 1, builtin_nonvar},
-                                     {"atom", 1, builtin_atom},
-                                     {"integer", 1, builtin_integer},
-                                     {"is_list", 1, builtin_is_list},
-                                     {"write", 1, builtin_write},
-                                     {"writeln", 1, builtin_writeln},
-                                     {"writeq", 1, builtin_writeq},
-                                     {"consult", 1, builtin_consult},
-                                     {"include", 1, builtin_include},
-                                     {"findall", 3, builtin_findall},
-                                     {"bagof", 3, builtin_bagof},
-                                     {"compare", 3, builtin_compare},
-                                     {"compound", 1, builtin_compound},
-                                     {"callable", 1, builtin_callable},
-                                     {"number", 1, builtin_number},
-                                     {"atomic", 1, builtin_atomic},
-                                     {"string", 1, builtin_string},
-                                     {"atom_length", 2, builtin_atom_length},
-                                     {"atom_concat", 3, builtin_atom_concat},
-                                     {"atom_chars", 2, builtin_atom_chars},
-                                     {"atom_codes", 2, builtin_atom_codes},
-                                     {"char_code", 2, builtin_char_code},
-                                     {"atom_number", 2, builtin_atom_number},
-                                     {"number_codes", 2, builtin_number_codes},
-                                     {"number_chars", 2, builtin_number_chars},
-                                     {"functor", 3, builtin_functor},
-                                     {"arg", 3, builtin_arg},
-                                     {"=..", 2, builtin_univ},
-                                     {"copy_term", 2, builtin_copy_term},
-                                     {"assertz", 1, builtin_assertz},
-                                     {"asserta", 1, builtin_asserta},
-                                     {"retract", 1, builtin_retract},
-                                     {"retractall", 1, builtin_retractall},
-                                     {"succ", 2, builtin_succ},
-                                     {"plus", 3, builtin_plus},
-                                     {"msort", 2, builtin_msort},
-                                     {"sort", 2, builtin_sort},
-                                     {NULL, 0, NULL}};
+static const builtin_t builtins[] = {
+    {"true", 0, builtin_true},
+    {"fail", 0, builtin_fail},
+    {"!", 0, builtin_cut},
+    {"stats", 0, builtin_stats},
+    {"make", 0, builtin_make},
+    {"nl", 0, builtin_nl},
+    {"is", 2, builtin_is},
+    {"=", 2, builtin_unify},
+    {"\\=", 2, builtin_not_unify},
+    {"==", 2, builtin_struct_eq},
+    {"\\==", 2, builtin_struct_neq},
+    {"@<", 2, builtin_term_lt},
+    {"@>", 2, builtin_term_gt},
+    {"@=<", 2, builtin_term_le},
+    {"@>=", 2, builtin_term_ge},
+    {"<", 2, builtin_lt},
+    {">", 2, builtin_gt},
+    {"=<", 2, builtin_le},
+    {">=", 2, builtin_ge},
+    {"=:=", 2, builtin_arith_eq},
+    {"=\\=", 2, builtin_arith_ne},
+    {"throw", 1, builtin_throw},
+    {"once", 1, builtin_once},
+    {"\\+", 1, builtin_not},
+    {"var", 1, builtin_var},
+    {"nonvar", 1, builtin_nonvar},
+    {"atom", 1, builtin_atom},
+    {"integer", 1, builtin_integer},
+    {"is_list", 1, builtin_is_list},
+    {"write", 1, builtin_write},
+    {"writeln", 1, builtin_writeln},
+    {"writeq", 1, builtin_writeq},
+    {"consult", 1, builtin_consult},
+    {"include", 1, builtin_include},
+    {"findall", 3, builtin_findall},
+    {"bagof", 3, builtin_bagof},
+    {"compare", 3, builtin_compare},
+    {"compound", 1, builtin_compound},
+    {"callable", 1, builtin_callable},
+    {"number", 1, builtin_number},
+    {"atomic", 1, builtin_atomic},
+    {"string", 1, builtin_string},
+    {"atom_length", 2, builtin_atom_length},
+    {"atom_concat", 3, builtin_atom_concat},
+    {"atom_chars", 2, builtin_atom_chars},
+    {"atom_codes", 2, builtin_atom_codes},
+    {"char_code", 2, builtin_char_code},
+    {"atom_number", 2, builtin_atom_number},
+    {"number_codes", 2, builtin_number_codes},
+    {"number_chars", 2, builtin_number_chars},
+    {"functor", 3, builtin_functor},
+    {"arg", 3, builtin_arg},
+    {"=..", 2, builtin_univ},
+    {"copy_term", 2, builtin_copy_term},
+    {"assertz", 1, builtin_assertz},
+    {"asserta", 1, builtin_asserta},
+    {"retract", 1, builtin_retract},
+    {"retractall", 1, builtin_retractall},
+    {"succ", 2, builtin_succ},
+    {"plus", 3, builtin_plus},
+    {"msort", 2, builtin_msort},
+    {"sort", 2, builtin_sort},
+    {"with_output_to", 2, builtin_with_output_to},
+    {"term_to_atom", 2, builtin_term_to_atom},
+    {"atom_to_term", 3, builtin_atom_to_term},
+    {"open", 3, builtin_open},
+    {"close", 1, builtin_close},
+    {"read_line_to_atom", 2, builtin_read_line_to_atom},
+    {"get_char", 1, builtin_get_char},
+    {"read_term", 2, builtin_read_term},
+    {NULL, 0, NULL}};
 
 builtin_result_t try_builtin(prolog_ctx_t *ctx, term_t *goal, env_t *env) {
   goal = deref(env, goal);
