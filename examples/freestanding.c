@@ -6,8 +6,6 @@
 //
 // PROLOG_FREESTANDING and NDEBUG are passed via compiler flags.
 
-// --- libc stubs (just enough to link) --------------------------------------
-
 typedef __builtin_va_list va_list;
 #define va_start __builtin_va_start
 #define va_end __builtin_va_end
@@ -16,7 +14,6 @@ typedef __builtin_va_list va_list;
 
 typedef __SIZE_TYPE__ size_t;
 
-// clang-format off
 static int       stub_strcmp(const char *a, const char *b)              { (void)a; (void)b; return 0; }
 static int       stub_strncmp(const char *a, const char *b, size_t n)  { (void)a; (void)b; (void)n; return 0; }
 static size_t    stub_strlen(const char *s)                            { (void)s; return 0; }
@@ -33,7 +30,6 @@ static int       stub_isalpha(int c)  { (void)c; return 0; }
 static int       stub_isalnum(int c)  { (void)c; return 0; }
 static int       stub_isupper(int c)  { (void)c; return 0; }
 static int       stub_vsnprintf(char *b, size_t sz, const char *f, va_list a) { (void)b; (void)sz; (void)f; (void)a; return 0; }
-// clang-format on
 
 static int stub_snprintf(char *b, size_t sz, const char *f, ...) {
   (void)b; (void)sz; (void)f;
@@ -59,8 +55,6 @@ static int stub_snprintf(char *b, size_t sz, const char *f, ...) {
 #define snprintf stub_snprintf
 #define assert(x) ((void)0)
 
-// --- unity build -----------------------------------------------------------
-
 #include "../src/builtins.c"
 #include "../src/debug.c"
 #include "../src/env.c"
@@ -72,8 +66,6 @@ static int stub_snprintf(char *b, size_t sz, const char *f, ...) {
 #include "../src/term.c"
 #include "../src/unify.c"
 
-// --- entry point (never actually called) -----------------------------------
-
 #ifdef __x86_64__
 __attribute__((naked)) void _start(void) {
   __asm__("xor %%edi, %%edi\n"
@@ -84,7 +76,6 @@ __attribute__((naked)) void _start(void) {
 int main(void) { return 0; }
 #endif
 
-// GCC may emit implicit memset/memcpy calls that bypass our macros.
 #undef memset
 #undef memcpy
 void *memset(void *d, int c, size_t n) { return stub_memset(d, c, n); }

@@ -17,9 +17,7 @@ make
 
 ## Language
 
-Standard Prolog syntax: atoms, variables (`X`, `_`), integers, functors, lists, rules and facts.
-
-Strings are double-quoted and behave as lists of single-char atoms: `"abc" = [a,b,c]`.
+Standard Prolog syntax. Integers, atoms, functors, lists, rules and facts.
 
 **Operators**
 
@@ -39,10 +37,10 @@ Strings are double-quoted and behave as lists of single-char atoms: `"abc" = [a,
 | `true` `fail` `!` | basics |
 | `\+(G)` `call(G)` | meta-call |
 | `,(G,G)` `;(G,G)` `->(G,G)` | control |
-| `throw(T)` `catch(G,C,R)` | exceptions |
+| `throw(T)` `catch(G,C,R)` | exceptions (`error(Formal, Context)` convention) |
 | `findall/3` `bagof/3` | aggregation |
 | `consult(F)` `include(F)` `make` | loading |
-| `assert(z/a)(C)` `retract(H)` `retractall(H)` | database |
+| `assertz(C)` `asserta(C)` `retract(H)` `retractall(H)` | database |
 | `var/nonvar/atom/integer/number/atomic/compound/callable/string/is_list` | type tests |
 | `float(X)` | always fails (no float type) |
 | `functor/3` `arg/3` `=../2` `copy_term/2` | introspection |
@@ -57,13 +55,56 @@ Strings are double-quoted and behave as lists of single-char atoms: `"abc" = [a,
 
 `once/1`, `between/3`, `forall/2`, `member/2`, `append/3`, `length/2`, `reverse/2`, `last/2`
 
-**Exceptions**
+## Embedding
 
-Error terms follow the ISO convention `error(Formal, Context)`. Arithmetic and type errors are thrown automatically; use `throw/1` and `catch/3` for user-defined exceptions.
+### I/O hooks
+
+All interpreter I/O goes through a hook struct, so you can redirect it entirely — useful for embedding in applications, GUIs, or constrained environments.
+
+```c
+io_hooks_t hooks = {0};
+hooks.write_str  = my_write;    // void(ctx, str, userdata)
+hooks.writef     = my_writef;   // void(ctx, fmt, va_list, userdata)
+hooks.writef_err = my_writef;   // stderr channel
+hooks.read_char  = my_getchar;  // int(ctx, userdata)
+hooks.read_line  = my_readline; // char*(ctx, buf, size, userdata)
+// file i/o (needed for consult/include):
+hooks.file_open      = my_fopen;
+hooks.file_close     = my_fclose;
+hooks.file_read_line = my_freadline;
+hooks.file_write     = my_fwrite;
+hooks.file_exists    = my_exists;
+hooks.file_mtime     = my_mtime;
+hooks.clock_monotonic = my_clock; // for test timing
+hooks.userdata = my_state;
+io_hooks_set(ctx, &hooks);
+```
+
+Only set the callbacks you need; unset ones fall back to the defaults (`stdio`/`libc`).
+
+### Freestanding (no libc)
+
+Define `PROLOG_FREESTANDING` before including `prolog.h`. The header then expects no standard includes — you provide the required primitives as macros:
+
+```c
+#define PROLOG_FREESTANDING
+#define strcmp   my_strcmp
+#define strlen   my_strlen
+#define memcpy   my_memcpy
+#define vsnprintf my_vsnprintf
+// ... etc.
+#include "prolog.h"
+```
+
+All output must be handled through I/O hooks; there is no fallback to `printf`. See `examples/freestanding.c` for a build smoke-test.
+
+```sh
+make freestanding   # verifies the library links without libc
+```
 
 ## Testing
 
-Tests are written in the [quad format](https://web.liminal.cafe/~byakuren/flowlog/docs/QUAD_TESTS.html) — plain `.pl` files containing queries and their expected output:
+Tests use the [quad format](https://web.liminal.cafe/~byakuren/flowlog/docs/QUAD_TESTS.html) — plain `.pl` files containing queries and their expected output:
 
 ```prolog
 ?- member(X, [a,b,c]).
@@ -76,6 +117,8 @@ Tests are written in the [quad format](https://web.liminal.cafe/~byakuren/flowlo
 make quad          # TAP output
 make quad-junit    # JUnit XML → _build/test-results/
 ```
+
+ISO 13211-1 conformance tests (`test/iso_quad.pl`) run but do not fail the build.
 
 ## Algorithm
 
