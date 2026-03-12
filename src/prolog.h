@@ -178,6 +178,7 @@ typedef struct {
 
 typedef struct {
   bool has_error;
+  bool error_is_eof; // true when failure is due to unexpected end of input
   char message[MAX_ERROR_MSG];
   int line;
   int column;

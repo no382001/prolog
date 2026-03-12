@@ -16,9 +16,21 @@ void parse_error(prolog_ctx_t *ctx, const char *fmt, ...) {
 
 void parse_error_clear(prolog_ctx_t *ctx) {
   ctx->error.has_error = false;
+  ctx->error.error_is_eof = false;
   ctx->error.message[0] = '\0';
   ctx->error.line = 0;
   ctx->error.column = 0;
+}
+
+static void parse_error_eof(prolog_ctx_t *ctx) {
+  if (ctx->error.has_error)
+    return;
+  ctx->error.has_error = true;
+  ctx->error.error_is_eof = true;
+  strncpy(ctx->error.message, "end_of_file", MAX_ERROR_MSG - 1);
+  ctx->error.message[MAX_ERROR_MSG - 1] = '\0';
+  ctx->error.line = ctx->input_line;
+  ctx->error.column = (int)(ctx->input_ptr - ctx->input_start) + 1;
 }
 
 bool parse_has_error(prolog_ctx_t *ctx) { return ctx->error.has_error; }
@@ -145,7 +157,10 @@ term_t *parse_list(prolog_ctx_t *ctx) {
 
   elements[count] = parse_term(ctx);
   if (!elements[count]) {
-    parse_error(ctx, "failed to parse list element");
+    if (*ctx->input_ptr == '\0' && !parse_has_error(ctx))
+      parse_error_eof(ctx);
+    else if (!parse_has_error(ctx))
+      parse_error(ctx, "failed to parse list element");
     return NULL;
   }
   count++;
@@ -157,7 +172,10 @@ term_t *parse_list(prolog_ctx_t *ctx) {
       skip_ws(ctx);
       tail = parse_term(ctx);
       if (!tail) {
-        parse_error(ctx, "failed to parse list tail after '|'");
+        if (*ctx->input_ptr == '\0' && !parse_has_error(ctx))
+          parse_error_eof(ctx);
+        else if (!parse_has_error(ctx))
+          parse_error(ctx, "failed to parse list tail after '|'");
         return NULL;
       }
       skip_ws(ctx);
@@ -173,7 +191,10 @@ term_t *parse_list(prolog_ctx_t *ctx) {
 
     elements[count] = parse_term(ctx);
     if (!elements[count]) {
-      parse_error(ctx, "failed to parse list element");
+      if (*ctx->input_ptr == '\0' && !parse_has_error(ctx))
+        parse_error_eof(ctx);
+      else if (!parse_has_error(ctx))
+        parse_error(ctx, "failed to parse list element");
       return NULL;
     }
     count++;
@@ -181,8 +202,10 @@ term_t *parse_list(prolog_ctx_t *ctx) {
   }
 
   if (*ctx->input_ptr != ']') {
-    parse_error(ctx, "expected ']' to close list, got '%c'",
-                *ctx->input_ptr ? *ctx->input_ptr : '?');
+    if (*ctx->input_ptr == '\0')
+      parse_error_eof(ctx);
+    else
+      parse_error(ctx, "expected ']' to close list, got '%c'", *ctx->input_ptr);
     return NULL;
   }
   ctx->input_ptr++;
@@ -218,13 +241,19 @@ static term_t *parse_primary(prolog_ctx_t *ctx) {
     skip_ws(ctx);
     term_t *inner = parse_term(ctx);
     if (!inner) {
-      parse_error(ctx, "expected expression inside parentheses");
+      if (*ctx->input_ptr == '\0' && !parse_has_error(ctx))
+        parse_error_eof(ctx);
+      else if (!parse_has_error(ctx))
+        parse_error(ctx, "expected expression inside parentheses");
       return NULL;
     }
     skip_ws(ctx);
     if (*ctx->input_ptr != ')') {
-      parse_error(ctx, "expected ')' after expression, got '%c'",
-                  *ctx->input_ptr ? *ctx->input_ptr : '?');
+      if (*ctx->input_ptr == '\0')
+        parse_error_eof(ctx);
+      else
+        parse_error(ctx, "expected ')' after expression, got '%c'",
+                    *ctx->input_ptr);
       return NULL;
     }
     ctx->input_ptr++;
@@ -238,6 +267,7 @@ static term_t *parse_primary(prolog_ctx_t *ctx) {
     ctx->input_ptr++; // skip opening quote
     char name[MAX_NAME];
     int i = 0;
+    bool closed = false;
     while (*ctx->input_ptr) {
       if (*ctx->input_ptr == '\'') {
         if (ctx->input_ptr[1] == '\'') { // '' is escaped single-quote
@@ -246,6 +276,7 @@ static term_t *parse_primary(prolog_ctx_t *ctx) {
             name[i++] = '\'';
         } else {
           ctx->input_ptr++; // closing quote
+          closed = true;
           break;
         }
       } else if (*ctx->input_ptr == '\\' && ctx->input_ptr[1]) {
@@ -288,6 +319,11 @@ static term_t *parse_primary(prolog_ctx_t *ctx) {
     }
     name[i] = '\0';
 
+    if (!closed) {
+      parse_error_eof(ctx);
+      return NULL;
+    }
+
     // quoted atom followed by '(' is a functor call (ISO 6.3.3)
     skip_ws(ctx);
     if (*ctx->input_ptr == '(') {
@@ -304,8 +340,12 @@ static term_t *parse_primary(prolog_ctx_t *ctx) {
           }
           args[arity] = parse_term(ctx);
           if (!args[arity]) {
-            if (!parse_has_error(ctx))
-              parse_error(ctx, "failed to parse argument %d", arity + 1);
+            if (!parse_has_error(ctx)) {
+              if (*ctx->input_ptr == '\0')
+                parse_error_eof(ctx);
+              else
+                parse_error(ctx, "failed to parse argument %d", arity + 1);
+            }
             return NULL;
           }
           arity++;
@@ -314,8 +354,11 @@ static term_t *parse_primary(prolog_ctx_t *ctx) {
       }
       skip_ws(ctx);
       if (*ctx->input_ptr != ')') {
-        parse_error(ctx, "expected ')' after arguments, got '%c'",
-                    *ctx->input_ptr ? *ctx->input_ptr : '?');
+        if (*ctx->input_ptr == '\0')
+          parse_error_eof(ctx);
+        else
+          parse_error(ctx, "expected ')' after arguments, got '%c'",
+                      *ctx->input_ptr);
         return NULL;
       }
       ctx->input_ptr++;
@@ -393,7 +436,10 @@ static term_t *parse_primary(prolog_ctx_t *ctx) {
     skip_ws(ctx);
     term_t *inner = parse_term(ctx);
     if (!inner) {
-      parse_error(ctx, "expected term after '\\+'");
+      if (*ctx->input_ptr == '\0' && !parse_has_error(ctx))
+        parse_error_eof(ctx);
+      else if (!parse_has_error(ctx))
+        parse_error(ctx, "expected term after '\\+'");
       return NULL;
     }
     term_t *args[1] = {inner};
@@ -423,7 +469,10 @@ static term_t *parse_primary(prolog_ctx_t *ctx) {
         args[arity] = parse_term(ctx);
         if (!args[arity]) {
           if (!parse_has_error(ctx)) {
-            parse_error(ctx, "failed to parse argument %d", arity + 1);
+            if (*ctx->input_ptr == '\0')
+              parse_error_eof(ctx);
+            else
+              parse_error(ctx, "failed to parse argument %d", arity + 1);
           }
           return NULL;
         }
@@ -434,8 +483,11 @@ static term_t *parse_primary(prolog_ctx_t *ctx) {
     skip_ws(ctx);
 
     if (*ctx->input_ptr != ')') {
-      parse_error(ctx, "expected ')' after arguments, got '%c'",
-                  *ctx->input_ptr ? *ctx->input_ptr : '?');
+      if (*ctx->input_ptr == '\0')
+        parse_error_eof(ctx);
+      else
+        parse_error(ctx, "expected ')' after arguments, got '%c'",
+                    *ctx->input_ptr);
       return NULL;
     }
     ctx->input_ptr++;
@@ -487,7 +539,10 @@ static term_t *parse_infix(prolog_ctx_t *ctx, term_t *left, int min_prec) {
 
     term_t *right = parse_primary(ctx);
     if (!right) {
-      parse_error(ctx, "expected term after '%s'", op);
+      if (*ctx->input_ptr == '\0' && !parse_has_error(ctx))
+        parse_error_eof(ctx);
+      else if (!parse_has_error(ctx))
+        parse_error(ctx, "expected term after '%s'", op);
       return NULL;
     }
 

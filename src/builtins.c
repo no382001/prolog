@@ -1305,13 +1305,28 @@ static builtin_result_t builtin_term_to_atom(prolog_ctx_t *ctx, term_t *goal,
     ctx->clause_var_count = 0;
     parse_error_clear(ctx);
     term_t *parsed = parse_term(ctx);
+    bool is_eof = ctx->error.error_is_eof;
+    // check for trailing non-whitespace input
+    char *after = ctx->input_ptr;
+    while (isspace((unsigned char)*after))
+      after++;
+    bool has_trailing = (*after != '\0');
     ctx->input_ptr = sp;
     ctx->input_start = ss;
     ctx->input_line = sl;
     ctx->clause_var_count = sv;
 
-    if (!parsed || parse_has_error(ctx))
+    if (!parsed || parse_has_error(ctx) || has_trailing) {
+      parse_error_clear(ctx);
+      if (is_eof) {
+        term_t *eof = make_const(ctx, "end_of_file");
+        term_t *se_args[1] = {eof};
+        throw_error(ctx, make_func(ctx, "syntax_error", se_args, 1),
+                    "term_to_atom/2");
+        return BUILTIN_ERROR;
+      }
       return BUILTIN_FAIL;
+    }
     return unify(ctx, term_arg, parsed, env) ? BUILTIN_OK : BUILTIN_FAIL;
   }
 
@@ -1348,6 +1363,12 @@ static builtin_result_t builtin_atom_to_term(prolog_ctx_t *ctx, term_t *goal,
   ctx->clause_var_count = 0;
   parse_error_clear(ctx);
   term_t *parsed = parse_term(ctx);
+  bool is_eof = ctx->error.error_is_eof;
+  // check for trailing non-whitespace input
+  char *after = ctx->input_ptr;
+  while (isspace((unsigned char)*after))
+    after++;
+  bool has_trailing = (*after != '\0');
 
   // build bindings list before restoring
   term_t *bindings = make_const(ctx, "[]");
@@ -1368,8 +1389,17 @@ static builtin_result_t builtin_atom_to_term(prolog_ctx_t *ctx, term_t *goal,
   ctx->clause_var_count = sv;
   memcpy(ctx->clause_vars, saved_vars, sizeof(saved_vars));
 
-  if (!parsed || parse_has_error(ctx))
+  if (!parsed || parse_has_error(ctx) || has_trailing) {
+    parse_error_clear(ctx);
+    if (is_eof) {
+      term_t *eof = make_const(ctx, "end_of_file");
+      term_t *se_args[1] = {eof};
+      throw_error(ctx, make_func(ctx, "syntax_error", se_args, 1),
+                  "atom_to_term/3");
+      return BUILTIN_ERROR;
+    }
     return BUILTIN_FAIL;
+  }
   if (!unify(ctx, goal->args[1], parsed, env))
     return BUILTIN_FAIL;
   return unify(ctx, goal->args[2], bindings, env) ? BUILTIN_OK : BUILTIN_FAIL;
