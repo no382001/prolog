@@ -754,9 +754,16 @@ static builtin_result_t builtin_string(prolog_ctx_t *ctx, term_t *goal,
 
 static builtin_result_t builtin_atom_length(prolog_ctx_t *ctx, term_t *goal,
                                             env_t *env) {
-  const char *s = term_atom_str(deref(env, goal->args[0]));
-  if (!s)
-    return BUILTIN_FAIL;
+  term_t *a = deref(env, goal->args[0]);
+  if (a->type == VAR) {
+    throw_instantiation_error(ctx, "atom_length/2");
+    return BUILTIN_ERROR;
+  }
+  const char *s = term_atom_str(a);
+  if (!s) {
+    throw_type_error(ctx, "atom", a, "atom_length/2");
+    return BUILTIN_ERROR;
+  }
   char buf[16];
   snprintf(buf, sizeof(buf), "%d", (int)strlen(s));
   return unify(ctx, goal->args[1], make_const(ctx, buf), env) ? BUILTIN_OK
@@ -928,14 +935,23 @@ static bool code_list_to_str(env_t *env, term_t *list, char *buf, int max) {
 static builtin_result_t builtin_atom_chars(prolog_ctx_t *ctx, term_t *goal,
                                            env_t *env) {
   term_t *atom = deref(env, goal->args[0]);
+  term_t *list = deref(env, goal->args[1]);
   if (atom->type != VAR) {
     const char *s = term_atom_str(atom);
-    return (s && unify(ctx, goal->args[1], str_to_char_list(ctx, s), env))
+    if (!s) {
+      throw_type_error(ctx, "atom", atom, "atom_chars/2");
+      return BUILTIN_ERROR;
+    }
+    return unify(ctx, goal->args[1], str_to_char_list(ctx, s), env)
                ? BUILTIN_OK
                : BUILTIN_FAIL;
   }
+  if (list->type == VAR) {
+    throw_instantiation_error(ctx, "atom_chars/2");
+    return BUILTIN_ERROR;
+  }
   char buf[MAX_NAME] = {0};
-  if (!char_list_to_str(env, deref(env, goal->args[1]), buf, MAX_NAME))
+  if (!char_list_to_str(env, list, buf, MAX_NAME))
     return BUILTIN_FAIL;
   return unify(ctx, goal->args[0], make_const(ctx, buf), env) ? BUILTIN_OK
                                                               : BUILTIN_FAIL;
@@ -944,14 +960,23 @@ static builtin_result_t builtin_atom_chars(prolog_ctx_t *ctx, term_t *goal,
 static builtin_result_t builtin_atom_codes(prolog_ctx_t *ctx, term_t *goal,
                                            env_t *env) {
   term_t *atom = deref(env, goal->args[0]);
+  term_t *list = deref(env, goal->args[1]);
   if (atom->type != VAR) {
     const char *s = term_atom_str(atom);
-    return (s && unify(ctx, goal->args[1], str_to_code_list(ctx, s), env))
+    if (!s) {
+      throw_type_error(ctx, "atom", atom, "atom_codes/2");
+      return BUILTIN_ERROR;
+    }
+    return unify(ctx, goal->args[1], str_to_code_list(ctx, s), env)
                ? BUILTIN_OK
                : BUILTIN_FAIL;
   }
+  if (list->type == VAR) {
+    throw_instantiation_error(ctx, "atom_codes/2");
+    return BUILTIN_ERROR;
+  }
   char buf[MAX_NAME] = {0};
-  if (!code_list_to_str(env, deref(env, goal->args[1]), buf, MAX_NAME))
+  if (!code_list_to_str(env, list, buf, MAX_NAME))
     return BUILTIN_FAIL;
   return unify(ctx, goal->args[0], make_const(ctx, buf), env) ? BUILTIN_OK
                                                               : BUILTIN_FAIL;
@@ -961,24 +986,31 @@ static builtin_result_t builtin_char_code(prolog_ctx_t *ctx, term_t *goal,
                                           env_t *env) {
   term_t *ch = deref(env, goal->args[0]);
   term_t *code = deref(env, goal->args[1]);
+  if (ch->type == VAR && code->type == VAR) {
+    throw_instantiation_error(ctx, "char_code/2");
+    return BUILTIN_ERROR;
+  }
   if (ch->type != VAR) {
     const char *s = term_atom_str(ch);
-    if (!s || s[1] != '\0')
-      return BUILTIN_FAIL;
+    if (!s || s[1] != '\0') {
+      throw_type_error(ctx, "character", ch, "char_code/2");
+      return BUILTIN_ERROR;
+    }
     char buf[8];
     snprintf(buf, sizeof(buf), "%d", (unsigned char)s[0]);
     return unify(ctx, goal->args[1], make_const(ctx, buf), env) ? BUILTIN_OK
                                                                 : BUILTIN_FAIL;
   }
-  if (code->type != VAR) {
-    int c;
-    if (!term_as_int(code, &c) || c < 0 || c > 255)
-      return BUILTIN_FAIL;
-    char buf[2] = {(char)c, '\0'};
-    return unify(ctx, goal->args[0], make_const(ctx, buf), env) ? BUILTIN_OK
-                                                                : BUILTIN_FAIL;
+  int c;
+  if (!term_as_int(code, &c)) {
+    throw_type_error(ctx, "integer", code, "char_code/2");
+    return BUILTIN_ERROR;
   }
-  return BUILTIN_FAIL;
+  if (c < 0 || c > 255)
+    return BUILTIN_FAIL;
+  char buf[2] = {(char)c, '\0'};
+  return unify(ctx, goal->args[0], make_const(ctx, buf), env) ? BUILTIN_OK
+                                                              : BUILTIN_FAIL;
 }
 
 static builtin_result_t builtin_atom_number(prolog_ctx_t *ctx, term_t *goal,
@@ -1005,16 +1037,22 @@ static builtin_result_t builtin_atom_number(prolog_ctx_t *ctx, term_t *goal,
 static builtin_result_t builtin_number_codes(prolog_ctx_t *ctx, term_t *goal,
                                              env_t *env) {
   term_t *num = deref(env, goal->args[0]);
+  term_t *list = deref(env, goal->args[1]);
   if (num->type != VAR) {
-    if (!is_integer_str(num->name))
-      return BUILTIN_FAIL;
+    if (!is_integer_str(num->name)) {
+      throw_type_error(ctx, "number", num, "number_codes/2");
+      return BUILTIN_ERROR;
+    }
     return unify(ctx, goal->args[1], str_to_code_list(ctx, num->name), env)
                ? BUILTIN_OK
                : BUILTIN_FAIL;
   }
+  if (list->type == VAR) {
+    throw_instantiation_error(ctx, "number_codes/2");
+    return BUILTIN_ERROR;
+  }
   char buf[MAX_NAME] = {0};
-  if (!code_list_to_str(env, deref(env, goal->args[1]), buf, MAX_NAME) ||
-      !is_integer_str(buf))
+  if (!code_list_to_str(env, list, buf, MAX_NAME) || !is_integer_str(buf))
     return BUILTIN_FAIL;
   return unify(ctx, goal->args[0], make_const(ctx, buf), env) ? BUILTIN_OK
                                                               : BUILTIN_FAIL;
@@ -1023,16 +1061,22 @@ static builtin_result_t builtin_number_codes(prolog_ctx_t *ctx, term_t *goal,
 static builtin_result_t builtin_number_chars(prolog_ctx_t *ctx, term_t *goal,
                                              env_t *env) {
   term_t *num = deref(env, goal->args[0]);
+  term_t *list = deref(env, goal->args[1]);
   if (num->type != VAR) {
-    if (!is_integer_str(num->name))
-      return BUILTIN_FAIL;
+    if (!is_integer_str(num->name)) {
+      throw_type_error(ctx, "number", num, "number_chars/2");
+      return BUILTIN_ERROR;
+    }
     return unify(ctx, goal->args[1], str_to_char_list(ctx, num->name), env)
                ? BUILTIN_OK
                : BUILTIN_FAIL;
   }
+  if (list->type == VAR) {
+    throw_instantiation_error(ctx, "number_chars/2");
+    return BUILTIN_ERROR;
+  }
   char buf[MAX_NAME] = {0};
-  if (!char_list_to_str(env, deref(env, goal->args[1]), buf, MAX_NAME) ||
-      !is_integer_str(buf))
+  if (!char_list_to_str(env, list, buf, MAX_NAME) || !is_integer_str(buf))
     return BUILTIN_FAIL;
   return unify(ctx, goal->args[0], make_const(ctx, buf), env) ? BUILTIN_OK
                                                               : BUILTIN_FAIL;
