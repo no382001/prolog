@@ -76,7 +76,7 @@ bpair(3, 4).
    error(instantiation_error).
 
 ?- X is foo + 1.
-   false.
+   error(type_error(evaluable, foo/0)).
 
 % --- comparison: less than ---
 

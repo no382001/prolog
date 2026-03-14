@@ -62,6 +62,22 @@ static void throw_evaluation_error(prolog_ctx_t *ctx, const char *kind,
   throw_error(ctx, ee, context);
 }
 
+static void throw_evaluable_error(prolog_ctx_t *ctx, const char *name,
+                                  int arity, const char *context) {
+  char arity_buf[16];
+  snprintf(arity_buf, sizeof(arity_buf), "%d", arity);
+  term_t *slash_args[2] = {make_const(ctx, name), make_const(ctx, arity_buf)};
+  term_t *indicator = make_func(ctx, "/", slash_args, 2);
+  term_t *targs[2] = {make_const(ctx, "evaluable"), indicator};
+  term_t *te = make_func(ctx, "type_error", targs, 2);
+  term_t *ctx_atom = make_const(ctx, context);
+  term_t *err_args[2] = {te, ctx_atom};
+  ctx->thrown_ball = make_func(ctx, "error", err_args, 2);
+  ctx->has_runtime_error = true;
+  snprintf(ctx->runtime_error, MAX_ERROR_MSG, "type_error(evaluable, %s/%d)",
+           name, arity);
+}
+
 static bool eval_arith(prolog_ctx_t *ctx, term_t *t, env_t *env, int *result,
                        const char *pred) {
   t = deref(env, t);
@@ -86,6 +102,8 @@ static bool eval_arith(prolog_ctx_t *ctx, term_t *t, env_t *env, int *result,
       *result = val < 0 ? -val : val;
       return true;
     }
+    // Unknown unary operator
+    throw_evaluable_error(ctx, t->name, 1, pred);
     return false;
   }
 
@@ -123,6 +141,11 @@ static bool eval_arith(prolog_ctx_t *ctx, term_t *t, env_t *env, int *result,
     }
   }
 
+  // Unknown functor or non-numeric atom: type_error(evaluable, Name/Arity)
+  if (t->type == CONST || t->type == FUNC) {
+    int arity = (t->type == FUNC) ? t->arity : 0;
+    throw_evaluable_error(ctx, t->name, arity, pred);
+  }
   return false;
 }
 
