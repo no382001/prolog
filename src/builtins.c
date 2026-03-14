@@ -105,7 +105,19 @@ static bool eval_arith(prolog_ctx_t *ctx, term_t *t, env_t *env, int *result,
 
     for (const arith_op_t *op = arith_ops; op->op; op++) {
       if (strcmp(t->name, op->op) == 0) {
-        *result = op->fn(left, right);
+        bool overflow = false;
+        if (strcmp(t->name, "+") == 0)
+          overflow = __builtin_add_overflow(left, right, result);
+        else if (strcmp(t->name, "-") == 0)
+          overflow = __builtin_sub_overflow(left, right, result);
+        else if (strcmp(t->name, "*") == 0)
+          overflow = __builtin_mul_overflow(left, right, result);
+        else
+          *result = op->fn(left, right);
+        if (overflow) {
+          throw_evaluation_error(ctx, "int_overflow", pred);
+          return false;
+        }
         return true;
       }
     }
