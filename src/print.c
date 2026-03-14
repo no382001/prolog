@@ -38,10 +38,10 @@ static bool needs_quoting(const char *name) {
   // starts with uppercase or underscore → variable-like, must quote
   if (isupper((unsigned char)name[0]) || name[0] == '_')
     return true;
-  // all-lowercase-alnum-underscore → plain atom, no quoting
+  // contains whitespace or Prolog comment/string delimiters → must quote
   for (const char *p = name; *p; p++) {
-    if (!isalnum((unsigned char)*p) && *p != '_')
-      return true; // contains special char — might be fine as graphic, skip
+    if (isspace((unsigned char)*p) || *p == '%' || *p == '\'' || *p == '"')
+      return true;
   }
   return false;
 }
@@ -132,14 +132,9 @@ void print_term(prolog_ctx_t *ctx, term_t *t, env_t *env, bool quoted) {
 
   // infix binary operator: X op Y
   if (t->type == FUNC && t->arity == 2 && is_infix_op(t->name)) {
-    bool need_parens = strcmp(t->name, ",") != 0;
-    if (need_parens)
-      io_write_str(ctx, "(");
     print_term(ctx, t->args[0], env, quoted);
     io_write_str(ctx, t->name);
     print_term(ctx, t->args[1], env, quoted);
-    if (need_parens)
-      io_write_str(ctx, ")");
     return;
   }
 
