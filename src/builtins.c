@@ -931,16 +931,31 @@ static builtin_result_t builtin_functor(prolog_ctx_t *ctx, term_t *goal,
                ? 1
                : -1;
   }
-  /* compose */
+  /* compose: functor(X, Name, Arity) */
   if (n->type == VAR || a->type == VAR) {
     throw_instantiation_error(ctx, "functor/3");
     return BUILTIN_ERROR;
   }
+  int ar;
+  if (!term_as_int(a, &ar)) {
+    throw_type_error(ctx, "integer", a, "functor/3");
+    return BUILTIN_ERROR;
+  }
+  if (ar < 0 || ar > MAX_ARGS) {
+    throw_type_error(ctx, "integer", a, "functor/3");
+    return BUILTIN_ERROR;
+  }
+  // name must be atom when arity > 0; atomic when arity == 0
+  if (ar > 0 && n->type != CONST) {
+    throw_type_error(ctx, "atom", n, "functor/3");
+    return BUILTIN_ERROR;
+  }
+  if (n->type != CONST && n->type != STRING) {
+    throw_type_error(ctx, "atomic", n, "functor/3");
+    return BUILTIN_ERROR;
+  }
   const char *fname = term_atom_str(n);
   if (!fname)
-    return BUILTIN_FAIL;
-  int ar;
-  if (!term_as_int(a, &ar) || ar < 0 || ar > MAX_ARGS)
     return BUILTIN_FAIL;
   term_t *t;
   if (ar == 0) {
@@ -959,10 +974,24 @@ static builtin_result_t builtin_arg(prolog_ctx_t *ctx, term_t *goal,
                                     env_t *env) {
   term_t *n = deref(env, goal->args[0]);
   term_t *term = deref(env, goal->args[1]);
-  if (n->type == VAR || term->type != FUNC)
-    return BUILTIN_FAIL;
+  if (n->type == VAR) {
+    throw_instantiation_error(ctx, "arg/3");
+    return BUILTIN_ERROR;
+  }
+  if (term->type == VAR) {
+    throw_instantiation_error(ctx, "arg/3");
+    return BUILTIN_ERROR;
+  }
+  if (term->type != FUNC) {
+    throw_type_error(ctx, "compound", term, "arg/3");
+    return BUILTIN_ERROR;
+  }
   int idx;
-  if (!term_as_int(n, &idx) || idx < 1 || idx > term->arity)
+  if (!term_as_int(n, &idx)) {
+    throw_type_error(ctx, "integer", n, "arg/3");
+    return BUILTIN_ERROR;
+  }
+  if (idx < 1 || idx > term->arity)
     return BUILTIN_FAIL;
   return unify(ctx, goal->args[2], term->args[idx - 1], env) ? BUILTIN_OK
                                                              : BUILTIN_FAIL;
@@ -991,24 +1020,45 @@ static builtin_result_t builtin_univ(prolog_ctx_t *ctx, term_t *goal,
     return unify(ctx, goal->args[1], result, env) ? BUILTIN_OK : BUILTIN_FAIL;
   }
   /* list -> term */
+  if (list->type == VAR) {
+    throw_instantiation_error(ctx, "=../2");
+    return BUILTIN_ERROR;
+  }
   term_t *cur = deref(env, list);
-  if (!is_cons(cur))
-    return BUILTIN_FAIL;
+  if (!is_cons(cur)) {
+    throw_type_error(ctx, "list", list, "=../2");
+    return BUILTIN_ERROR;
+  }
   term_t *head = deref(env, cur->args[0]);
+  if (head->type == VAR) {
+    throw_instantiation_error(ctx, "=../2");
+    return BUILTIN_ERROR;
+  }
+  cur = deref(env, cur->args[1]);
+  // head must be atom when list has args; must be atomic when arity 0
+  if (is_cons(cur) && head->type != CONST) {
+    throw_type_error(ctx, "atom", head, "=../2");
+    return BUILTIN_ERROR;
+  }
+  if (!is_cons(cur) && !is_nil(cur)) {
+    throw_type_error(ctx, "list", list, "=../2");
+    return BUILTIN_ERROR;
+  }
   const char *fname = term_atom_str(head);
   if (!fname)
     return BUILTIN_FAIL;
   term_t *args[MAX_ARGS];
   int ar = 0;
-  cur = deref(env, cur->args[1]);
   while (is_cons(cur)) {
     if (ar >= MAX_ARGS)
       return BUILTIN_FAIL;
     args[ar++] = deref(env, cur->args[0]);
     cur = deref(env, cur->args[1]);
   }
-  if (!is_nil(cur))
-    return BUILTIN_FAIL;
+  if (!is_nil(cur)) {
+    throw_type_error(ctx, "list", list, "=../2");
+    return BUILTIN_ERROR;
+  }
   term_t *result =
       (ar == 0) ? make_const(ctx, fname) : make_func(ctx, fname, args, ar);
   return unify(ctx, goal->args[0], result, env) ? BUILTIN_OK : BUILTIN_FAIL;
