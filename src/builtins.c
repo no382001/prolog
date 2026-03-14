@@ -20,11 +20,18 @@ static int arith_mod(int a, int b) {
 }
 static int arith_max(int a, int b) { return a > b ? a : b; }
 static int arith_min(int a, int b) { return a < b ? a : b; }
+static int arith_bor(int a, int b) { return a | b; }
+static int arith_band(int a, int b) { return a & b; }
+static int arith_xor(int a, int b) { return a ^ b; }
+static int arith_shr(int a, int b) { return (int)((unsigned)a >> b); }
+static int arith_shl(int a, int b) { return (int)((unsigned)a << b); }
 
 static const arith_op_t arith_ops[] = {
-    {"+", arith_add},   {"-", arith_sub},   {"*", arith_mul},
-    {"/", arith_div},   {"mod", arith_mod}, {"//", arith_div},
-    {"max", arith_max}, {"min", arith_min}, {NULL, NULL}};
+    {"+", arith_add},    {"-", arith_sub},   {"*", arith_mul},
+    {"/", arith_div},    {"mod", arith_mod}, {"//", arith_div},
+    {"max", arith_max},  {"min", arith_min}, {"\\/", arith_bor},
+    {"/\\", arith_band}, {"xor", arith_xor}, {">>", arith_shr},
+    {"<<", arith_shl},   {NULL, NULL}};
 
 static void throw_error(prolog_ctx_t *ctx, term_t *error_type,
                         const char *context) {
@@ -100,6 +107,10 @@ static bool eval_arith(prolog_ctx_t *ctx, term_t *t, env_t *env, int *result,
     }
     if (strcmp(t->name, "abs") == 0) {
       *result = val < 0 ? -val : val;
+      return true;
+    }
+    if (strcmp(t->name, "\\") == 0) {
+      *result = ~val;
       return true;
     }
     // Unknown unary operator

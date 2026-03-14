@@ -2,10 +2,10 @@
 
 // operators that print infix (arity 2) or prefix (arity 1)
 static bool is_infix_op(const char *name) {
-  static const char *ops[] = {"+",  "-",   "*",    "/",    "//",  "mod", "is",
-                              "=",  "\\=", "==",   "\\==", "<",   ">",   "=<",
-                              ">=", "=:=", "=\\=", "@<",   "@>",  "@=<", "@>=",
-                              "->", ";",   ",",    "^",    "=..", NULL};
+  static const char *ops[] = {
+      "+", "-", "*",  "/",   "//",  "mod",  "is", "=",  "\\=", "==",  "\\==",
+      "<", ">", "=<", ">=",  "=:=", "=\\=", "@<", "@>", "@=<", "@>=", "->",
+      ";", ",", "^",  "=..", "\\/", "/\\",  ">>", "<<", "xor", NULL};
   for (const char **p = ops; *p; p++)
     if (strcmp(name, *p) == 0)
       return true;
@@ -13,7 +13,8 @@ static bool is_infix_op(const char *name) {
 }
 
 static bool is_prefix_op(const char *name) {
-  return strcmp(name, "\\+") == 0 || strcmp(name, "not") == 0;
+  return strcmp(name, "\\+") == 0 || strcmp(name, "not") == 0 ||
+         strcmp(name, "\\") == 0;
 }
 
 // true if atom name needs single-quote wrapping

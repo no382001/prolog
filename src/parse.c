@@ -64,8 +64,20 @@ void parse_error_print(prolog_ctx_t *ctx) {
 void skip_ws(prolog_ctx_t *ctx) {
   assert(ctx != NULL && "Context is NULL");
   assert(ctx->input_ptr != NULL && "Input pointer is NULL");
-  while (*ctx->input_ptr && isspace(*ctx->input_ptr))
-    ctx->input_ptr++;
+  while (*ctx->input_ptr) {
+    if (isspace((unsigned char)*ctx->input_ptr)) {
+      ctx->input_ptr++;
+    } else if (ctx->input_ptr[0] == '/' && ctx->input_ptr[1] == '*') {
+      ctx->input_ptr += 2;
+      while (*ctx->input_ptr &&
+             !(ctx->input_ptr[0] == '*' && ctx->input_ptr[1] == '/'))
+        ctx->input_ptr++;
+      if (*ctx->input_ptr)
+        ctx->input_ptr += 2;
+    } else {
+      break;
+    }
+  }
 }
 
 typedef struct {
@@ -84,8 +96,9 @@ static term_t *parse_infix(prolog_ctx_t *ctx, term_t *left, int min_prec);
 static term_t *parse_arg(prolog_ctx_t *ctx);
 
 static const op_prec_t precedence_table[] = {
-    {"*", 40},   {"/", 40},    {"//", 40},  {"mod", 40},  {"+", 30},
-    {"-", 30},   {"<", 20},    {">", 20},   {"=<", 20},   {">=", 20},
+    {"*", 40},   {"/", 40},    {"//", 40},  {"mod", 40},  {">>", 40},
+    {"<<", 40},  {"/\\", 40},  {"xor", 40}, {"+", 30},    {"-", 30},
+    {"\\/", 30}, {"<", 20},    {">", 20},   {"=<", 20},   {">=", 20},
     {"=:=", 20}, {"=\\=", 20}, {"==", 20},  {"\\==", 20}, {"@<", 20},
     {"@>", 20},  {"@=<", 20},  {"@>=", 20}, {"is", 10},   {"=", 10},
     {"\\=", 10}, {"..", 10},   {"->", 7},   {";", 5},     {"^", 6},
@@ -93,15 +106,14 @@ static const op_prec_t precedence_table[] = {
 
 // ordered longest-first to avoid prefix conflicts
 static const op_pattern_t op_patterns[] = {
-    {"=:=", 3, false}, {"=\\=", 3, false}, {"=..", 3, false},
-    {"mod", 3, true},  {"\\==", 3, false}, {"@=<", 3, false},
-    {"@>=", 3, false}, {"==", 2, false},   {"@<", 2, false},
-    {"@>", 2, false},  {"->", 2, false},   {"\\=", 2, false},
-    {"=<", 2, false},  {">=", 2, false},   {"//", 2, false},
-    {"is", 2, true},   {"+", 1, false},    {"*", 1, false},
-    {"/", 1, false},   {"<", 1, false},    {">", 1, false},
-    {"=", 1, false},   {"-", 1, false},    {";", 1, false},
-    {"^", 1, false},   {NULL, 0, false}};
+    {"=:=", 3, false}, {"=\\=", 3, false}, {"=..", 3, false}, {"mod", 3, true},
+    {"xor", 3, true},  {"\\==", 3, false}, {"@=<", 3, false}, {"@>=", 3, false},
+    {"==", 2, false},  {"@<", 2, false},   {"@>", 2, false},  {"->", 2, false},
+    {"\\=", 2, false}, {"\\/", 2, false},  {"=<", 2, false},  {">=", 2, false},
+    {">>", 2, false},  {"<<", 2, false},   {"//", 2, false},  {"/\\", 2, false},
+    {"is", 2, true},   {"+", 1, false},    {"*", 1, false},   {"/", 1, false},
+    {"<", 1, false},   {">", 1, false},    {"=", 1, false},   {"-", 1, false},
+    {";", 1, false},   {"^", 1, false},    {NULL, 0, false}};
 
 static int get_precedence(const char *op) {
   for (const op_prec_t *p = precedence_table; p->op; p++) {
@@ -481,19 +493,35 @@ static term_t *parse_primary(prolog_ctx_t *ctx) {
       }
       name[i++] = *ctx->input_ptr++;
     }
-  } else if (*ctx->input_ptr == '\\' && ctx->input_ptr[1] == '+') {
-    ctx->input_ptr += 2;
-    skip_ws(ctx);
-    term_t *inner = parse_term(ctx);
-    if (!inner) {
-      if (*ctx->input_ptr == '\0' && !parse_has_error(ctx))
-        parse_error_eof(ctx);
-      else if (!parse_has_error(ctx))
-        parse_error(ctx, "expected term after '\\+'");
-      return NULL;
+  } else if (*ctx->input_ptr == '\\') {
+    if (ctx->input_ptr[1] == '+') {
+      ctx->input_ptr += 2;
+      skip_ws(ctx);
+      term_t *inner = parse_term(ctx);
+      if (!inner) {
+        if (*ctx->input_ptr == '\0' && !parse_has_error(ctx))
+          parse_error_eof(ctx);
+        else if (!parse_has_error(ctx))
+          parse_error(ctx, "expected term after '\\+'");
+        return NULL;
+      }
+      term_t *args[1] = {inner};
+      return make_func(ctx, "\\+", args, 1);
+    } else {
+      // unary bitwise complement: \Expr
+      ctx->input_ptr++;
+      skip_ws(ctx);
+      term_t *inner = parse_primary(ctx);
+      if (!inner) {
+        if (*ctx->input_ptr == '\0' && !parse_has_error(ctx))
+          parse_error_eof(ctx);
+        else if (!parse_has_error(ctx))
+          parse_error(ctx, "expected term after '\\'");
+        return NULL;
+      }
+      term_t *args[1] = {inner};
+      return make_func(ctx, "\\", args, 1);
     }
-    term_t *args[1] = {inner};
-    return make_func(ctx, "\\+", args, 1);
   } else {
     // Not a valid start of term
     return NULL;
@@ -707,6 +735,18 @@ static bool parse_goals(prolog_ctx_t *ctx, char *query, goal_stmt_t *goals) {
     io_writef_err(ctx, "Error: empty query\n");
     return false;
   }
+
+  // check for trailing unparsed input (skip optional trailing '.')
+  skip_ws(ctx);
+  if (*ctx->input_ptr == '.')
+    ctx->input_ptr++;
+  skip_ws(ctx);
+  if (*ctx->input_ptr != '\0') {
+    parse_error(ctx, "unexpected token: '%c'", *ctx->input_ptr);
+    parse_error_print(ctx);
+    return false;
+  }
+
   *goals = goals_alloc(ctx, n);
   for (int i = 0; i < n; i++)
     goals->goals[goals->count++] = tmp[i];
