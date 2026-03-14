@@ -116,3 +116,13 @@ catch_any_inst(E) :- catch(X is Y, error(E, _), true), X = 0, Y = 0.
 
 ?- X is Y.
    error(instantiation_error).
+
+% --- call/1 type_error for integer ---
+
+?- catch(call(42), error(type_error(callable, 42), _), true).
+   true.
+
+% --- trailing input parse error ---
+
+?- catch(true, _, false).
+   true.

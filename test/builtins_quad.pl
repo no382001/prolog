@@ -531,3 +531,37 @@ bcapply(G) :- call(G).
 
 ?- functor(T, foo, 2), T = foo(a, b).
    T = foo(a, b).
+
+% --- bitwise arithmetic ---
+
+?- X is 5 \/ 3.
+   X = 7.
+
+?- X is 5 /\ 3.
+   X = 1.
+
+?- X is 5 xor 3.
+   X = 6.
+
+?- X is 8 >> 2.
+   X = 2.
+
+?- X is 1 << 4.
+   X = 16.
+
+?- X is \(0).
+   X = -1.
+
+?- X is \(1).
+   X = -2.
+
+?- X is (5 /\ 6) \/ 1.
+   X = 5.
+
+% --- block comments ---
+
+?- X is /* ignored */ 3 + 4.
+   X = 7.
+
+?- X = hello /* world */.
+   X = hello.
