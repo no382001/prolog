@@ -193,7 +193,7 @@ static builtin_result_t builtin_not_unify(prolog_ctx_t *ctx, term_t *goal,
                                           env_t *env) {
   int old_count = env->count;
   bool unified = unify(ctx, goal->args[0], goal->args[1], env);
-  env->count = old_count;
+  env->count = ctx->bind_count = old_count;
   return unified ? -1 : 1;
 }
 
@@ -360,8 +360,9 @@ static builtin_result_t builtin_stats(prolog_ctx_t *ctx, term_t *goal,
                                       env_t *env) {
   (void)goal;
   (void)env;
-  io_writef(ctx, "terms: %d allocated, %d peak, %d current\n",
-            ctx->stats.terms_allocated, ctx->stats.terms_peak, ctx->term_count);
+  io_writef(ctx, "terms: %d allocated, %d peak, %d bytes used\n",
+            ctx->stats.terms_allocated, ctx->stats.terms_peak,
+            ctx->term_pool_offset);
   io_writef(ctx, "unify: %d calls, %d fails\n", ctx->stats.unify_calls,
             ctx->stats.unify_fails);
   io_writef(ctx, "solve: %d son calls, %d backtracks\n", ctx->stats.son_calls,
@@ -427,8 +428,10 @@ static int collect_solutions(prolog_ctx_t *ctx, term_t *goal, env_t *env,
                            .list = make_const(ctx, "[]"),
                            .count = 0};
 
-  env_t query_env = {0};
+  int bind_save = ctx->bind_count;
+  env_t query_env = {.bindings = ctx->bindings, .count = ctx->bind_count};
   solve_all(ctx, &goals, &query_env, findall_callback, &state);
+  ctx->bind_count = bind_save;
 
   if (fail_on_empty && state.count == 0)
     return BUILTIN_FAIL;
@@ -507,7 +510,7 @@ static builtin_result_t builtin_not(prolog_ctx_t *ctx, term_t *goal,
   int env_mark = env->count;
   bool found = false;
   solve_all(ctx, &goals, env, not_found_callback, &found);
-  env->count = env_mark;
+  env->count = ctx->bind_count = env_mark;
   if (ctx->has_runtime_error)
     return BUILTIN_ERROR;
   return found ? BUILTIN_FAIL : BUILTIN_OK;
@@ -1026,6 +1029,7 @@ static builtin_result_t builtin_assertz(prolog_ctx_t *ctx, term_t *goal,
                                         env_t *env) {
   if (ctx->db_count >= MAX_CLAUSES)
     return BUILTIN_FAIL;
+  ctx->alloc_permanent = true;
   term_t *arg = substitute(ctx, env, deref(env, goal->args[0]));
   clause_t *c = &ctx->database[ctx->db_count];
   c->body_count = 0;
@@ -1035,6 +1039,7 @@ static builtin_result_t builtin_assertz(prolog_ctx_t *ctx, term_t *goal,
   } else {
     c->head = arg;
   }
+  ctx->alloc_permanent = false;
   ctx->db_count++;
   return BUILTIN_OK;
 }
@@ -1046,6 +1051,7 @@ static builtin_result_t builtin_asserta(prolog_ctx_t *ctx, term_t *goal,
   for (int i = ctx->db_count; i > 0; i--)
     ctx->database[i] = ctx->database[i - 1];
   ctx->db_count++;
+  ctx->alloc_permanent = true;
   term_t *arg = substitute(ctx, env, deref(env, goal->args[0]));
   clause_t *c = &ctx->database[0];
   c->body_count = 0;
@@ -1055,6 +1061,7 @@ static builtin_result_t builtin_asserta(prolog_ctx_t *ctx, term_t *goal,
   } else {
     c->head = arg;
   }
+  ctx->alloc_permanent = false;
   return BUILTIN_OK;
 }
 
@@ -1068,15 +1075,15 @@ static builtin_result_t builtin_retract(prolog_ctx_t *ctx, term_t *goal,
           : arg;
   for (int i = 0; i < ctx->db_count; i++) {
     int env_mark = env->count;
-    int trm_save = ctx->term_count;
+    int trm_save = ctx->term_pool_offset;
     if (unify(ctx, head_pat, rename_vars(ctx, ctx->database[i].head), env)) {
       for (int j = i; j < ctx->db_count - 1; j++)
         ctx->database[j] = ctx->database[j + 1];
       ctx->db_count--;
       return BUILTIN_OK;
     }
-    env->count = env_mark;
-    ctx->term_count = trm_save;
+    env->count = ctx->bind_count = env_mark;
+    ctx->term_pool_offset = trm_save;
   }
   return BUILTIN_FAIL;
 }
@@ -1087,11 +1094,11 @@ static builtin_result_t builtin_retractall(prolog_ctx_t *ctx, term_t *goal,
   int i = 0;
   while (i < ctx->db_count) {
     int env_mark = env->count;
-    int trm_save = ctx->term_count;
+    int trm_save = ctx->term_pool_offset;
     bool matched =
         unify(ctx, head_pat, rename_vars(ctx, ctx->database[i].head), env);
-    env->count = env_mark;
-    ctx->term_count = trm_save;
+    env->count = ctx->bind_count = env_mark;
+    ctx->term_pool_offset = trm_save;
     if (matched) {
       for (int j = i; j < ctx->db_count - 1; j++)
         ctx->database[j] = ctx->database[j + 1];
@@ -1656,7 +1663,7 @@ static builtin_result_t builtin_make(prolog_ctx_t *ctx, term_t *goal,
 
   // roll back to the state captured before the first consult
   ctx->db_count = ctx->make_db_mark;
-  ctx->term_count = ctx->make_term_mark;
+  ctx->term_pool_offset = ctx->make_term_mark;
   ctx->string_pool_offset = ctx->make_string_mark;
   ctx->make_file_count = 0;
 

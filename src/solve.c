@@ -45,9 +45,9 @@ bool son(prolog_ctx_t *ctx, goal_stmt_t *cn, int *clause_idx, env_t *env,
     clause_t *c = &ctx->database[i];
     assert(c->head != NULL && "Clause head is NULL");
 
-    env->count = env_mark;
+    env->count = ctx->bind_count = env_mark;
 
-    int term_save = ctx->term_count; // reclaim on failed unification
+    int term_save = ctx->term_pool_offset; // reclaim on failed unification
     var_id_map_t map = {0};
     term_t *renamed_head = rename_vars_mapped(ctx, c->head, &map);
     assert(renamed_head != NULL && "Failed to rename clause head");
@@ -85,12 +85,12 @@ bool son(prolog_ctx_t *ctx, goal_stmt_t *cn, int *clause_idx, env_t *env,
       *clause_idx = i + 1;
       return true;
     }
-    ctx->term_count = term_save;
+    ctx->term_pool_offset = term_save;
     debug(ctx, "--- Clause %d failed ---\n", i);
   }
 
   debug(ctx, "=== SON: no match found ===\n");
-  env->count = env_mark;
+  env->count = ctx->bind_count = env_mark;
   return false;
 }
 
@@ -232,7 +232,7 @@ A:
       term_t *ball = ctx->thrown_ball;
       ctx->thrown_ball = NULL;
       ctx->has_runtime_error = false;
-      env->count = emark;
+      env->count = ctx->bind_count = emark;
 
       if (unify(ctx, catcher, ball, env)) {
         // caught - execute Recovery
@@ -246,12 +246,12 @@ A:
       // catcher didn't match - re-throw
       ctx->thrown_ball = ball;
       ctx->has_runtime_error = true;
-      env->count = emark;
+      env->count = ctx->bind_count = emark;
       return false;
     }
 
     // goal failed normally (no exception)
-    env->count = emark;
+    env->count = ctx->bind_count = emark;
     goto C;
   }
 
@@ -279,7 +279,7 @@ A:
         cn = new_cn;
       } else {
         // Cond failed — take Else branch
-        env->count = emark;
+        env->count = ctx->bind_count = emark;
         goal_stmt_t new_cn = {0};
         new_cn.goals[new_cn.count++] = right;
         for (int i = 1; i < cn.count; i++)
@@ -330,7 +330,7 @@ A:
       cn = new_cn;
       goto A;
     } else {
-      env->count = emark;
+      env->count = ctx->bind_count = emark;
       goto C;
     }
   }
@@ -387,7 +387,7 @@ C:
 
   assert(env_mark >= 0 && env_mark <= env->count &&
          "Invalid env_mark from stack");
-  env->count = env_mark;
+  env->count = ctx->bind_count = env_mark;
 
   debug(ctx, "*** Restored: clause_idx=%d, env_mark=%d, cut_point=%d ***\n",
         clause_idx, env_mark, cut_point);

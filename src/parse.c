@@ -675,7 +675,7 @@ static bool parse_goals(prolog_ctx_t *ctx, char *query, goal_stmt_t *goals) {
 }
 
 bool prolog_exec_query(prolog_ctx_t *ctx, char *query) {
-  int term_mark = ctx->term_count;
+  int term_mark = ctx->term_pool_offset;
   int string_mark = ctx->string_pool_offset;
   int db_mark = ctx->db_count;
 
@@ -683,7 +683,8 @@ bool prolog_exec_query(prolog_ctx_t *ctx, char *query) {
   if (!parse_goals(ctx, query, &goals))
     return false;
 
-  env_t env = {0};
+  ctx->bind_count = 0;
+  env_t env = {.bindings = ctx->bindings, .count = 0};
   bool ok = solve(ctx, &goals, &env);
 
   if (ctx->has_runtime_error) {
@@ -700,7 +701,7 @@ bool prolog_exec_query(prolog_ctx_t *ctx, char *query) {
   // restore pools if no new clauses were added
   // (clauses added via include must keep their terms)
   if (ctx->db_count == db_mark) {
-    ctx->term_count = term_mark;
+    ctx->term_pool_offset = term_mark;
     ctx->string_pool_offset = string_mark;
   }
   return ok;
@@ -710,7 +711,7 @@ bool prolog_exec_query(prolog_ctx_t *ctx, char *query) {
 // returns true if at least one solution was found.
 bool prolog_exec_query_multi(prolog_ctx_t *ctx, char *query,
                              solution_callback_t cb, void *ud) {
-  int term_mark = ctx->term_count;
+  int term_mark = ctx->term_pool_offset;
   int string_mark = ctx->string_pool_offset;
   int db_mark = ctx->db_count;
 
@@ -718,7 +719,8 @@ bool prolog_exec_query_multi(prolog_ctx_t *ctx, char *query,
   if (!parse_goals(ctx, query, &goals))
     return false;
 
-  env_t env = {0};
+  ctx->bind_count = 0;
+  env_t env = {.bindings = ctx->bindings, .count = 0};
   bool found = solve_all(ctx, &goals, &env, cb, ud);
 
   if (ctx->has_runtime_error) {
@@ -728,7 +730,7 @@ bool prolog_exec_query_multi(prolog_ctx_t *ctx, char *query,
   }
 
   if (ctx->db_count == db_mark) {
-    ctx->term_count = term_mark;
+    ctx->term_pool_offset = term_mark;
     ctx->string_pool_offset = string_mark;
   }
   return found;
@@ -803,7 +805,7 @@ bool prolog_load_file(prolog_ctx_t *ctx, const char *filename) {
       if (ctx->make_file_count == 0) {
         // first file ever (or first after a make reset): snapshot state
         ctx->make_db_mark = ctx->db_count;
-        ctx->make_term_mark = ctx->term_count;
+        ctx->make_term_mark = ctx->term_pool_offset;
         ctx->make_string_mark = ctx->string_pool_offset;
       }
       if (ctx->make_file_count < MAX_MAKE_FILES) {
@@ -883,8 +885,10 @@ void parse_clause(prolog_ctx_t *ctx, char *line) {
   clause_t *c = &ctx->database[ctx->db_count];
   debug(ctx, "=== Parsing clause ===\n");
 
+  ctx->alloc_permanent = true;
   c->head = parse_term(ctx);
   if (!c->head) {
+    ctx->alloc_permanent = false;
     if (!parse_has_error(ctx)) {
       parse_error(ctx, "failed to parse clause head");
     }
@@ -902,12 +906,14 @@ void parse_clause(prolog_ctx_t *ctx, char *line) {
       term_t *g = parse_term(ctx);
       if (!g) {
         if (parse_has_error(ctx)) {
+          ctx->alloc_permanent = false;
           parse_error_print(ctx);
           return;
         }
         break;
       }
       if (c->body_count >= MAX_GOALS) {
+        ctx->alloc_permanent = false;
         parse_error(ctx, "too many goals in clause body (max %d)", MAX_GOALS);
         parse_error_print(ctx);
         return;
@@ -920,11 +926,13 @@ void parse_clause(prolog_ctx_t *ctx, char *line) {
   // terminating dot
   skip_ws(ctx);
   if (*ctx->input_ptr != '.') {
+    ctx->alloc_permanent = false;
     parse_error(ctx, "expected '.' at end of clause");
     parse_error_print(ctx);
     return;
   }
   ctx->input_ptr++;
+  ctx->alloc_permanent = false;
 
   ctx->db_count++;
 

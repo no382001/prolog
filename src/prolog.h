@@ -6,6 +6,8 @@
 
 #include <stdarg.h>
 #include <stdbool.h>
+#include <stddef.h>
+#include <string.h>
 
 #else // PROLOG_FREESTANDING
 
@@ -39,11 +41,10 @@ typedef __builtin_va_list va_list;
 #define MAX_NAME 64
 #define MAX_ARGS 8
 #define MAX_LIST_LIT 1024
-#define MAX_CLAUSES 256
-#define MAX_BINDINGS 256
-#define MAX_GOALS 64
+#define MAX_CLAUSES 1024
+#define MAX_BINDINGS 4096
+#define MAX_GOALS 128
 #define MAX_STACK 256
-#define MAX_TERMS 4096
 #define MAX_ERROR_MSG 256
 #define MAX_CUSTOM_BUILTINS 64
 #define MAX_STRING_POOL 65536
@@ -51,6 +52,9 @@ typedef __builtin_va_list va_list;
 #define MAX_MAKE_FILES 16
 #define MAX_OPEN_STREAMS 16
 #define MAX_CLAUSE_VARS 64
+
+#define TERM_POOL_BYTES (4 * 1024 * 1024)
+#define PROLOG_CTX_SIZE(pool_bytes) (sizeof(prolog_ctx_t) + (pool_bytes))
 
 typedef struct prolog_ctx prolog_ctx_t;
 typedef struct term term_t;
@@ -132,10 +136,15 @@ static const str_escape_t STR_ESCAPES[] = {
 struct term {
   term_type type;
   const char *name;
-  struct term *args[MAX_ARGS];
   int arity; // is repurposed for var_id VAR
   char *string_data;
+  struct term *args[]; // FAM: arity elements follow
 };
+
+#define AS_FUNC(t) (t)
+#define AS_CONST(t) (t)
+#define AS_VAR(t) (t)
+#define AS_STRING(t) (t)
 
 typedef struct {
   int var_id;       // variable identity (matches term_t.arity for VAR terms)
@@ -154,7 +163,7 @@ typedef struct {
 } var_id_map_t;
 
 struct env {
-  binding_t bindings[MAX_BINDINGS];
+  binding_t *bindings; // points into ctx->bindings
   int count;
 };
 
@@ -187,14 +196,18 @@ typedef struct {
 struct prolog_ctx {
   clause_t database[MAX_CLAUSES];
   int db_count;
+  binding_t bindings[MAX_BINDINGS]; // centralized trail
+  int bind_count;
   int var_counter;
   char *input_ptr;
   char *input_start;
   int input_line;
   bool debug_enabled;
 
-  term_t term_pool[MAX_TERMS];
-  int term_count;
+  int term_pool_size;   // total bytes
+  int term_pool_offset; // temp: grows up from 0
+  int term_pool_perm;   // perm: grows down from term_pool_size
+  bool alloc_permanent; // when true, allocate from perm end
 
   char string_pool[MAX_STRING_POOL];
   int string_pool_offset;
@@ -242,6 +255,8 @@ struct prolog_ctx {
   bool has_runtime_error;
   char runtime_error[MAX_ERROR_MSG];
   term_t *thrown_ball; // exception term set by throw/1
+
+  _Alignas(8) char term_pool[]; // FAM - must be last field
 };
 
 static inline bool is_cons(const term_t *t) {
@@ -275,8 +290,14 @@ static inline bool term_as_int(const term_t *t, int *out) {
 }
 
 void ctx_reset_terms(prolog_ctx_t *ctx);
-term_t *ctx_alloc_term(prolog_ctx_t *ctx);
+void *term_alloc(prolog_ctx_t *ctx, size_t size);
 const char *intern_name(prolog_ctx_t *ctx, const char *name);
+
+static inline void prolog_ctx_init(prolog_ctx_t *ctx, int pool_bytes) {
+  memset(ctx, 0, PROLOG_CTX_SIZE(pool_bytes));
+  ctx->term_pool_size = pool_bytes;
+  ctx->term_pool_perm = pool_bytes;
+}
 
 void debug(prolog_ctx_t *ctx, const char *fmt, ...);
 void print_term_raw(prolog_ctx_t *ctx, term_t *t);

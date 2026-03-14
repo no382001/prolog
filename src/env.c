@@ -17,7 +17,7 @@ void bind(prolog_ctx_t *ctx, env_t *env, term_t *var, term_t *value) {
   assert(var != NULL && "Var is NULL");
   assert(var->type == VAR && "bind called on non-VAR term");
   assert(value != NULL && "Value is NULL");
-  assert(env->count < MAX_BINDINGS && "Binding table full");
+  assert(ctx->bind_count < MAX_BINDINGS && "Binding table full");
 
   if (ctx->debug_enabled) {
     if (var->name)
@@ -28,11 +28,12 @@ void bind(prolog_ctx_t *ctx, env_t *env, term_t *var, term_t *value) {
     debug(ctx, "\n");
   }
 
-  env->bindings[env->count++] = (binding_t){
+  ctx->bindings[ctx->bind_count++] = (binding_t){
       .var_id = var->arity,
       .name = var->name, // already interned (or NULL for internal vars)
       .value = value,
   };
+  env->count = ctx->bind_count;
 }
 
 term_t *deref(env_t *env, term_t *t) {
