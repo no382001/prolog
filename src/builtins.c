@@ -406,6 +406,11 @@ static int collect_solutions(prolog_ctx_t *ctx, term_t *goal, env_t *env,
   term_t *query = deref(env, goal->args[1]);
   term_t *result_var = goal->args[2];
 
+  // strip existential quantifier: _^Goal -> Goal
+  while (query->type == FUNC && strcmp(query->name, "^") == 0 &&
+         query->arity == 2)
+    query = deref(env, query->args[1]);
+
   // goal must be instantiated and callable
   if (query->type == VAR) {
     throw_instantiation_error(ctx, "findall/3");

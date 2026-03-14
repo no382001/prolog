@@ -88,7 +88,8 @@ static const op_prec_t precedence_table[] = {
     {"-", 30},   {"<", 20},    {">", 20},   {"=<", 20},   {">=", 20},
     {"=:=", 20}, {"=\\=", 20}, {"==", 20},  {"\\==", 20}, {"@<", 20},
     {"@>", 20},  {"@=<", 20},  {"@>=", 20}, {"is", 10},   {"=", 10},
-    {"\\=", 10}, {"..", 10},   {"->", 7},   {";", 5},     {NULL, 0}};
+    {"\\=", 10}, {"..", 10},   {"->", 7},   {";", 5},     {"^", 6},
+    {NULL, 0}};
 
 // ordered longest-first to avoid prefix conflicts
 static const op_pattern_t op_patterns[] = {
@@ -100,7 +101,7 @@ static const op_pattern_t op_patterns[] = {
     {"is", 2, true},   {"+", 1, false},    {"*", 1, false},
     {"/", 1, false},   {"<", 1, false},    {">", 1, false},
     {"=", 1, false},   {"-", 1, false},    {";", 1, false},
-    {NULL, 0, false}};
+    {"^", 1, false},   {NULL, 0, false}};
 
 static int get_precedence(const char *op) {
   for (const op_prec_t *p = precedence_table; p->op; p++) {
