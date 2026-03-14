@@ -185,6 +185,17 @@ A:
       ctx->thrown_ball = make_func(ctx, "error", ea, 2);
       return false;
     }
+    if (arg->type == CONST) {
+      int dummy;
+      if (term_as_int(arg, &dummy)) {
+        ctx_runtime_error(ctx, "type_error(callable,%s) in call/1", arg->name);
+        term_t *ta[2] = {make_const(ctx, "callable"), arg};
+        term_t *te = make_func(ctx, "type_error", ta, 2);
+        term_t *ea[2] = {te, make_const(ctx, "call/1")};
+        ctx->thrown_ball = make_func(ctx, "error", ea, 2);
+        return false;
+      }
+    }
     goal_stmt_t new_cn = goals_alloc(ctx, cn.count);
     new_cn.goals[new_cn.count++] = arg;
     for (int i = 1; i < cn.count; i++)
