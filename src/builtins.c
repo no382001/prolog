@@ -1887,6 +1887,91 @@ static builtin_result_t builtin_make(prolog_ctx_t *ctx, term_t *goal,
   return BUILTIN_OK;
 }
 
+// dynamic/1: declaration hint — no-op (all predicates are dynamic here)
+static builtin_result_t builtin_dynamic(prolog_ctx_t *ctx, term_t *goal,
+                                        env_t *env) {
+  (void)ctx;
+  (void)goal;
+  (void)env;
+  return BUILTIN_OK;
+}
+
+// abolish/1: remove all clauses for a predicate indicator Name/Arity
+static builtin_result_t builtin_abolish(prolog_ctx_t *ctx, term_t *goal,
+                                        env_t *env) {
+  term_t *ind = deref(env, goal->args[0]);
+  if (ind->type == VAR) {
+    throw_instantiation_error(ctx, "abolish/1");
+    return BUILTIN_ERROR;
+  }
+  if (ind->type != FUNC || strcmp(ind->name, "/") != 0 || ind->arity != 2) {
+    throw_type_error(ctx, "predicate_indicator", ind, "abolish/1");
+    return BUILTIN_ERROR;
+  }
+  term_t *n = deref(env, ind->args[0]);
+  term_t *a = deref(env, ind->args[1]);
+  if (n->type == VAR || a->type == VAR) {
+    throw_instantiation_error(ctx, "abolish/1");
+    return BUILTIN_ERROR;
+  }
+  const char *name = term_atom_str(n);
+  int arity;
+  if (!name || !term_as_int(a, &arity)) {
+    throw_type_error(ctx, "predicate_indicator", ind, "abolish/1");
+    return BUILTIN_ERROR;
+  }
+  int i = 0;
+  while (i < ctx->db_count) {
+    clause_t *c = &ctx->database[i];
+    const char *cn = (c->head->type == FUNC) ? c->head->name : c->head->name;
+    int ca = (c->head->type == FUNC) ? c->head->arity : 0;
+    if (strcmp(cn, name) == 0 && ca == arity) {
+      for (int j = i; j < ctx->db_count - 1; j++)
+        ctx->database[j] = ctx->database[j + 1];
+      ctx->db_count--;
+    } else {
+      i++;
+    }
+  }
+  return BUILTIN_OK;
+}
+
+// current_prolog_flag/2
+static builtin_result_t builtin_current_prolog_flag(prolog_ctx_t *ctx,
+                                                    term_t *goal, env_t *env) {
+  term_t *flag = deref(env, goal->args[0]);
+  if (flag->type == VAR) {
+    throw_instantiation_error(ctx, "current_prolog_flag/2");
+    return BUILTIN_ERROR;
+  }
+  const char *fname = term_atom_str(flag);
+  if (!fname) {
+    throw_type_error(ctx, "atom", flag, "current_prolog_flag/2");
+    return BUILTIN_ERROR;
+  }
+  char buf[32];
+  const char *val = NULL;
+  if (strcmp(fname, "bounded") == 0)
+    val = "true";
+  else if (strcmp(fname, "max_integer") == 0) {
+    snprintf(buf, sizeof(buf), "%d", 2147483647);
+    val = buf;
+  } else if (strcmp(fname, "min_integer") == 0) {
+    snprintf(buf, sizeof(buf), "%d", (int)-2147483647 - 1);
+    val = buf;
+  } else if (strcmp(fname, "integer_rounding_function") == 0)
+    val = "toward_zero";
+  else if (strcmp(fname, "max_arity") == 0) {
+    snprintf(buf, sizeof(buf), "%d", MAX_ARGS);
+    val = buf;
+  } else {
+    throw_type_error(ctx, "prolog_flag", flag, "current_prolog_flag/2");
+    return BUILTIN_ERROR;
+  }
+  return unify(ctx, goal->args[1], make_const(ctx, val), env) ? BUILTIN_OK
+                                                              : BUILTIN_FAIL;
+}
+
 static const builtin_t builtins[] = {
     {"true", 0, builtin_true},
     {"fail", 0, builtin_fail},
@@ -1945,9 +2030,13 @@ static const builtin_t builtins[] = {
     {"=..", 2, builtin_univ},
     {"copy_term", 2, builtin_copy_term},
     {"assertz", 1, builtin_assertz},
+    {"assert", 1, builtin_assertz},
     {"asserta", 1, builtin_asserta},
     {"retract", 1, builtin_retract},
     {"retractall", 1, builtin_retractall},
+    {"dynamic", 1, builtin_dynamic},
+    {"abolish", 1, builtin_abolish},
+    {"current_prolog_flag", 2, builtin_current_prolog_flag},
     {"succ", 2, builtin_succ},
     {"plus", 3, builtin_plus},
     {"msort", 2, builtin_msort},
