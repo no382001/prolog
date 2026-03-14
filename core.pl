@@ -24,5 +24,8 @@ between(Low, High, X) :- Low < High, Low1 is Low + 1, between(Low1, High, X).
 
 once(Goal) :- call(Goal), !.
 
+repeat.
+repeat :- repeat.
+
 forall_fail(Cond, Action) :- call(Cond), \+ call(Action).
 forall(Cond, Action) :- \+ forall_fail(Cond, Action).
