@@ -161,7 +161,7 @@ A:
   term_t *first_goal = deref(env, cn.goals[0]);
   if (first_goal->type == CONST && strcmp(first_goal->name, "!") == 0) {
     debug(ctx, "*** CUT executed, pruning stack to %d ***\n", cut_point);
-    sp = cut_point + 1;
+    sp = cut_point;
     goal_stmt_t new_cn = {0};
     for (int i = 1; i < cn.count; i++) {
       new_cn.goals[new_cn.count++] = cn.goals[i];
