@@ -81,6 +81,8 @@ typedef struct {
 
 static term_t *parse_primary(prolog_ctx_t *ctx);
 static term_t *parse_infix(prolog_ctx_t *ctx, term_t *left, int min_prec);
+static term_t *parse_arg(prolog_ctx_t *ctx);
+
 static const op_prec_t precedence_table[] = {
     {"*", 40},   {"/", 40},    {"//", 40},  {"mod", 40},  {"+", 30},
     {"-", 30},   {"<", 20},    {">", 20},   {"=<", 20},   {">=", 20},
@@ -155,7 +157,7 @@ term_t *parse_list(prolog_ctx_t *ctx) {
   int count = 0;
   term_t *tail = NULL;
 
-  elements[count] = parse_term(ctx);
+  elements[count] = parse_arg(ctx);
   if (!elements[count]) {
     if (*ctx->input_ptr == '\0' && !parse_has_error(ctx))
       parse_error_eof(ctx);
@@ -170,7 +172,7 @@ term_t *parse_list(prolog_ctx_t *ctx) {
     if (*ctx->input_ptr == '|') {
       ctx->input_ptr++;
       skip_ws(ctx);
-      tail = parse_term(ctx);
+      tail = parse_arg(ctx);
       if (!tail) {
         if (*ctx->input_ptr == '\0' && !parse_has_error(ctx))
           parse_error_eof(ctx);
@@ -189,7 +191,7 @@ term_t *parse_list(prolog_ctx_t *ctx) {
       return NULL;
     }
 
-    elements[count] = parse_term(ctx);
+    elements[count] = parse_arg(ctx);
     if (!elements[count]) {
       if (*ctx->input_ptr == '\0' && !parse_has_error(ctx))
         parse_error_eof(ctx);
@@ -235,7 +237,7 @@ static term_t *parse_primary(prolog_ctx_t *ctx) {
     return NULL; // end of input, not necessarily an error
   }
 
-  // parenthesized expression
+  // parenthesized expression: (a) or (a, b, ...) conjunction
   if (*ctx->input_ptr == '(') {
     ctx->input_ptr++;
     skip_ws(ctx);
@@ -248,6 +250,21 @@ static term_t *parse_primary(prolog_ctx_t *ctx) {
       return NULL;
     }
     skip_ws(ctx);
+    // comma inside parens builds conjunction ','/2
+    while (*ctx->input_ptr == ',') {
+      ctx->input_ptr++;
+      skip_ws(ctx);
+      term_t *rhs = parse_term(ctx);
+      if (!rhs) {
+        if (!parse_has_error(ctx))
+          parse_error(ctx,
+                      "expected term after ',' in parenthesized expression");
+        return NULL;
+      }
+      term_t *conj_args[2] = {inner, rhs};
+      inner = make_func(ctx, ",", conj_args, 2);
+      skip_ws(ctx);
+    }
     if (*ctx->input_ptr != ')') {
       if (*ctx->input_ptr == '\0')
         parse_error_eof(ctx);
@@ -338,7 +355,7 @@ static term_t *parse_primary(prolog_ctx_t *ctx) {
             parse_error(ctx, "too many arguments (max %d)", MAX_ARGS);
             return NULL;
           }
-          args[arity] = parse_term(ctx);
+          args[arity] = parse_arg(ctx);
           if (!args[arity]) {
             if (!parse_has_error(ctx)) {
               if (*ctx->input_ptr == '\0')
@@ -466,7 +483,7 @@ static term_t *parse_primary(prolog_ctx_t *ctx) {
           parse_error(ctx, "too many arguments (max %d)", MAX_ARGS);
           return NULL;
         }
-        args[arity] = parse_term(ctx);
+        args[arity] = parse_arg(ctx);
         if (!args[arity]) {
           if (!parse_has_error(ctx)) {
             if (*ctx->input_ptr == '\0')
@@ -577,6 +594,11 @@ term_t *parse_term(prolog_ctx_t *ctx) {
 
   return parse_infix(ctx, left, 0);
 }
+
+// parse_arg: parses a functor argument or list element.
+// Comma is not an infix operator in this parser, so this is equivalent to
+// parse_term — but kept separate for clarity and future changes.
+static term_t *parse_arg(prolog_ctx_t *ctx) { return parse_term(ctx); }
 
 void strip_line_comment(char *line) {
   bool in_string = false;
