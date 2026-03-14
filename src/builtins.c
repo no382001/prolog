@@ -471,9 +471,25 @@ static builtin_result_t builtin_throw(prolog_ctx_t *ctx, term_t *goal,
   return BUILTIN_ERROR;
 }
 
+static bool is_integer_str(const char *s);
+
+static bool check_callable(prolog_ctx_t *ctx, term_t *t, const char *pred) {
+  if (t->type == VAR) {
+    throw_instantiation_error(ctx, pred);
+    return false;
+  }
+  if (t->type == CONST && is_integer_str(t->name)) {
+    throw_type_error(ctx, "callable", t, pred);
+    return false;
+  }
+  return true;
+}
+
 static builtin_result_t builtin_once(prolog_ctx_t *ctx, term_t *goal,
                                      env_t *env) {
   term_t *inner = deref(env, goal->args[0]);
+  if (!check_callable(ctx, inner, "once/1"))
+    return BUILTIN_ERROR;
   goal_stmt_t goals = {0};
   goals.goals[goals.count++] = inner;
   if (solve(ctx, &goals, env))
@@ -484,6 +500,8 @@ static builtin_result_t builtin_once(prolog_ctx_t *ctx, term_t *goal,
 static builtin_result_t builtin_not(prolog_ctx_t *ctx, term_t *goal,
                                     env_t *env) {
   term_t *inner = deref(env, goal->args[0]);
+  if (!check_callable(ctx, inner, "\\+/1"))
+    return BUILTIN_ERROR;
   goal_stmt_t goals = {0};
   goals.goals[goals.count++] = inner;
   int env_mark = env->count;
