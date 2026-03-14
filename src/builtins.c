@@ -1120,18 +1120,39 @@ static builtin_result_t builtin_asserta(prolog_ctx_t *ctx, term_t *goal,
   return BUILTIN_OK;
 }
 
+// Build a conjunction term from a clause body array (for retract matching).
+static term_t *body_to_term(prolog_ctx_t *ctx, term_t **body, int n) {
+  if (n == 0)
+    return make_const(ctx, "true");
+  term_t *result = body[n - 1];
+  for (int i = n - 2; i >= 0; i--) {
+    term_t *args[2] = {body[i], result};
+    result = make_func(ctx, ",", args, 2);
+  }
+  return result;
+}
+
 static builtin_result_t builtin_retract(prolog_ctx_t *ctx, term_t *goal,
                                         env_t *env) {
   term_t *arg = deref(env, goal->args[0]);
-  // accept retract(Head) or retract((Head :- Body)) — body not checked
-  term_t *head_pat =
-      (arg->type == FUNC && strcmp(arg->name, ":-") == 0 && arg->arity == 2)
-          ? deref(env, arg->args[0])
-          : arg;
+  bool has_body =
+      (arg->type == FUNC && strcmp(arg->name, ":-") == 0 && arg->arity == 2);
+  term_t *head_pat = has_body ? deref(env, arg->args[0]) : arg;
+  term_t *body_pat = has_body ? deref(env, arg->args[1]) : NULL;
+
   for (int i = 0; i < ctx->db_count; i++) {
     int env_mark = env->count;
     int trm_save = ctx->term_pool_offset;
-    if (unify(ctx, head_pat, rename_vars(ctx, ctx->database[i].head), env)) {
+    var_id_map_t map = {0};
+    term_t *rhead = rename_vars_mapped(ctx, ctx->database[i].head, &map);
+    bool ok = unify(ctx, head_pat, rhead, env);
+    if (ok && body_pat) {
+      term_t *rbody =
+          body_to_term(ctx, ctx->database[i].body, ctx->database[i].body_count);
+      rbody = rename_vars_mapped(ctx, rbody, &map);
+      ok = unify(ctx, body_pat, rbody, env);
+    }
+    if (ok) {
       for (int j = i; j < ctx->db_count - 1; j++)
         ctx->database[j] = ctx->database[j + 1];
       ctx->db_count--;
