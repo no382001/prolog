@@ -595,7 +595,7 @@ static builtin_result_t builtin_compound(prolog_ctx_t *ctx, term_t *goal,
                                          env_t *env) {
   (void)ctx;
   term_t *t = deref(env, goal->args[0]);
-  return (t->type == FUNC && t->arity > 0) ? BUILTIN_OK : BUILTIN_FAIL;
+  return (t->type == FUNC) ? BUILTIN_OK : BUILTIN_FAIL;
 }
 static builtin_result_t builtin_callable(prolog_ctx_t *ctx, term_t *goal,
                                          env_t *env) {
