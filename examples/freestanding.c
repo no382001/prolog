@@ -1,8 +1,8 @@
-// Freestanding compile+link smoke-test.
-// Proves the prolog library can build without libc (embedded, WASM, etc.).
-// Not intended to be run — the build succeeding is the test.
+// freestanding compile+link smoke-test.
+// proves the prolog library can build without libc (embedded, WASM, etc.).
+// not intended to be run — the build succeeding is the test.
 //
-// Build:  make freestanding
+// build:  make freestanding
 //
 // PROLOG_FREESTANDING and NDEBUG are passed via compiler flags.
 

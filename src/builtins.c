@@ -1123,7 +1123,7 @@ static builtin_result_t builtin_functor(prolog_ctx_t *ctx, term_t *goal,
                ? 1
                : -1;
   }
-  /* compose: functor(X, Name, Arity) */
+  // compose: functor(X, Name, Arity)
   if (n->type == VAR || a->type == VAR) {
     throw_instantiation_error(ctx, "functor/3");
     return BUILTIN_ERROR;
@@ -1211,7 +1211,7 @@ static builtin_result_t builtin_univ(prolog_ctx_t *ctx, term_t *goal,
     }
     return unify(ctx, goal->args[1], result, env) ? BUILTIN_OK : BUILTIN_FAIL;
   }
-  /* list -> term */
+  // list -> term
   if (list->type == VAR) {
     throw_instantiation_error(ctx, "=../2");
     return BUILTIN_ERROR;
@@ -1375,7 +1375,7 @@ static builtin_result_t builtin_retractall(prolog_ctx_t *ctx, term_t *goal,
       i++;
     }
   }
-  return BUILTIN_OK; /* always succeeds */
+  return BUILTIN_OK;
 }
 
 static builtin_result_t builtin_succ(prolog_ctx_t *ctx, term_t *goal,
@@ -1616,10 +1616,6 @@ static builtin_result_t builtin_with_output_to(prolog_ctx_t *ctx, term_t *goal,
   return unify(ctx, sink->args[0], result, env) ? BUILTIN_OK : BUILTIN_FAIL;
 }
 
-// ---------------------------------------------------------------------------
-// term_to_atom(+Term, ?Atom)
-// ---------------------------------------------------------------------------
-
 static builtin_result_t builtin_term_to_atom(prolog_ctx_t *ctx, term_t *goal,
                                              env_t *env) {
   term_t *term_arg = deref(env, goal->args[0]);
@@ -1795,11 +1791,6 @@ static builtin_result_t builtin_close(prolog_ctx_t *ctx, term_t *goal,
   return BUILTIN_OK;
 }
 
-// ---------------------------------------------------------------------------
-// read_line_to_atom(+Stream, -Atom)
-// Unifies with the next line (newline stripped), or end_of_file.
-// ---------------------------------------------------------------------------
-
 static builtin_result_t builtin_read_line_to_atom(prolog_ctx_t *ctx,
                                                   term_t *goal, env_t *env) {
   int id;
@@ -1820,10 +1811,6 @@ static builtin_result_t builtin_read_line_to_atom(prolog_ctx_t *ctx,
   return unify(ctx, goal->args[1], result, env) ? BUILTIN_OK : BUILTIN_FAIL;
 }
 
-// ---------------------------------------------------------------------------
-// get_char(-Char)   reads one character from stdin
-// ---------------------------------------------------------------------------
-
 static builtin_result_t builtin_get_char(prolog_ctx_t *ctx, term_t *goal,
                                          env_t *env) {
   int c = io_read_char(ctx);
@@ -1836,11 +1823,6 @@ static builtin_result_t builtin_get_char(prolog_ctx_t *ctx, term_t *goal,
   }
   return unify(ctx, goal->args[0], result, env) ? BUILTIN_OK : BUILTIN_FAIL;
 }
-
-// ---------------------------------------------------------------------------
-// read_term(+Stream, -Term)
-// Accumulates lines until a complete clause is ready, then parses as a term.
-// ---------------------------------------------------------------------------
 
 static builtin_result_t builtin_read_term(prolog_ctx_t *ctx, term_t *goal,
                                           env_t *env) {

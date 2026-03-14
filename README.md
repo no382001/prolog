@@ -149,10 +149,16 @@ make freestanding   # verifies the library links without libc
 Tests use the [quad format](https://web.liminal.cafe/~byakuren/flowlog/docs/QUAD_TESTS.html) — plain `.pl` files containing queries and their expected output:
 
 ```prolog
-?- member(X, [a,b,c]).
-   X = a.
-   X = b.
-   X = c.
+?- member(X, [a, b, c]).
+   X = a
+;  X = b
+;  X = c.
+
+?- atom_length(hello, N).
+   N = 5.
+
+?- foo(1).
+   false.
 ```
 
 ```sh
