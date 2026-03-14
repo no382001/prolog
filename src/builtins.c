@@ -455,6 +455,74 @@ static builtin_result_t builtin_bagof(prolog_ctx_t *ctx, term_t *goal,
   return collect_solutions(ctx, goal, env, true);
 }
 
+static int list_to_array(env_t *env, term_t *list, term_t **arr, int max);
+static term_t *array_to_list(prolog_ctx_t *ctx, term_t **arr, int n);
+
+static builtin_result_t builtin_setof(prolog_ctx_t *ctx, term_t *goal,
+                                      env_t *env) {
+  // collect like bagof, then sort+dedup the result
+  term_t *template = deref(env, goal->args[0]);
+  term_t *query = deref(env, goal->args[1]);
+  term_t *result_var = goal->args[2];
+
+  while (query->type == FUNC && strcmp(query->name, "^") == 0 &&
+         query->arity == 2)
+    query = deref(env, query->args[1]);
+
+  if (query->type == VAR) {
+    throw_instantiation_error(ctx, "setof/3");
+    return BUILTIN_ERROR;
+  }
+  if (query->type != FUNC && query->type != CONST) {
+    throw_type_error(ctx, "callable", query, "setof/3");
+    return BUILTIN_ERROR;
+  }
+
+  var_id_map_t _map = {0};
+  template = rename_vars_mapped(ctx, template, &_map);
+  query = rename_vars_mapped(ctx, query, &_map);
+
+  goal_stmt_t goals = goals_alloc(ctx, 1);
+  goals.goals[goals.count++] = query;
+
+  findall_state_t state = {.ctx = ctx,
+                           .template = template,
+                           .list = make_const(ctx, "[]"),
+                           .count = 0};
+
+  int bind_save = ctx->bind_count;
+  env_t query_env = {.bindings = ctx->bindings, .count = ctx->bind_count};
+  solve_all(ctx, &goals, &query_env, findall_callback, &state);
+  ctx->bind_count = bind_save;
+
+  if (state.count == 0)
+    return BUILTIN_FAIL;
+
+  // sort and deduplicate
+  term_t *elems[MAX_LIST_LIT];
+  int n =
+      list_to_array(env, reverse_list(ctx, state.list), elems, MAX_LIST_LIT);
+  if (n < 0)
+    return BUILTIN_FAIL;
+  for (int i = 1; i < n; i++) {
+    term_t *key = elems[i];
+    int j = i - 1;
+    while (j >= 0 && term_order(elems[j], key, env) > 0) {
+      elems[j + 1] = elems[j];
+      j--;
+    }
+    elems[j + 1] = key;
+  }
+  int out = 0;
+  for (int i = 0; i < n; i++) {
+    if (i == 0 || term_order(elems[i], elems[out - 1], env) != 0)
+      elems[out++] = elems[i];
+  }
+  return unify(ctx, result_var, array_to_list(ctx, elems, out), env)
+             ? BUILTIN_OK
+             : BUILTIN_FAIL;
+}
+
 static bool not_found_callback(prolog_ctx_t *ctx, env_t *env, void *userdata,
                                bool has_more) {
   (void)ctx;
@@ -1787,6 +1855,7 @@ static const builtin_t builtins[] = {
     {"include", 1, builtin_include},
     {"findall", 3, builtin_findall},
     {"bagof", 3, builtin_bagof},
+    {"setof", 3, builtin_setof},
     {"compare", 3, builtin_compare},
     {"compound", 1, builtin_compound},
     {"callable", 1, builtin_callable},
