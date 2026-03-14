@@ -1,5 +1,69 @@
 #include "platform_impl.h"
 
+// operators that print infix (arity 2) or prefix (arity 1)
+static bool is_infix_op(const char *name) {
+  static const char *ops[] = {"+",  "-",   "*",    "/",    "//",  "mod", "is",
+                              "=",  "\\=", "==",   "\\==", "<",   ">",   "=<",
+                              ">=", "=:=", "=\\=", "@<",   "@>",  "@=<", "@>=",
+                              "->", ";",   ",",    "^",    "=..", NULL};
+  for (const char **p = ops; *p; p++)
+    if (strcmp(name, *p) == 0)
+      return true;
+  return false;
+}
+
+static bool is_prefix_op(const char *name) {
+  return strcmp(name, "\\+") == 0 || strcmp(name, "not") == 0;
+}
+
+// true if atom name needs single-quote wrapping
+static bool needs_quoting(const char *name) {
+  if (!name || name[0] == '\0')
+    return true;
+  // special atoms that never need quoting
+  if (strcmp(name, "[]") == 0 || strcmp(name, "{}") == 0 ||
+      strcmp(name, "!") == 0)
+    return false;
+  // negative integers don't need quoting
+  if (name[0] == '-') {
+    const char *p = name + 1;
+    if (*p >= '0' && *p <= '9') {
+      while (*p >= '0' && *p <= '9')
+        p++;
+      if (*p == '\0')
+        return false;
+    }
+  }
+  // starts with uppercase or underscore → variable-like, must quote
+  if (isupper((unsigned char)name[0]) || name[0] == '_')
+    return true;
+  // all-lowercase-alnum-underscore → plain atom, no quoting
+  for (const char *p = name; *p; p++) {
+    if (!isalnum((unsigned char)*p) && *p != '_')
+      return true; // contains special char — might be fine as graphic, skip
+  }
+  return false;
+}
+
+static void print_atom(prolog_ctx_t *ctx, const char *name, bool quoted) {
+  if (quoted && needs_quoting(name)) {
+    io_write_str(ctx, "'");
+    for (const char *p = name; *p; p++) {
+      if (*p == '\'')
+        io_write_str(ctx, "\\'");
+      else if (*p == '\\')
+        io_write_str(ctx, "\\\\");
+      else {
+        char buf[2] = {*p, '\0'};
+        io_write_str(ctx, buf);
+      }
+    }
+    io_write_str(ctx, "'");
+  } else {
+    io_write_str(ctx, name);
+  }
+}
+
 void print_term(prolog_ctx_t *ctx, term_t *t, env_t *env, bool quoted) {
   assert(env != ((void *)0) && "Environment is NULL");
 
@@ -64,7 +128,30 @@ void print_term(prolog_ctx_t *ctx, term_t *t, env_t *env, bool quoted) {
     }
     return;
   }
-  io_write_str(ctx, t->name);
+
+  // infix binary operator: X op Y
+  if (t->type == FUNC && t->arity == 2 && is_infix_op(t->name)) {
+    bool need_parens = strcmp(t->name, ",") != 0;
+    if (need_parens)
+      io_write_str(ctx, "(");
+    print_term(ctx, t->args[0], env, quoted);
+    io_write_str(ctx, t->name);
+    print_term(ctx, t->args[1], env, quoted);
+    if (need_parens)
+      io_write_str(ctx, ")");
+    return;
+  }
+
+  // prefix unary operator: op X
+  if (t->type == FUNC && t->arity == 1 && is_prefix_op(t->name)) {
+    io_write_str(ctx, t->name);
+    io_write_str(ctx, "(");
+    print_term(ctx, t->args[0], env, quoted);
+    io_write_str(ctx, ")");
+    return;
+  }
+
+  print_atom(ctx, t->name, quoted);
   if (t->type == FUNC && t->arity > 0) {
     io_write_str(ctx, "(");
     for (int i = 0; i < t->arity; i++) {
