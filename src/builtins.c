@@ -9,7 +9,15 @@ static int arith_add(int a, int b) { return a + b; }
 static int arith_sub(int a, int b) { return a - b; }
 static int arith_mul(int a, int b) { return a * b; }
 static int arith_div(int a, int b) { return b ? a / b : 0; }
-static int arith_mod(int a, int b) { return b ? a % b : 0; }
+static int arith_mod(int a, int b) {
+  if (!b)
+    return 0;
+  int r = a % b;
+  // ISO: result has sign of divisor
+  if (r != 0 && (r ^ b) < 0)
+    r += b;
+  return r;
+}
 static int arith_max(int a, int b) { return a > b ? a : b; }
 static int arith_min(int a, int b) { return a < b ? a : b; }
 
