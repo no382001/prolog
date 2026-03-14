@@ -434,12 +434,44 @@ static term_t *parse_primary(prolog_ctx_t *ctx) {
              (*ctx->input_ptr == '-' && isdigit(ctx->input_ptr[1]))) {
     if (*ctx->input_ptr == '-')
       name[i++] = *ctx->input_ptr++;
-    while (isdigit(*ctx->input_ptr)) {
-      if (i >= MAX_NAME - 1) {
-        parse_error(ctx, "number too long (max %d digits)", MAX_NAME - 1);
-        return NULL;
+    // 0'c character code notation
+    if (ctx->input_ptr[0] == '0' && ctx->input_ptr[1] == '\'') {
+      ctx->input_ptr += 2;
+      unsigned char ch = (unsigned char)*ctx->input_ptr;
+      if (ch == '\\' && ctx->input_ptr[1]) {
+        ctx->input_ptr++;
+        switch (*ctx->input_ptr) {
+        case 'n':
+          ch = '\n';
+          break;
+        case 't':
+          ch = '\t';
+          break;
+        case 'r':
+          ch = '\r';
+          break;
+        case '\\':
+          ch = '\\';
+          break;
+        case '\'':
+          ch = '\'';
+          break;
+        default:
+          ch = (unsigned char)*ctx->input_ptr;
+          break;
+        }
       }
-      name[i++] = *ctx->input_ptr++;
+      ctx->input_ptr++;
+      snprintf(name + i, MAX_NAME - i, "%d", (int)ch);
+      i = strlen(name);
+    } else {
+      while (isdigit(*ctx->input_ptr)) {
+        if (i >= MAX_NAME - 1) {
+          parse_error(ctx, "number too long (max %d digits)", MAX_NAME - 1);
+          return NULL;
+        }
+        name[i++] = *ctx->input_ptr++;
+      }
     }
   } else if (isalpha(*ctx->input_ptr) || *ctx->input_ptr == '_') {
     while (isalnum(*ctx->input_ptr) || *ctx->input_ptr == '_') {
