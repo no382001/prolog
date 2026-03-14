@@ -16,3 +16,5 @@ lazy list
 https://www.complang.tuwien.ac.at/ulrich/iso-prolog/prologue
 
 - add instantiation errors and exceptions, in iso prolog fashion while we are at in
+
+- move quad to a pl file, separate TAP and jUnit outputs

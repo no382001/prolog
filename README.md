@@ -17,37 +17,46 @@ make
 
 ## Language
 
-Standard Prolog syntax. Integers, atoms, functors, lists, rules and facts.
+Standard Prolog syntax. Integers, atoms, functors, lists, rules and facts. Comments: `%` line comments and `/* */` block comments. Character code notation: `0'a` evaluates to 97.
 
 **Operators**
 
 | Operators | Prec | Notes |
 |-----------|------|-------|
-| `* / // mod` | 40 | |
-| `+ -` | 30 | |
+| `* / // mod >> << /\ xor` | 40 | `>>` `<<` shift; `/\` bitwise and |
+| `+ - \/` | 30 | `\/` bitwise or |
 | `< > =< >= =:= =\= == \== @< @> @=< @>=` | 20 | |
 | `is = \= =..` | 10 | |
 | `->` | 7 | if-then |
+| `^` | 6 | existential quantification |
 | `;` | 5 | disjunction / if-then-else |
+
+Prefix: `\+` (negation), `\` (bitwise complement).
+
+**Arithmetic** (`is/2`)
+
+Integer arithmetic. Operators: `+ - * / // mod max min >> << /\ \/ xor`. Unary: `- abs \`. ISO overflow and zero-divisor errors are raised.
 
 **Built-ins**
 
 | | |
 |-|-|
 | `true` `fail` `!` | basics |
-| `\+(G)` `call(G)` | meta-call |
+| `\+(G)` `call(G)` `once(G)` | meta-call |
 | `,(G,G)` `;(G,G)` `->(G,G)` | control |
 | `throw(T)` `catch(G,C,R)` | exceptions (`error(Formal, Context)` convention) |
-| `findall/3` `bagof/3` | aggregation |
+| `findall/3` `bagof/3` `setof/3` | aggregation; `X^Goal` for existential quantification |
 | `consult(F)` `include(F)` `make` | loading |
-| `assertz(C)` `asserta(C)` `retract(H)` `retractall(H)` | database |
+| `assertz(C)` `asserta(C)` `assert(C)` `retract(H)` `retractall(H)` | database |
+| `dynamic/1` `abolish/1` | database declarations |
+| `current_prolog_flag/2` | flags: `max_integer`, `min_integer`, `bounded`, `integer_rounding_function` |
 | `var/nonvar/atom/integer/number/atomic/compound/callable/string/is_list` | type tests |
-| `float(X)` | always fails (no float type) |
 | `functor/3` `arg/3` `=../2` `copy_term/2` | introspection |
 | `is/2` `succ/2` `plus/3` | arithmetic |
 | `compare/3` | standard order |
 | `sort/2` `msort/2` | sorting |
 | `atom_length/2` `atom_concat/3` `atom_chars/2` `atom_codes/2` | atoms |
+| `sub_atom/5` | substring search/decomposition |
 | `char_code/2` `atom_number/2` `number_chars/2` `number_codes/2` | conversion |
 | `atom_to_term/3` `term_to_atom/2` | term <-> atom |
 | `write/1` `writeln/1` `writeq/1` `nl` | output |
@@ -59,9 +68,36 @@ Standard Prolog syntax. Integers, atoms, functors, lists, rules and facts.
 
 **Standard library (`core.pl`, loaded automatically)**
 
-`once/1`, `between/3`, `forall/2`, `member/2`, `append/3`, `length/2`, `reverse/2`, `last/2`
+`between/3`, `forall/2`, `member/2`, `append/3`, `length/2`, `reverse/2`, `last/2`
 
 ## Embedding
+
+### Context allocation
+
+The context uses a flexible array member for its term pool and must be heap-allocated:
+
+```c
+prolog_ctx_t *ctx = malloc(PROLOG_CTX_SIZE(TERM_POOL_BYTES));
+prolog_ctx_init(ctx, TERM_POOL_BYTES);
+io_hooks_init_default(ctx);
+// ... use ctx ...
+free(ctx);
+```
+
+`TERM_POOL_BYTES` is 4 MB by default. Adjust as needed for your target.
+
+### Custom builtins (FFI)
+
+```c
+builtin_result_t my_handler(prolog_ctx_t *ctx, term_t *goal, env_t *env) {
+    term_t *arg = deref(env, goal->args[0]);
+    // ... inspect/unify args ...
+    return BUILTIN_OK; // or BUILTIN_FAIL / BUILTIN_ERROR
+}
+ffi_register_builtin(ctx, "my_pred", 1, my_handler, NULL);
+```
+
+See `examples/ffi_example.c` for a complete example.
 
 ### I/O hooks
 
@@ -128,4 +164,4 @@ ISO 13211-1 conformance tests (`test/iso_quad.pl`) run but do not fail the build
 
 ## Algorithm
 
-Based on the **ABC algorithm** from M.H. van Emden's *"An Algorithm for Interpreting PROLOG Programs"* (1981): a depth-first, left-to-right SLD resolution loop with an explicit stack for backtracking. Each clause invocation gets fresh variables via an integer counter.
+Based on the **ABC algorithm** from M.H. van Emden's *"An Algorithm for Interpreting PROLOG Programs"* (1981): a depth-first, left-to-right SLD resolution loop with an explicit stack for backtracking. Each clause invocation gets fresh variables via an integer counter. The term pool uses a dual-ended bump allocator: temporary query terms grow up from offset 0, permanent clause terms grow down from the top.

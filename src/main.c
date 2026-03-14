@@ -183,6 +183,8 @@ int main(int argc, char *argv[]) {
       res = prolog_run_quad_file_junit(ctx, quad_file, junit_dir);
     else
       res = prolog_run_quad_file(ctx, quad_file);
+
+    free(ctx);
     return res.failed > 0 ? 1 : 0;
   }
 
