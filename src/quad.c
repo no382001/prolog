@@ -209,7 +209,7 @@ static bool run_one_test(prolog_ctx_t *ctx, const char *query_raw,
   }
 
   // save interpreter state
-  int term_mark = ctx->term_count;
+  int term_mark = ctx->term_pool_offset;
   int string_mark = ctx->string_pool_offset;
   int db_mark = ctx->db_count;
 
@@ -250,7 +250,7 @@ static bool run_one_test(prolog_ctx_t *ctx, const char *query_raw,
 
   // restore pools if no new clauses were added
   if (ctx->db_count == db_mark) {
-    ctx->term_count = term_mark;
+    ctx->term_pool_offset = term_mark;
     ctx->string_pool_offset = string_mark;
   }
 

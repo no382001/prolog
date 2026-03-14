@@ -1,7 +1,26 @@
 #include "platform_impl.h"
 
+void *term_alloc(prolog_ctx_t *ctx, size_t size) {
+  size = (size + 7) & ~7; // 8-byte align
+  if (ctx->alloc_permanent) {
+    int new_perm = ctx->term_pool_perm - (int)size;
+    assert(new_perm >= ctx->term_pool_offset && "Term pool exhausted (perm)");
+    ctx->term_pool_perm = new_perm;
+    void *ptr = ctx->term_pool + new_perm;
+    memset(ptr, 0, size);
+    return ptr;
+  }
+  assert(ctx->term_pool_offset + (int)size <= ctx->term_pool_perm &&
+         "Term pool exhausted");
+  void *ptr = ctx->term_pool + ctx->term_pool_offset;
+  memset(ptr, 0, size);
+  ctx->term_pool_offset += (int)size;
+  return ptr;
+}
+
 void ctx_reset_terms(prolog_ctx_t *ctx) {
-  ctx->term_count = 0;
+  ctx->term_pool_offset = 0;
+  ctx->term_pool_perm = ctx->term_pool_size;
   ctx->string_pool_offset = 0;
 }
 
@@ -28,47 +47,19 @@ const char *intern_name(prolog_ctx_t *ctx, const char *name) {
   return dest;
 }
 
-term_t *ctx_alloc_term(prolog_ctx_t *ctx) {
-  assert(ctx->term_count < MAX_TERMS && "Term pool exhausted");
-
-  ctx->stats.terms_allocated++;
-  if (ctx->term_count > ctx->stats.terms_peak)
-    ctx->stats.terms_peak = ctx->term_count;
-
-  term_t *t = &ctx->term_pool[ctx->term_count++];
-  memset(t, 0, sizeof(term_t));
-  return t;
-}
-
-term_t *make_term(prolog_ctx_t *ctx, term_type type, const char *name,
-                  term_t **args, int arity) {
-  assert(ctx != NULL && "Context is NULL");
-  assert(name != NULL && "Term name cannot be NULL");
-  assert(arity >= 0 && arity <= MAX_ARGS && "Invalid arity");
-  assert((type == CONST || type == VAR || type == FUNC || type == STRING) &&
-         "Invalid term type");
-
-  term_t *t = ctx_alloc_term(ctx);
-
-  t->type = type;
-  t->name = intern_name(ctx, name);
-  t->arity = arity;
-  for (int i = 0; i < arity; i++) {
-    assert(args != NULL && "Args array is NULL but arity > 0");
-    t->args[i] = args[i];
-  }
-  return t;
-}
-
 term_t *make_const(prolog_ctx_t *ctx, const char *name) {
   assert(name != NULL && "Constant name cannot be NULL");
-  return make_term(ctx, CONST, name, NULL, 0);
+  term_t *t = term_alloc(ctx, sizeof(term_t)); // no args
+  t->type = CONST;
+  t->name = intern_name(ctx, name);
+  return t;
 }
 
 term_t *make_var(prolog_ctx_t *ctx, const char *name, int var_id) {
-  term_t *t = ctx_alloc_term(ctx);
+  term_t *t = term_alloc(ctx, sizeof(term_t)); // no args
   t->type = VAR;
-  t->name = name ? intern_name(ctx, name) : NULL;
+  if (name)
+    t->name = intern_name(ctx, name);
   t->arity = var_id; // var_id stored in arity field for VAR terms
   return t;
 }
@@ -77,17 +68,22 @@ term_t *make_func(prolog_ctx_t *ctx, const char *name, term_t **args,
                   int arity) {
   assert(name != NULL && "Functor name cannot be NULL");
   assert(arity >= 0 && "Functor arity cannot be negative");
-  return make_term(ctx, FUNC, name, args, arity);
+  term_t *t = term_alloc(ctx, sizeof(term_t) + arity * sizeof(term_t *));
+  t->type = FUNC;
+  t->name = intern_name(ctx, name);
+  t->arity = arity;
+  for (int i = 0; i < arity; i++)
+    t->args[i] = args[i];
+  return t;
 }
 
 term_t *make_string(prolog_ctx_t *ctx, const char *str) {
   assert(ctx != NULL && "Context is NULL");
   assert(str != NULL && "String cannot be NULL");
 
-  term_t *t = ctx_alloc_term(ctx);
+  term_t *t = term_alloc(ctx, sizeof(term_t)); // no args
   t->type = STRING;
-  t->name = "";
-  t->arity = 0;
+  t->name = intern_name(ctx, "");
 
   int len = strlen(str);
   assert(ctx->string_pool_offset + len + 1 <= MAX_STRING_POOL &&
@@ -97,6 +93,28 @@ term_t *make_string(prolog_ctx_t *ctx, const char *str) {
   strcpy(t->string_data, str);
   ctx->string_pool_offset += len + 1;
 
+  return t;
+}
+
+// make_term: backward compat wrapper (used in a few places in builtins)
+term_t *make_term(prolog_ctx_t *ctx, term_type type, const char *name,
+                  term_t **args, int arity) {
+  assert(ctx != NULL && "Context is NULL");
+  assert(name != NULL && "Term name cannot be NULL");
+  assert(arity >= 0 && arity <= MAX_ARGS && "Invalid arity");
+  assert((type == CONST || type == VAR || type == FUNC || type == STRING) &&
+         "Invalid term type");
+
+  if (type == CONST)
+    return make_const(ctx, name);
+  if (type == VAR)
+    return make_var(ctx, name, arity);
+  if (type == FUNC)
+    return make_func(ctx, name, args, arity);
+  // STRING fallback
+  term_t *t = term_alloc(ctx, sizeof(term_t));
+  t->type = STRING;
+  t->name = intern_name(ctx, "");
   return t;
 }
 

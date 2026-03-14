@@ -120,8 +120,12 @@ static bool load_file(prolog_ctx_t *ctx, const char *filename) {
 }
 
 int main(int argc, char *argv[]) {
-  prolog_ctx_t context = {0};
-  prolog_ctx_t *ctx = &context;
+  prolog_ctx_t *ctx = malloc(PROLOG_CTX_SIZE(TERM_POOL_BYTES));
+  if (!ctx) {
+    fprintf(stderr, "Fatal: failed to allocate prolog context\n");
+    return 1;
+  }
+  prolog_ctx_init(ctx, TERM_POOL_BYTES);
 
   io_hooks_init_default(ctx);
   try_load_core(ctx, argv[0]);
@@ -197,5 +201,6 @@ int main(int argc, char *argv[]) {
     process_line(ctx, line, &should_exit, interactive);
   }
 
+  free(ctx);
   return 0;
 }
