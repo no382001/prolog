@@ -651,7 +651,10 @@ static bool parse_goals(prolog_ctx_t *ctx, char *query, goal_stmt_t *goals) {
   ctx->input_ptr = query;
   ctx->input_start = query;
   ctx->clause_var_count = 0;
-  goals->count = 0;
+
+  // collect terms into a temporary stack buffer, then allocate from pool
+  term_t *tmp[MAX_GOALS];
+  int n = 0;
   do {
     skip_ws(ctx);
     term_t *g = parse_term(ctx);
@@ -662,15 +665,18 @@ static bool parse_goals(prolog_ctx_t *ctx, char *query, goal_stmt_t *goals) {
       }
       break;
     }
-    if (goals->count < MAX_GOALS)
-      goals->goals[goals->count++] = g;
+    if (n < MAX_GOALS)
+      tmp[n++] = g;
     skip_ws(ctx);
   } while (*ctx->input_ptr == ',' && ctx->input_ptr++);
 
-  if (goals->count == 0) {
+  if (n == 0) {
     io_writef_err(ctx, "Error: empty query\n");
     return false;
   }
+  *goals = goals_alloc(ctx, n);
+  for (int i = 0; i < n; i++)
+    goals->goals[goals->count++] = tmp[i];
   return true;
 }
 
@@ -896,11 +902,16 @@ void parse_clause(prolog_ctx_t *ctx, char *line) {
     return;
   }
   c->body_count = 0;
+  c->body = NULL;
 
   skip_ws(ctx);
   if (ctx->input_ptr[0] == ':' && ctx->input_ptr[1] == '-') {
     ctx->input_ptr += 2;
     debug(ctx, "=== Parsing body ===\n");
+
+    // collect body goals into a temp stack buffer, then alloc from perm pool
+    term_t *tmp[MAX_GOALS];
+    int n = 0;
     do {
       skip_ws(ctx);
       term_t *g = parse_term(ctx);
@@ -912,15 +923,21 @@ void parse_clause(prolog_ctx_t *ctx, char *line) {
         }
         break;
       }
-      if (c->body_count >= MAX_GOALS) {
+      if (n >= MAX_GOALS) {
         ctx->alloc_permanent = false;
         parse_error(ctx, "too many goals in clause body (max %d)", MAX_GOALS);
         parse_error_print(ctx);
         return;
       }
-      c->body[c->body_count++] = g;
+      tmp[n++] = g;
       skip_ws(ctx);
     } while (*ctx->input_ptr == ',' && ctx->input_ptr++);
+
+    if (n > 0) {
+      c->body = (term_t **)term_alloc(ctx, (size_t)n * sizeof(term_t *));
+      for (int i = 0; i < n; i++)
+        c->body[c->body_count++] = tmp[i];
+    }
   }
 
   // terminating dot

@@ -169,12 +169,12 @@ struct env {
 
 typedef struct {
   term_t *head;
-  term_t *body[MAX_GOALS];
+  term_t **body; // allocated from perm pool
   int body_count;
 } clause_t;
 
 typedef struct {
-  term_t *goals[MAX_GOALS];
+  term_t **goals; // allocated from term pool
   int count;
 } goal_stmt_t;
 
@@ -291,6 +291,14 @@ static inline bool term_as_int(const term_t *t, int *out) {
 
 void ctx_reset_terms(prolog_ctx_t *ctx);
 void *term_alloc(prolog_ctx_t *ctx, size_t size);
+// Allocate a goal array of n slots from the term pool.
+static inline goal_stmt_t goals_alloc(prolog_ctx_t *ctx, int n) {
+  goal_stmt_t g;
+  g.goals =
+      (n > 0) ? (term_t **)term_alloc(ctx, (size_t)n * sizeof(term_t *)) : NULL;
+  g.count = 0;
+  return g;
+}
 const char *intern_name(prolog_ctx_t *ctx, const char *name);
 
 static inline void prolog_ctx_init(prolog_ctx_t *ctx, int pool_bytes) {

@@ -420,7 +420,7 @@ static int collect_solutions(prolog_ctx_t *ctx, term_t *goal, env_t *env,
   template = rename_vars_mapped(ctx, template, &_map);
   query = rename_vars_mapped(ctx, query, &_map);
 
-  goal_stmt_t goals = {0};
+  goal_stmt_t goals = goals_alloc(ctx, 1);
   goals.goals[goals.count++] = query;
 
   findall_state_t state = {.ctx = ctx,
@@ -493,7 +493,7 @@ static builtin_result_t builtin_once(prolog_ctx_t *ctx, term_t *goal,
   term_t *inner = deref(env, goal->args[0]);
   if (!check_callable(ctx, inner, "once/1"))
     return BUILTIN_ERROR;
-  goal_stmt_t goals = {0};
+  goal_stmt_t goals = goals_alloc(ctx, 1);
   goals.goals[goals.count++] = inner;
   if (solve(ctx, &goals, env))
     return BUILTIN_OK;
@@ -505,7 +505,7 @@ static builtin_result_t builtin_not(prolog_ctx_t *ctx, term_t *goal,
   term_t *inner = deref(env, goal->args[0]);
   if (!check_callable(ctx, inner, "\\+/1"))
     return BUILTIN_ERROR;
-  goal_stmt_t goals = {0};
+  goal_stmt_t goals = goals_alloc(ctx, 1);
   goals.goals[goals.count++] = inner;
   int env_mark = env->count;
   bool found = false;
@@ -1313,7 +1313,7 @@ static builtin_result_t builtin_with_output_to(prolog_ctx_t *ctx, term_t *goal,
 
   bcap_t cap;
   bcap_start(ctx, &cap);
-  goal_stmt_t cn = {0};
+  goal_stmt_t cn = goals_alloc(ctx, 1);
   cn.goals[cn.count++] = g;
   bool ok = solve(ctx, &cn, env);
   bcap_end(ctx, &cap);
