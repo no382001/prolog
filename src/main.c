@@ -63,31 +63,48 @@ static void print_usage(prolog_ctx_t *ctx, const char *prog) {
 typedef struct {
   bool interactive;
   bool want_more; // true if user typed ; on the last solution
+  bool first;     // true before any answer has been printed
+  bool all;       // true if user pressed 'a' to emit all answers
 } toplevel_state_t;
 
 static bool toplevel_cb(prolog_ctx_t *ctx, env_t *env, void *ud,
                         bool has_more) {
   toplevel_state_t *st = ud;
+
+  if (st->first) {
+    io_write_str(ctx, "   ");
+    st->first = false;
+  } else {
+    io_write_str(ctx, ";  ");
+  }
+
   print_bindings(ctx, env);
   st->want_more = false;
 
   if (!st->interactive || !has_more) {
-    io_write_str(ctx, "\n");
-    return false; // no choice points: stop here
+    io_write_str(ctx, ".\n");
+    return false;
   }
 
-  io_write_str(ctx, " ;");
+  if (st->all) {
+    io_write_str(ctx, "\n");
+    st->want_more = true;
+    return true;
+  }
+
   int c = read_key();
   io_write_str(ctx, "\n");
-  st->want_more = (c == ';');
+  st->want_more = (c == ';' || c == 'a');
+  st->all = (c == 'a');
   return st->want_more;
 }
 
 static void exec_query(prolog_ctx_t *ctx, char *query, bool interactive) {
-  toplevel_state_t st = {.interactive = interactive, .want_more = false};
+  toplevel_state_t st = {
+      .interactive = interactive, .want_more = false, .first = true};
   bool found = prolog_exec_query_multi(ctx, query, toplevel_cb, &st);
   if (!ctx->has_runtime_error && (!found || st.want_more))
-    io_write_str(ctx, "false\n");
+    io_write_str(ctx, "false.\n");
   ctx->has_runtime_error = false;
 }
 
