@@ -767,7 +767,14 @@ bool prolog_exec_query(prolog_ctx_t *ctx, char *query) {
   bool ok = solve(ctx, &goals, &env);
 
   if (ctx->has_runtime_error) {
-    io_writef(ctx, "ERROR: %s\n", ctx->runtime_error);
+    io_write_str(ctx, "Unhandled exception: ");
+    if (ctx->thrown_ball) {
+      env_t err_env = {.bindings = ctx->bindings, .count = 0};
+      io_write_term_quoted(ctx, ctx->thrown_ball, &err_env);
+    } else {
+      io_write_str(ctx, ctx->runtime_error);
+    }
+    io_write_str(ctx, "\n");
     ctx->has_runtime_error = false;
     ok = false;
   } else if (ok) {
@@ -803,7 +810,14 @@ bool prolog_exec_query_multi(prolog_ctx_t *ctx, char *query,
   bool found = solve_all(ctx, &goals, &env, cb, ud);
 
   if (ctx->has_runtime_error) {
-    io_writef(ctx, "ERROR: %s\n", ctx->runtime_error);
+    io_write_str(ctx, "Unhandled exception: ");
+    if (ctx->thrown_ball) {
+      env_t err_env = {.bindings = ctx->bindings, .count = 0};
+      io_write_term_quoted(ctx, ctx->thrown_ball, &err_env);
+    } else {
+      io_write_str(ctx, ctx->runtime_error);
+    }
+    io_write_str(ctx, "\n");
     // leave has_runtime_error set so the caller can suppress "false"
     found = false;
   }
