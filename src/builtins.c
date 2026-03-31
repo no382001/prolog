@@ -1755,6 +1755,207 @@ static builtin_result_t builtin_unconsult(trilog_ctx_t *ctx, term_t *goal,
 
 // current_prolog_flag/2
 // TODO: flags are all hardcoded constants; set_prolog_flag/2 is not implemented
+// op/3 and current_op/3
+
+// OP_NONE=0, OP_XFX=1, OP_XFY=2, OP_YFX=3, OP_FX=4, OP_FY=5, OP_XF=6, OP_YF=7
+static const char *op_assoc_names[] = {
+    "none", "xfx", "xfy", "yfx", "fx", "fy", "xf", "yf",
+};
+#define OP_ASSOC_COUNT                                                         \
+  ((int)(sizeof(op_assoc_names) / sizeof(op_assoc_names[0])))
+
+op_assoc_t op_assoc_from_atom(const char *s) {
+  if (!s)
+    return OP_NONE;
+  for (int i = 1; i < OP_ASSOC_COUNT; i++)
+    if (strcmp(s, op_assoc_names[i]) == 0)
+      return (op_assoc_t)i;
+  return OP_NONE;
+}
+
+const char *op_assoc_to_atom(op_assoc_t a) {
+  if (a >= 0 && a < OP_ASSOC_COUNT)
+    return op_assoc_names[a];
+  return "none";
+}
+
+static bool op_name_valid(const char *name) {
+  if (!name)
+    return false;
+  // C2: '{}' and '[]' cannot be operators
+  if (strcmp(name, "{}") == 0 || strcmp(name, "[]") == 0)
+    return false;
+  // C2: '|' may only be infix with priority >= 1001 — checked by caller
+  return true;
+}
+
+static builtin_result_t do_op(trilog_ctx_t *ctx, int prio, op_assoc_t assoc,
+                              const char *name) {
+  ops_init_defaults(ctx);
+
+  // C2: '|' must be infix (xfy/yfx/xfx) with prio >= 1001, or removed (prio==0)
+  if (strcmp(name, "|") == 0 && prio != 0) {
+    bool is_infix = (assoc == OP_XFY || assoc == OP_YFX || assoc == OP_XFX);
+    if (!is_infix || prio < 1001) {
+      term_t *op_atom = make_const(ctx, name);
+      throw_permission_error(ctx, "create", "operator", op_atom, "op/3");
+      return BUILTIN_ERROR;
+    }
+  }
+
+  // find existing entry for this (name, class) and update or remove it
+  bool is_infix_assoc = (assoc == OP_XFX || assoc == OP_XFY || assoc == OP_YFX);
+  bool is_prefix_assoc = (assoc == OP_FX || assoc == OP_FY);
+  (void)is_prefix_assoc;
+
+  for (int i = 0; i < ctx->op_count; i++) {
+    op_entry_t *e = &ctx->op_table[i];
+    if (e->name == NULL || strcmp(e->name, name) != 0)
+      continue;
+    bool slot_infix =
+        (e->assoc == OP_XFX || e->assoc == OP_XFY || e->assoc == OP_YFX);
+    // same class (infix vs prefix vs postfix) → update
+    if (slot_infix == is_infix_assoc ||
+        ((e->assoc == OP_FX || e->assoc == OP_FY) == is_prefix_assoc)) {
+      if (prio == 0)
+        e->priority = 0; // remove (keep slot, zero priority means inactive)
+      else {
+        e->priority = prio;
+        e->assoc = assoc;
+      }
+      return BUILTIN_OK;
+    }
+  }
+
+  if (prio == 0)
+    return BUILTIN_OK; // removing non-existent op is fine
+
+  // add new entry
+  if (ctx->op_count >= MAX_OPS) {
+    ctx->has_runtime_error = true;
+    snprintf(ctx->runtime_error, MAX_ERROR_MSG, "operator table full");
+    return BUILTIN_ERROR;
+  }
+  const char *iname = intern_name(ctx, name);
+  op_entry_t *e = &ctx->op_table[ctx->op_count++];
+  e->name = iname;
+  e->priority = prio;
+  e->assoc = assoc;
+  return BUILTIN_OK;
+}
+
+static builtin_result_t builtin_op(trilog_ctx_t *ctx, term_t *goal,
+                                   env_t *env) {
+  term_t *prio_t = deref(env, goal->args[0]);
+  term_t *type_t = deref(env, goal->args[1]);
+  term_t *name_t = deref(env, goal->args[2]);
+
+  if (prio_t->type == VAR || type_t->type == VAR) {
+    throw_instantiation_error(ctx, "op/3");
+    return BUILTIN_ERROR;
+  }
+  int prio = 0;
+  if (!term_as_int(prio_t, &prio) || prio < 0 || prio > 1200) {
+    throw_type_error(ctx, "integer", prio_t, "op/3");
+    return BUILTIN_ERROR;
+  }
+  const char *type_s = term_atom_str(type_t);
+  if (!type_s) {
+    throw_type_error(ctx, "atom", type_t, "op/3");
+    return BUILTIN_ERROR;
+  }
+  op_assoc_t assoc = op_assoc_from_atom(type_s);
+  if (assoc == OP_NONE) {
+    term_t *dargs[2] = {make_const(ctx, "operator_specifier"), type_t};
+    term_t *de = make_func(ctx, "domain_error", dargs, 2);
+    throw_error(ctx, de, "op/3");
+    return BUILTIN_ERROR;
+  }
+
+  // name_t may be an atom or a list of atoms
+  if (name_t->type == CONST || name_t->type == FUNC) {
+    // check for list
+    term_t *cur = name_t;
+    bool is_list = false;
+    if (is_nil(cur))
+      return BUILTIN_OK; // empty list: nothing to do
+    if (is_cons(cur))
+      is_list = true;
+    if (is_list) {
+      while (is_cons(cur)) {
+        term_t *head = deref(env, cur->args[0]);
+        const char *hname = term_atom_str(head);
+        if (!hname) {
+          throw_type_error(ctx, "atom", head, "op/3");
+          return BUILTIN_ERROR;
+        }
+        if (!op_name_valid(hname)) {
+          throw_permission_error(ctx, "create", "operator",
+                                 make_const(ctx, hname), "op/3");
+          return BUILTIN_ERROR;
+        }
+        builtin_result_t r = do_op(ctx, prio, assoc, hname);
+        if (r != BUILTIN_OK)
+          return r;
+        cur = deref(env, cur->args[1]);
+      }
+      return BUILTIN_OK;
+    }
+    // single atom
+    const char *opname = term_atom_str(name_t);
+    if (!opname) {
+      throw_type_error(ctx, "atom", name_t, "op/3");
+      return BUILTIN_ERROR;
+    }
+    if (!op_name_valid(opname)) {
+      throw_permission_error(ctx, "create", "operator", make_const(ctx, opname),
+                             "op/3");
+      return BUILTIN_ERROR;
+    }
+    return do_op(ctx, prio, assoc, opname);
+  }
+  if (name_t->type == VAR) {
+    throw_instantiation_error(ctx, "op/3");
+    return BUILTIN_ERROR;
+  }
+  throw_type_error(ctx, "atom", name_t, "op/3");
+  return BUILTIN_ERROR;
+}
+
+// current_op_entry/4(+Idx, -Prio, -Type, -Name) — index-based enumeration
+static builtin_result_t builtin_current_op_entry(trilog_ctx_t *ctx,
+                                                 term_t *goal, env_t *env) {
+  ops_init_defaults(ctx);
+  term_t *idx_t = deref(env, goal->args[0]);
+  int idx = 0;
+  if (!term_as_int(idx_t, &idx) || idx < 0 || idx >= ctx->op_count)
+    return BUILTIN_FAIL;
+  op_entry_t *e = &ctx->op_table[idx];
+  if (e->priority == 0)
+    return BUILTIN_FAIL;
+
+  term_t *prio_t2 = make_int(ctx, e->priority);
+  term_t *type_t2 = make_const(ctx, op_assoc_to_atom(e->assoc));
+  term_t *name_t2 = make_const(ctx, e->name);
+
+  if (!unify(ctx, goal->args[1], prio_t2, env))
+    return BUILTIN_FAIL;
+  if (!unify(ctx, goal->args[2], type_t2, env))
+    return BUILTIN_FAIL;
+  if (!unify(ctx, goal->args[3], name_t2, env))
+    return BUILTIN_FAIL;
+  return BUILTIN_OK;
+}
+
+// current_op_count/1(-N) — number of entries (including inactive/removed ones)
+static builtin_result_t builtin_current_op_count(trilog_ctx_t *ctx,
+                                                 term_t *goal, env_t *env) {
+  ops_init_defaults(ctx);
+  return unify(ctx, goal->args[0], make_int(ctx, ctx->op_count), env)
+             ? BUILTIN_OK
+             : BUILTIN_FAIL;
+}
+
 static builtin_result_t builtin_current_prolog_flag(trilog_ctx_t *ctx,
                                                     term_t *goal, env_t *env) {
   term_t *flag = deref(env, goal->args[0]);
@@ -1870,6 +2071,9 @@ static const builtin_t builtins[] = {
     {"abolish", 1, builtin_abolish},
     {"consulted", 1, builtin_consulted},
     {"unconsult", 1, builtin_unconsult},
+    {"op", 3, builtin_op},
+    {"current_op_entry", 4, builtin_current_op_entry},
+    {"current_op_count", 1, builtin_current_op_count},
     {"current_prolog_flag", 2, builtin_current_prolog_flag},
     {"succ", 2, builtin_succ},
     {"plus", 3, builtin_plus},

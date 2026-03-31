@@ -125,3 +125,9 @@ foldl(R_5, [X|Xs], [Y|Ys], [Z|Zs], S0, S) :-
 countall(Goal, Count) :-
     findall(_, Goal, Xs),
     length(Xs, Count).
+
+current_op(Priority, Type, Name) :-
+    current_op_count(N),
+    N1 is N - 1,
+    between(0, N1, I),
+    current_op_entry(I, Priority, Type, Name).

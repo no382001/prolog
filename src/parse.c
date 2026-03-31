@@ -79,86 +79,117 @@ void skip_ws(trilog_ctx_t *ctx) {
 }
 
 //****
-//* operator definitions and precedence
+//* operator table management
 //****
 
+// default operator table loaded into ctx at first use
 typedef struct {
-  const char *text;
-  int len;
-  bool is_keyword; // needs non-alnum check after
-} op_pattern_t;
+  const char *name;
+  int priority;
+  op_assoc_t assoc;
+} op_default_t;
 
-typedef struct {
-  const char *op;
-  int precedence;
-  bool right_assoc; // xfy: right operand may have equal precedence
-} op_prec_t;
+static const op_default_t default_ops[] = {
+    {":-", 1200, OP_XFX},  {"-->", 1200, OP_XFX}, {":-", 1200, OP_FX},
+    {"?-", 1200, OP_FX},   {";", 1100, OP_XFY},   {"->", 1050, OP_XFY},
+    {",", 1000, OP_XFY},   {"\\+", 900, OP_FY},   {"not", 900, OP_FY},
+    {"=", 700, OP_XFX},    {"\\=", 700, OP_XFX},  {"==", 700, OP_XFX},
+    {"\\==", 700, OP_XFX}, {"@<", 700, OP_XFX},   {"@>", 700, OP_XFX},
+    {"@=<", 700, OP_XFX},  {"@>=", 700, OP_XFX},  {"is", 700, OP_XFX},
+    {"=..", 700, OP_XFX},  {"=:=", 700, OP_XFX},  {"=\\=", 700, OP_XFX},
+    {"<", 700, OP_XFX},    {">", 700, OP_XFX},    {"=<", 700, OP_XFX},
+    {">=", 700, OP_XFX},   {":", 600, OP_XFY},    {"+", 500, OP_YFX},
+    {"-", 500, OP_YFX},    {"\\/", 500, OP_YFX},  {"xor", 400, OP_YFX},
+    {"*", 400, OP_YFX},    {"/", 400, OP_YFX},    {"//", 400, OP_YFX},
+    {"rem", 400, OP_YFX},  {"mod", 400, OP_YFX},  {"div", 400, OP_YFX},
+    {"<<", 400, OP_YFX},   {">>", 400, OP_YFX},   {"/\\", 400, OP_YFX},
+    {"**", 200, OP_XFX},   {"^", 200, OP_XFY},    {"-", 200, OP_FY},
+    {"+", 200, OP_FY},     {"\\", 200, OP_FY},    {NULL, 0, OP_NONE}};
+
+// initialise ctx op table from defaults (called on first parse if empty)
+void ops_init_defaults(trilog_ctx_t *ctx) {
+  if (ctx->op_count > 0)
+    return;
+  for (const op_default_t *d = default_ops; d->name; d++) {
+    if (ctx->op_count >= MAX_OPS)
+      break;
+    op_entry_t *e = &ctx->op_table[ctx->op_count++];
+    e->name = intern_name(ctx, d->name);
+    e->priority = d->priority;
+    e->assoc = d->assoc;
+  }
+}
+
+// look up an infix/postfix operator; returns priority or 0
+static int op_infix_priority(trilog_ctx_t *ctx, const char *name,
+                             op_assoc_t *assoc_out) {
+  for (int i = 0; i < ctx->op_count; i++) {
+    op_entry_t *e = &ctx->op_table[i];
+    if (e->priority == 0 || strcmp(e->name, name) != 0)
+      continue;
+    if (e->assoc == OP_XFX || e->assoc == OP_XFY || e->assoc == OP_YFX) {
+      if (assoc_out)
+        *assoc_out = e->assoc;
+      return e->priority;
+    }
+  }
+  return 0;
+}
+
+// look up a prefix operator; returns priority or 0
+static int op_prefix_priority(trilog_ctx_t *ctx, const char *name,
+                              op_assoc_t *assoc_out) {
+  for (int i = 0; i < ctx->op_count; i++) {
+    op_entry_t *e = &ctx->op_table[i];
+    if (e->priority == 0 || strcmp(e->name, name) != 0)
+      continue;
+    if (e->assoc == OP_FX || e->assoc == OP_FY) {
+      if (assoc_out)
+        *assoc_out = e->assoc;
+      return e->priority;
+    }
+  }
+  return 0;
+}
+
+// attempt to scan an operator token at current input position.
+// returns length consumed (0 = no operator found).
+// writes the operator name into op_out (up to max_len-1 chars).
+static int try_parse_op(trilog_ctx_t *ctx, char *op_out, int max_len) {
+  char *p = ctx->input_ptr;
+  int best_len = 0;
+  const char *best = NULL;
+
+  for (int i = 0; i < ctx->op_count; i++) {
+    const char *n = ctx->op_table[i].name;
+    if (!n || ctx->op_table[i].priority == 0)
+      continue;
+    int len = (int)strlen(n);
+    if (len <= best_len)
+      continue;
+    if (strncmp(p, n, len) != 0)
+      continue;
+    // keyword operators need non-alnum after
+    bool is_kw = isalpha((unsigned char)n[0]) || n[0] == '_';
+    if (is_kw) {
+      char next = p[len];
+      if (isalnum((unsigned char)next) || next == '_')
+        continue;
+    }
+    best_len = len;
+    best = n;
+  }
+
+  if (!best)
+    return 0;
+  strncpy(op_out, best, max_len - 1);
+  op_out[max_len - 1] = '\0';
+  return best_len;
+}
 
 static term_t *parse_primary(trilog_ctx_t *ctx);
 static term_t *parse_infix(trilog_ctx_t *ctx, term_t *left, int min_prec);
 static term_t *parse_arg(trilog_ctx_t *ctx);
-
-static const op_prec_t precedence_table[] = {
-    {"*", 40, false},    {"/", 40, false},    {"//", 40, false},
-    {"mod", 40, false},  {">>", 40, false},   {"<<", 40, false},
-    {"/\\", 40, false},  {"xor", 40, false},  {"+", 30, false},
-    {"-", 30, false},    {"\\/", 30, false},  {"<", 20, false},
-    {">", 20, false},    {"=<", 20, false},   {">=", 20, false},
-    {"=:=", 20, false},  {"=\\=", 20, false}, {"==", 20, false},
-    {"\\==", 20, false}, {"@<", 20, false},   {"@>", 20, false},
-    {"@=<", 20, false},  {"@>=", 20, false},  {"is", 10, false},
-    {"=", 10, false},    {"\\=", 10, false},  {"..", 10, false},
-    {"->", 7, true},     {";", 5, true},      {"^", 6, true},
-    {",", 9, true},      {NULL, 0, false}};
-
-// ordered longest-first to avoid prefix conflicts
-static const op_pattern_t op_patterns[] = {
-    {"=:=", 3, false}, {"=\\=", 3, false}, {"=..", 3, false}, {"mod", 3, true},
-    {"xor", 3, true},  {"\\==", 3, false}, {"@=<", 3, false}, {"@>=", 3, false},
-    {"==", 2, false},  {"@<", 2, false},   {"@>", 2, false},  {"->", 2, false},
-    {"\\=", 2, false}, {"\\/", 2, false},  {"=<", 2, false},  {">=", 2, false},
-    {">>", 2, false},  {"<<", 2, false},   {"//", 2, false},  {"/\\", 2, false},
-    {"is", 2, true},   {"+", 1, false},    {"*", 1, false},   {"/", 1, false},
-    {"<", 1, false},   {">", 1, false},    {"=", 1, false},   {"-", 1, false},
-    {";", 1, false},   {"^", 1, false},    {",", 1, false},   {NULL, 0, false}};
-
-static int get_precedence(const char *op) {
-  for (const op_prec_t *p = precedence_table; p->op; p++) {
-    if (strcmp(op, p->op) == 0)
-      return p->precedence;
-  }
-  return 0;
-}
-
-static bool is_right_assoc(const char *op) {
-  for (const op_prec_t *p = precedence_table; p->op; p++) {
-    if (strcmp(op, p->op) == 0)
-      return p->right_assoc;
-  }
-  return false;
-}
-
-static int try_parse_op(trilog_ctx_t *ctx, char *op_out, int max_len) {
-  char *p = ctx->input_ptr;
-
-  for (const op_pattern_t *pat = op_patterns; pat->text; pat++) {
-    if (strncmp(p, pat->text, pat->len) != 0)
-      continue;
-
-    // keyword operators need non-alnum after
-    if (pat->is_keyword) {
-      char next = p[pat->len];
-      if (isalnum(next) || next == '_')
-        continue;
-    }
-
-    strncpy(op_out, pat->text, max_len);
-    op_out[max_len - 1] = '\0';
-    return pat->len;
-  }
-
-  return 0;
-}
 
 //****
 //* list parsing
@@ -513,39 +544,10 @@ static term_t *parse_primary(trilog_ctx_t *ctx) {
       }
       name[i++] = *ctx->input_ptr++;
     }
-  } else if (*ctx->input_ptr == '\\') {
-    if (ctx->input_ptr[1] == '+') {
-      ctx->input_ptr += 2;
-      skip_ws(ctx);
-      term_t *inner = parse_arg(ctx); // stop before ',' like functor args
-      if (!inner) {
-        if (*ctx->input_ptr == '\0' && !parse_has_error(ctx))
-          parse_error_eof(ctx);
-        else if (!parse_has_error(ctx))
-          parse_error(ctx, "expected term after '\\+'");
-        return NULL;
-      }
-      term_t *args[1] = {inner};
-      return make_func(ctx, "\\+", args, 1);
-    } else {
-      // unary bitwise complement: \expr
-      ctx->input_ptr++;
-      skip_ws(ctx);
-      term_t *inner = parse_primary(ctx);
-      if (!inner) {
-        if (*ctx->input_ptr == '\0' && !parse_has_error(ctx))
-          parse_error_eof(ctx);
-        else if (!parse_has_error(ctx))
-          parse_error(ctx, "expected term after '\\'");
-        return NULL;
-      }
-      term_t *args[1] = {inner};
-      return make_func(ctx, "\\", args, 1);
-    }
-  } else if (strchr("#$&*+-./:<=>?@^~|", *ctx->input_ptr)) {
+  } else if (strchr("#$&*+-./:<=>?@^~|\\", *ctx->input_ptr)) {
     // graphic/symbol atom: scan a run of graphic characters.
     // Stop before '.' followed by whitespace/eof (end-of-clause).
-    while (strchr("#$&*+-./:<=>?@^~|", *ctx->input_ptr)) {
+    while (strchr("#$&*+-./:<=>?@^~|\\", *ctx->input_ptr)) {
       char c = *ctx->input_ptr;
       char next = ctx->input_ptr[1];
       // '.' at end-of-clause terminates the atom
@@ -658,6 +660,40 @@ static term_t *parse_primary(trilog_ctx_t *ctx) {
       }
     }
   }
+  // prefix operator: if this atom is a prefix op and is not followed by '('
+  // (which would make it a functor call already handled above), apply it.
+  // Skip if next char is end-of-clause '.', ')', ']', ',', or EOF.
+  {
+    char next = *ctx->input_ptr;
+    bool at_term_boundary =
+        (next == '\0' || next == ')' || next == ']' || next == ',' ||
+         next == '|' ||
+         (next == '.' && (ctx->input_ptr[1] == '\0' ||
+                          isspace((unsigned char)ctx->input_ptr[1]))));
+    if (!at_term_boundary) {
+      op_assoc_t passoc = OP_NONE;
+      int pprec = op_prefix_priority(ctx, name, &passoc);
+      if (pprec > 0) {
+        // right-operand max: fy → same prec, fx → prec-1
+        int arg_max = (passoc == OP_FY) ? pprec : pprec - 1;
+        term_t *inner = parse_primary(ctx);
+        if (!inner) {
+          if (!parse_has_error(ctx)) {
+            if (*ctx->input_ptr == '\0')
+              parse_error_eof(ctx);
+            else
+              parse_error(ctx, "expected term after prefix '%s'", name);
+          }
+          return NULL;
+        }
+        inner = parse_infix(ctx, inner, arg_max);
+        if (!inner)
+          return NULL;
+        term_t *args[1] = {inner};
+        return make_func(ctx, name, args, 1);
+      }
+    }
+  }
   return make_const(ctx, name);
 }
 
@@ -665,22 +701,35 @@ static term_t *parse_primary(trilog_ctx_t *ctx) {
 //* infix operator parsing
 //****
 
-static term_t *parse_infix(trilog_ctx_t *ctx, term_t *left, int min_prec) {
+// parse_infix: Prolog Pratt parser using MAX_PREC semantics.
+// In Prolog, higher priority number = looser binding (wider scope).
+// max_prec: only consume operators with priority <= max_prec.
+//   parse_term: max_prec = 1200 (accept all)
+//   parse_arg:  max_prec = 999  (stop before ',' at 1000)
+static term_t *parse_infix(trilog_ctx_t *ctx, term_t *left, int max_prec) {
   while (1) {
     skip_ws(ctx);
 
-    char op[8] = {0};
+    char op[MAX_NAME] = {0};
     int op_len = try_parse_op(ctx, op, sizeof(op));
 
     if (op_len == 0)
       return left;
 
-    int prec = get_precedence(op);
-    if (prec < min_prec)
+    op_assoc_t assoc = OP_NONE;
+    int prec = op_infix_priority(ctx, op, &assoc);
+    // Skip if not an infix op or priority is too high (looser than allowed)
+    if (prec == 0 || prec > max_prec)
       return left;
 
     ctx->input_ptr += op_len;
     skip_ws(ctx);
+
+    // right-operand max precedence (lower = tighter in Prolog):
+    //   yfx (left-assoc):  right < prec  → prec-1
+    //   xfy (right-assoc): right <= prec → prec
+    //   xfx (non-assoc):   right < prec  → prec-1
+    int right_max = (assoc == OP_XFY) ? prec : prec - 1;
 
     term_t *right = parse_primary(ctx);
     if (!right) {
@@ -691,18 +740,18 @@ static term_t *parse_infix(trilog_ctx_t *ctx, term_t *left, int min_prec) {
       return NULL;
     }
 
-    // look ahead for higher precedence operator
+    // Look ahead: recursively consume any right-side operators that are
+    // allowed as the right operand (priority <= right_max).
     skip_ws(ctx);
-    char next_op[8] = {0};
+    char next_op[MAX_NAME] = {0};
     int next_len = try_parse_op(ctx, next_op, sizeof(next_op));
 
     while (next_len > 0) {
-      int next_prec = get_precedence(next_op);
-      // recurse if next op binds tighter, or equal and right-associative (xfy)
-      if (next_prec > prec || (next_prec == prec && is_right_assoc(next_op)))
-        right = parse_infix(ctx, right, next_prec);
-      else
+      op_assoc_t next_assoc = OP_NONE;
+      int next_prec = op_infix_priority(ctx, next_op, &next_assoc);
+      if (next_prec == 0 || next_prec > right_max)
         break;
+      right = parse_infix(ctx, right, right_max);
       if (!right)
         return NULL;
       skip_ws(ctx);
@@ -718,6 +767,8 @@ term_t *parse_term(trilog_ctx_t *ctx) {
   assert(ctx != NULL && "Context is NULL");
   assert(ctx->input_ptr != NULL && "Input pointer is NULL");
 
+  ops_init_defaults(ctx);
+
   if (parse_has_error(ctx))
     return NULL;
 
@@ -725,16 +776,16 @@ term_t *parse_term(trilog_ctx_t *ctx) {
   if (!left)
     return NULL;
 
-  return parse_infix(ctx, left, 0);
+  return parse_infix(ctx, left, 1200);
 }
 
 // parse_arg: parses a functor argument or list element.
-// stops before ',' so functor args and list elements are delimited correctly.
+// ISO 6.3.3.1: argument priority < 1000, so stop before ',' at 1000.
 static term_t *parse_arg(trilog_ctx_t *ctx) {
   term_t *left = parse_primary(ctx);
   if (!left)
     return NULL;
-  return parse_infix(ctx, left, 10); // 10 > ',' prec (9), so comma stops arg
+  return parse_infix(ctx, left, 999);
 }
 
 //****
@@ -1119,8 +1170,8 @@ void parse_clause(trilog_ctx_t *ctx, char *line) {
   debug(ctx, "=== Parsing clause ===\n");
 
   ctx->alloc_permanent = true;
-  c->head = parse_term(ctx);
-  if (!c->head) {
+  term_t *whole = parse_term(ctx);
+  if (!whole) {
     ctx->alloc_permanent = false;
     if (!parse_has_error(ctx)) {
       parse_error(ctx, "failed to parse clause head");
@@ -1131,39 +1182,50 @@ void parse_clause(trilog_ctx_t *ctx, char *line) {
   c->body_count = 0;
   c->body = NULL;
 
-  skip_ws(ctx);
-  if (ctx->input_ptr[0] == ':' && ctx->input_ptr[1] == '-') {
-    ctx->input_ptr += 2;
-    debug(ctx, "=== Parsing body ===\n");
-
-    // collect body goals into a temp stack buffer, then alloc from perm pool
-    term_t *tmp[MAX_GOALS];
-    int n = 0;
-    do {
-      skip_ws(ctx);
-      term_t *g = parse_term(ctx);
-      if (!g) {
-        if (parse_has_error(ctx)) {
+  // parse_term may have consumed 'Head :- Body' as a single :-/2 term
+  // (since :- is a 1200 xfx infix operator).  Split it here.
+  if (whole->type == FUNC && strcmp(whole->name, ":-") == 0 &&
+      whole->arity == 2) {
+    c->head = whole->args[0];
+    term_t *body_term = whole->args[1];
+    // Store body as a single goal; the solver flattens ','(A,B) via conjunction
+    c->body = (term_t **)term_alloc(ctx, sizeof(term_t *));
+    c->body[c->body_count++] = body_term;
+  } else {
+    c->head = whole;
+    // check for old-style character-level ':- body' (shouldn't happen with
+    // the new parser, but keep as a fallback)
+    skip_ws(ctx);
+    if (ctx->input_ptr[0] == ':' && ctx->input_ptr[1] == '-') {
+      ctx->input_ptr += 2;
+      debug(ctx, "=== Parsing body (fallback) ===\n");
+      term_t *tmp[MAX_GOALS];
+      int n = 0;
+      do {
+        skip_ws(ctx);
+        term_t *g = parse_term(ctx);
+        if (!g) {
+          if (parse_has_error(ctx)) {
+            ctx->alloc_permanent = false;
+            parse_error_print(ctx);
+            return;
+          }
+          break;
+        }
+        if (n >= MAX_GOALS) {
           ctx->alloc_permanent = false;
+          parse_error(ctx, "too many goals in clause body (max %d)", MAX_GOALS);
           parse_error_print(ctx);
           return;
         }
-        break;
+        tmp[n++] = g;
+        skip_ws(ctx);
+      } while (*ctx->input_ptr == ',' && ctx->input_ptr++);
+      if (n > 0) {
+        c->body = (term_t **)term_alloc(ctx, (size_t)n * sizeof(term_t *));
+        for (int i = 0; i < n; i++)
+          c->body[c->body_count++] = tmp[i];
       }
-      if (n >= MAX_GOALS) {
-        ctx->alloc_permanent = false;
-        parse_error(ctx, "too many goals in clause body (max %d)", MAX_GOALS);
-        parse_error_print(ctx);
-        return;
-      }
-      tmp[n++] = g;
-      skip_ws(ctx);
-    } while (*ctx->input_ptr == ',' && ctx->input_ptr++);
-
-    if (n > 0) {
-      c->body = (term_t **)term_alloc(ctx, (size_t)n * sizeof(term_t *));
-      for (int i = 0; i < n; i++)
-        c->body[c->body_count++] = tmp[i];
     }
   }
 

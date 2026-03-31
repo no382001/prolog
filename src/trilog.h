@@ -90,10 +90,34 @@ typedef __builtin_va_list va_list;
 #ifndef MAX_DYNAMIC_PREDS
 #define MAX_DYNAMIC_PREDS 64
 #endif
+#ifndef MAX_OPS
+#define MAX_OPS 128
+#endif
 #ifndef TERM_POOL_BYTES
 #define TERM_POOL_BYTES (4 * 1024 * 1024)
 #endif
 #define TRILOG_CTX_SIZE(pool_bytes) (sizeof(trilog_ctx_t) + (pool_bytes))
+
+//****
+//* operator table types
+//****
+
+typedef enum {
+  OP_NONE = 0,
+  OP_XFX, // infix, non-associative
+  OP_XFY, // infix, right-associative
+  OP_YFX, // infix, left-associative
+  OP_FX,  // prefix, non-associative
+  OP_FY,  // prefix, associative
+  OP_XF,  // postfix, non-associative
+  OP_YF,  // postfix, associative
+} op_assoc_t;
+
+typedef struct {
+  const char *name; // interned
+  int priority;     // 1..1200; 0 means slot is free
+  op_assoc_t assoc;
+} op_entry_t;
 
 //****
 //* core types
@@ -335,6 +359,9 @@ struct trilog_ctx {
   } dynamic_preds[MAX_DYNAMIC_PREDS];
   int dynamic_pred_count;
 
+  op_entry_t op_table[MAX_OPS];
+  int op_count;
+
   _Alignas(8) char term_pool[]; // fam - must be last field
 };
 
@@ -452,6 +479,9 @@ void print_bindings(trilog_ctx_t *ctx, env_t *env);
 
 void parse_error(trilog_ctx_t *ctx, const char *fmt, ...);
 void parse_error_clear(trilog_ctx_t *ctx);
+void ops_init_defaults(trilog_ctx_t *ctx);
+op_assoc_t op_assoc_from_atom(const char *s);
+const char *op_assoc_to_atom(op_assoc_t a);
 bool parse_has_error(trilog_ctx_t *ctx);
 void parse_error_print(trilog_ctx_t *ctx);
 
