@@ -250,24 +250,36 @@ A:
     goto A;
   }
 
-  // inline call/1: call(g) -> g
+  // inline call/N (N >= 1): call(G, A1, ..., An) -> G(A1, ..., An)
   if (first_goal->type == FUNC && strcmp(first_goal->name, "call") == 0 &&
-      first_goal->arity == 1) {
-    term_t *arg = deref(env, first_goal->args[0]);
-    if (arg->type == VAR) {
-      throw_instantiation_error(ctx, "call/1");
+      first_goal->arity >= 1) {
+    term_t *g = deref(env, first_goal->args[0]);
+    int extra = first_goal->arity - 1;
+    if (g->type == VAR) {
+      throw_instantiation_error(ctx, "call/N");
       return false;
     }
-    if (arg->type == INT) {
-      throw_type_error(ctx, "callable", arg, "call/1");
+    if (g->type != FUNC && g->type != CONST) {
+      throw_type_error(ctx, "callable", g, "call/N");
       return false;
     }
-    if (arg->type != FUNC && arg->type != CONST) {
-      throw_type_error(ctx, "callable", arg, "call/1");
-      return false;
+    term_t *new_goal;
+    if (extra == 0) {
+      new_goal = g;
+    } else {
+      int base_arity = (g->type == FUNC) ? g->arity : 0;
+      int new_arity = base_arity + extra;
+      term_t *args[16];
+      for (int i = 0; i < base_arity; i++)
+        args[i] = g->args[i];
+      for (int i = 0; i < extra; i++)
+        args[base_arity + i] = deref(env, first_goal->args[1 + i]);
+      new_goal = make_func(ctx, g->name, args, new_arity);
+      if (!new_goal)
+        return false;
     }
     goal_stmt_t new_cn = goals_alloc(ctx, cn.count);
-    new_cn.goals[new_cn.count++] = arg;
+    new_cn.goals[new_cn.count++] = new_goal;
     for (int i = 1; i < cn.count; i++)
       new_cn.goals[new_cn.count++] = cn.goals[i];
     cn = new_cn;

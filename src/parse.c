@@ -91,6 +91,7 @@ typedef struct {
 typedef struct {
   const char *op;
   int precedence;
+  bool right_assoc; // xfy: right operand may have equal precedence
 } op_prec_t;
 
 static term_t *parse_primary(trilog_ctx_t *ctx);
@@ -98,13 +99,17 @@ static term_t *parse_infix(trilog_ctx_t *ctx, term_t *left, int min_prec);
 static term_t *parse_arg(trilog_ctx_t *ctx);
 
 static const op_prec_t precedence_table[] = {
-    {"*", 40},   {"/", 40},    {"//", 40},  {"mod", 40},  {">>", 40},
-    {"<<", 40},  {"/\\", 40},  {"xor", 40}, {"+", 30},    {"-", 30},
-    {"\\/", 30}, {"<", 20},    {">", 20},   {"=<", 20},   {">=", 20},
-    {"=:=", 20}, {"=\\=", 20}, {"==", 20},  {"\\==", 20}, {"@<", 20},
-    {"@>", 20},  {"@=<", 20},  {"@>=", 20}, {"is", 10},   {"=", 10},
-    {"\\=", 10}, {"..", 10},   {"->", 7},   {";", 5},     {"^", 6},
-    {",", 9},    {NULL, 0}};
+    {"*", 40, false},    {"/", 40, false},    {"//", 40, false},
+    {"mod", 40, false},  {">>", 40, false},   {"<<", 40, false},
+    {"/\\", 40, false},  {"xor", 40, false},  {"+", 30, false},
+    {"-", 30, false},    {"\\/", 30, false},  {"<", 20, false},
+    {">", 20, false},    {"=<", 20, false},   {">=", 20, false},
+    {"=:=", 20, false},  {"=\\=", 20, false}, {"==", 20, false},
+    {"\\==", 20, false}, {"@<", 20, false},   {"@>", 20, false},
+    {"@=<", 20, false},  {"@>=", 20, false},  {"is", 10, false},
+    {"=", 10, false},    {"\\=", 10, false},  {"..", 10, false},
+    {"->", 7, true},     {";", 5, true},      {"^", 6, true},
+    {",", 9, true},      {NULL, 0, false}};
 
 // ordered longest-first to avoid prefix conflicts
 static const op_pattern_t op_patterns[] = {
@@ -123,6 +128,14 @@ static int get_precedence(const char *op) {
       return p->precedence;
   }
   return 0;
+}
+
+static bool is_right_assoc(const char *op) {
+  for (const op_prec_t *p = precedence_table; p->op; p++) {
+    if (strcmp(op, p->op) == 0)
+      return p->right_assoc;
+  }
+  return false;
 }
 
 static int try_parse_op(trilog_ctx_t *ctx, char *op_out, int max_len) {
@@ -529,6 +542,23 @@ static term_t *parse_primary(trilog_ctx_t *ctx) {
       term_t *args[1] = {inner};
       return make_func(ctx, "\\", args, 1);
     }
+  } else if (strchr("#$&*+-./:<=>?@^~|", *ctx->input_ptr)) {
+    // graphic/symbol atom: scan a run of graphic characters.
+    // Stop before '.' followed by whitespace/eof (end-of-clause).
+    while (strchr("#$&*+-./:<=>?@^~|", *ctx->input_ptr)) {
+      char c = *ctx->input_ptr;
+      char next = ctx->input_ptr[1];
+      // '.' at end-of-clause terminates the atom
+      if (c == '.' && (next == '\0' || isspace((unsigned char)next)))
+        break;
+      if (i >= avail) {
+        parse_error(ctx, "name too long");
+        return NULL;
+      }
+      name[i++] = *ctx->input_ptr++;
+    }
+    if (i == 0)
+      return NULL;
   } else {
     // not a valid start of term
     return NULL;
@@ -666,8 +696,13 @@ static term_t *parse_infix(trilog_ctx_t *ctx, term_t *left, int min_prec) {
     char next_op[8] = {0};
     int next_len = try_parse_op(ctx, next_op, sizeof(next_op));
 
-    while (next_len > 0 && get_precedence(next_op) > prec) {
-      right = parse_infix(ctx, right, get_precedence(next_op));
+    while (next_len > 0) {
+      int next_prec = get_precedence(next_op);
+      // recurse if next op binds tighter, or equal and right-associative (xfy)
+      if (next_prec > prec || (next_prec == prec && is_right_assoc(next_op)))
+        right = parse_infix(ctx, right, next_prec);
+      else
+        break;
       if (!right)
         return NULL;
       skip_ws(ctx);

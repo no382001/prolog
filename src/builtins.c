@@ -394,15 +394,56 @@ static bool not_found_callback(trilog_ctx_t *ctx, env_t *env, void *userdata,
 //* exceptions and meta-predicates
 //****
 
+// capture buffer helpers for serializing a term to runtime_error string
+typedef struct {
+  char buf[MAX_ERROR_MSG];
+  int pos;
+} throw_cap_t;
+
+static void throw_cap_write(trilog_ctx_t *ctx, const char *s, void *ud) {
+  (void)ctx;
+  throw_cap_t *c = ud;
+  int rem = (int)sizeof(c->buf) - c->pos - 1;
+  int len = (int)strlen(s);
+  if (len > rem)
+    len = rem;
+  if (len > 0) {
+    memcpy(c->buf + c->pos, s, len);
+    c->pos += len;
+    c->buf[c->pos] = '\0';
+  }
+}
+
+static void throw_cap_writef(trilog_ctx_t *ctx, const char *fmt, va_list args,
+                             void *ud) {
+  (void)ctx;
+  throw_cap_t *c = ud;
+  int rem = (int)sizeof(c->buf) - c->pos - 1;
+  if (rem > 0) {
+    int n = vsnprintf(c->buf + c->pos, rem + 1, fmt, args);
+    if (n > 0)
+      c->pos += (n < rem) ? n : rem;
+    c->buf[c->pos] = '\0';
+  }
+}
+
 static builtin_result_t builtin_throw(trilog_ctx_t *ctx, term_t *goal,
                                       env_t *env) {
   term_t *ball = deref(env, goal->args[0]);
   ctx->thrown_ball = ball;
   ctx->has_runtime_error = true;
-  // extract readable string from error(type, _) if iso form
+  // serialize error type to runtime_error string using print_term
   if (ball->type == FUNC && strcmp(ball->name, "error") == 0 &&
       ball->arity == 2) {
-    snprintf(ctx->runtime_error, MAX_ERROR_MSG, "%s", ball->args[0]->name);
+    throw_cap_t cap = {{0}, 0};
+    io_hooks_t saved = ctx->io_hooks;
+    ctx->io_hooks.write_str = throw_cap_write;
+    ctx->io_hooks.writef = throw_cap_writef;
+    ctx->io_hooks.userdata = &cap;
+    print_term(ctx, ball->args[0], env, false);
+    ctx->io_hooks = saved;
+    strncpy(ctx->runtime_error, cap.buf, MAX_ERROR_MSG - 1);
+    ctx->runtime_error[MAX_ERROR_MSG - 1] = '\0';
   } else {
     snprintf(ctx->runtime_error, MAX_ERROR_MSG, "unhandled exception");
   }
