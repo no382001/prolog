@@ -330,6 +330,12 @@ static term_t *parse_primary(trilog_ctx_t *ctx) {
   if (*ctx->input_ptr == '[')
     return parse_list(ctx);
 
+  // '{}' is a valid atom (ISO solo character)
+  if (ctx->input_ptr[0] == '{' && ctx->input_ptr[1] == '}') {
+    ctx->input_ptr += 2;
+    return make_const(ctx, "{}");
+  }
+
   if (*ctx->input_ptr == '\'') {
     ctx->input_ptr++; // skip opening quote
     int avail = MAX_STRING_POOL - ctx->string_pool_offset - 1;
@@ -491,7 +497,7 @@ static term_t *parse_primary(trilog_ctx_t *ctx) {
   int i = 0;
   name[0] = '\0';
 
-  if (*ctx->input_ptr == '!') {
+  if (*ctx->input_ptr == '!' || *ctx->input_ptr == ';') {
     name[i++] = *ctx->input_ptr++;
   } else if (isdigit(*ctx->input_ptr) ||
              (*ctx->input_ptr == '-' && isdigit(ctx->input_ptr[1]))) {
@@ -940,12 +946,13 @@ bool trilog_exec_query(trilog_ctx_t *ctx, char *query) {
     io_write_str(ctx, "false\n");
   }
 
-  // restore pools if no database modifications happened
-  if (!ctx->db_dirty && ctx->db_count == db_mark) {
+  // restore pools if no database or op table modifications happened
+  if (!ctx->db_dirty && !ctx->ops_dirty && ctx->db_count == db_mark) {
     ctx->term_pool_offset = term_mark;
     ctx->string_pool_offset = string_mark;
   }
   ctx->db_dirty = false;
+  ctx->ops_dirty = false;
   return ok;
 }
 
@@ -981,11 +988,12 @@ bool trilog_exec_query_multi(trilog_ctx_t *ctx, char *query,
     found = false;
   }
 
-  if (!ctx->db_dirty && ctx->db_count == db_mark) {
+  if (!ctx->db_dirty && !ctx->ops_dirty && ctx->db_count == db_mark) {
     ctx->term_pool_offset = term_mark;
     ctx->string_pool_offset = string_mark;
   }
   ctx->db_dirty = false;
+  ctx->ops_dirty = false;
   return found;
 }
 
@@ -1193,40 +1201,6 @@ void parse_clause(trilog_ctx_t *ctx, char *line) {
     c->body[c->body_count++] = body_term;
   } else {
     c->head = whole;
-    // check for old-style character-level ':- body' (shouldn't happen with
-    // the new parser, but keep as a fallback)
-    skip_ws(ctx);
-    if (ctx->input_ptr[0] == ':' && ctx->input_ptr[1] == '-') {
-      ctx->input_ptr += 2;
-      debug(ctx, "=== Parsing body (fallback) ===\n");
-      term_t *tmp[MAX_GOALS];
-      int n = 0;
-      do {
-        skip_ws(ctx);
-        term_t *g = parse_term(ctx);
-        if (!g) {
-          if (parse_has_error(ctx)) {
-            ctx->alloc_permanent = false;
-            parse_error_print(ctx);
-            return;
-          }
-          break;
-        }
-        if (n >= MAX_GOALS) {
-          ctx->alloc_permanent = false;
-          parse_error(ctx, "too many goals in clause body (max %d)", MAX_GOALS);
-          parse_error_print(ctx);
-          return;
-        }
-        tmp[n++] = g;
-        skip_ws(ctx);
-      } while (*ctx->input_ptr == ',' && ctx->input_ptr++);
-      if (n > 0) {
-        c->body = (term_t **)term_alloc(ctx, (size_t)n * sizeof(term_t *));
-        for (int i = 0; i < n; i++)
-          c->body[c->body_count++] = tmp[i];
-      }
-    }
   }
 
   // terminating dot

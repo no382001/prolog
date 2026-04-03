@@ -80,13 +80,13 @@
 % --- division by zero ---
 
 ?- X is 5 / 0.
-   error(evaluation_error).
+   error(evaluation_error(zero_divisor)).
 
 ?- X is 10 mod 0.
-   error(evaluation_error).
+   error(evaluation_error(zero_divisor)).
 
 ?- X is 10 // 0.
-   error(evaluation_error).
+   error(evaluation_error(zero_divisor)).
 
 % --- ISO error terms are catchable ---
 

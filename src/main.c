@@ -112,6 +112,8 @@ int main(int argc, char *argv[]) {
     return 1;
   }
   trilog_ctx_init(ctx, TERM_POOL_BYTES);
+  ops_init_defaults(
+      ctx); // pre-load op table so names are below any query's string_mark
 
   io_hooks_init_default(ctx);
 

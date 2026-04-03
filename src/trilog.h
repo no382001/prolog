@@ -296,6 +296,8 @@ struct trilog_ctx {
   int bind_floor;       // lco cannot reclaim bindings below this
   bool alloc_permanent; // when true, allocate from perm end
   bool db_dirty;        // set when assert/retract modifies the database
+  bool ops_dirty;       // set when op_table is modified (prevents string pool
+                        // rollback)
 
   char string_pool[MAX_STRING_POOL];
   int string_pool_offset;

@@ -1362,6 +1362,7 @@ static builtin_result_t builtin_assertz(trilog_ctx_t *ctx, term_t *goal,
   c->body_count = 0;
   if (arg->type == FUNC && strcmp(arg->name, ":-") == 0 && arg->arity == 2) {
     c->head = deref(env, arg->args[0]);
+    c->body = (term_t **)term_alloc(ctx, MAX_GOALS * sizeof(term_t *));
     flatten_body(env, deref(env, arg->args[1]), c);
   } else {
     c->head = arg;
@@ -1399,6 +1400,7 @@ static builtin_result_t builtin_asserta(trilog_ctx_t *ctx, term_t *goal,
   c->body_count = 0;
   if (arg->type == FUNC && strcmp(arg->name, ":-") == 0 && arg->arity == 2) {
     c->head = deref(env, arg->args[0]);
+    c->body = (term_t **)term_alloc(ctx, MAX_GOALS * sizeof(term_t *));
     flatten_body(env, deref(env, arg->args[1]), c);
   } else {
     c->head = arg;
@@ -1792,6 +1794,7 @@ static bool op_name_valid(const char *name) {
 static builtin_result_t do_op(trilog_ctx_t *ctx, int prio, op_assoc_t assoc,
                               const char *name) {
   ops_init_defaults(ctx);
+  ctx->ops_dirty = true;
 
   // C2: '|' must be infix (xfy/yfx/xfx) with prio >= 1001, or removed (prio==0)
   if (strcmp(name, "|") == 0 && prio != 0) {
@@ -1877,8 +1880,11 @@ static builtin_result_t builtin_op(trilog_ctx_t *ctx, term_t *goal,
     // check for list
     term_t *cur = name_t;
     bool is_list = false;
-    if (is_nil(cur))
-      return BUILTIN_OK; // empty list: nothing to do
+    if (is_nil(cur)) {
+      // '[]' as an atom cannot be made an operator (ISO 8.14.3 C2)
+      throw_permission_error(ctx, "create", "operator", name_t, "op/3");
+      return BUILTIN_ERROR;
+    }
     if (is_cons(cur))
       is_list = true;
     if (is_list) {
