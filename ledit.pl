@@ -29,6 +29,8 @@
 %   l_value(change, S1/S2)         -- last change atoms
 %   l_value(delete, Texts)         -- delete buffer (text atoms)
 
+:- dynamic(l_value/2).
+
 % --- Entry points ---
 
 ledit :- ledit('').
