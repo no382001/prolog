@@ -355,6 +355,206 @@ builtin_result_t builtin_atom_to_term(trilog_ctx_t *ctx, term_t *goal,
   return unify(ctx, goal->args[2], bindings, env) ? BUILTIN_OK : BUILTIN_FAIL;
 }
 
+//****
+//* chars-based term conversion
+//****
+
+// convert a list of single-character atoms to a C string
+static bool chars_to_str(env_t *env, term_t *list, char *buf, int max) {
+  int n = 0;
+  while (is_cons(list)) {
+    term_t *head = deref(env, list->args[0]);
+    if (!head || head->type != CONST || !head->name || head->name[0] == '\0' ||
+        head->name[1] != '\0')
+      return false;
+    if (n >= max - 1)
+      return false;
+    buf[n++] = head->name[0];
+    list = deref(env, list->args[1]);
+  }
+  if (!is_nil(list))
+    return false;
+  buf[n] = '\0';
+  return true;
+}
+
+// convert a C string to a list of single-character atoms
+static term_t *str_to_chars(trilog_ctx_t *ctx, const char *s) {
+  term_t *list = make_const(ctx, "[]");
+  for (int i = (int)strlen(s) - 1; i >= 0; i--) {
+    char ch[2] = {s[i], '\0'};
+    term_t *args[2] = {make_const(ctx, ch), list};
+    list = make_func(ctx, ".", args, 2);
+  }
+  return list;
+}
+
+builtin_result_t builtin_read_from_chars(trilog_ctx_t *ctx, term_t *goal,
+                                         env_t *env) {
+  term_t *chars_arg = deref(env, goal->args[0]);
+  if (chars_arg->type == VAR) {
+    throw_instantiation_error(ctx, "read_from_chars/2");
+    return BUILTIN_ERROR;
+  }
+
+  char buf[BCAP_SIZE] = {0};
+  if (!chars_to_str(env, chars_arg, buf, BCAP_SIZE)) {
+    throw_type_error(ctx, "list", chars_arg, "read_from_chars/2");
+    return BUILTIN_ERROR;
+  }
+
+  char *sp = ctx->input_ptr, *ss = ctx->input_start;
+  int sl = ctx->input_line, sv = ctx->clause_var_count;
+
+  ctx->input_ptr = buf;
+  ctx->input_start = buf;
+  ctx->input_line = 1;
+  ctx->clause_var_count = 0;
+  parse_error_clear(ctx);
+  term_t *parsed = parse_term(ctx);
+  bool is_eof = ctx->error.error_is_eof;
+  char *after = ctx->input_ptr;
+  while (isspace((unsigned char)*after))
+    after++;
+  bool has_trailing = (*after != '\0');
+
+  ctx->input_ptr = sp;
+  ctx->input_start = ss;
+  ctx->input_line = sl;
+  ctx->clause_var_count = sv;
+
+  if (!parsed || parse_has_error(ctx) || has_trailing) {
+    parse_error_clear(ctx);
+    if (is_eof) {
+      term_t *eof = make_const(ctx, "end_of_file");
+      term_t *se_args[1] = {eof};
+      throw_error(ctx, make_func(ctx, "syntax_error", se_args, 1),
+                  "read_from_chars/2");
+      return BUILTIN_ERROR;
+    }
+    return BUILTIN_FAIL;
+  }
+  return unify(ctx, goal->args[1], parsed, env) ? BUILTIN_OK : BUILTIN_FAIL;
+}
+
+builtin_result_t builtin_read_term_from_chars(trilog_ctx_t *ctx, term_t *goal,
+                                              env_t *env) {
+  term_t *chars_arg = deref(env, goal->args[0]);
+  if (chars_arg->type == VAR) {
+    throw_instantiation_error(ctx, "read_term_from_chars/3");
+    return BUILTIN_ERROR;
+  }
+
+  char buf[BCAP_SIZE] = {0};
+  if (!chars_to_str(env, chars_arg, buf, BCAP_SIZE)) {
+    throw_type_error(ctx, "list", chars_arg, "read_term_from_chars/3");
+    return BUILTIN_ERROR;
+  }
+
+  char *sp = ctx->input_ptr, *ss = ctx->input_start;
+  int sl = ctx->input_line, sv = ctx->clause_var_count;
+  struct {
+    const char *name;
+    int var_id;
+  } saved_vars[MAX_CLAUSE_VARS];
+  memcpy(saved_vars, ctx->clause_vars, sizeof(saved_vars));
+
+  ctx->input_ptr = buf;
+  ctx->input_start = buf;
+  ctx->input_line = 1;
+  ctx->clause_var_count = 0;
+  parse_error_clear(ctx);
+  term_t *parsed = parse_term(ctx);
+  bool is_eof = ctx->error.error_is_eof;
+  char *after = ctx->input_ptr;
+  while (isspace((unsigned char)*after))
+    after++;
+  bool has_trailing = (*after != '\0');
+
+  // build variable_names list before restoring parser state
+  term_t *bindings = make_const(ctx, "[]");
+  for (int i = ctx->clause_var_count - 1; i >= 0; i--) {
+    const char *vname = ctx->clause_vars[i].name;
+    if (!vname || strcmp(vname, "_") == 0)
+      continue;
+    term_t *vt = make_var(ctx, vname, ctx->clause_vars[i].var_id);
+    term_t *eq[2] = {make_const(ctx, vname), vt};
+    term_t *pair = make_func(ctx, "=", eq, 2);
+    term_t *cell[2] = {pair, bindings};
+    bindings = make_func(ctx, ".", cell, 2);
+  }
+
+  ctx->input_ptr = sp;
+  ctx->input_start = ss;
+  ctx->input_line = sl;
+  ctx->clause_var_count = sv;
+  memcpy(ctx->clause_vars, saved_vars, sizeof(saved_vars));
+
+  if (!parsed || parse_has_error(ctx) || has_trailing) {
+    parse_error_clear(ctx);
+    if (is_eof) {
+      term_t *eof = make_const(ctx, "end_of_file");
+      term_t *se_args[1] = {eof};
+      throw_error(ctx, make_func(ctx, "syntax_error", se_args, 1),
+                  "read_term_from_chars/3");
+      return BUILTIN_ERROR;
+    }
+    return BUILTIN_FAIL;
+  }
+  if (!unify(ctx, goal->args[1], parsed, env))
+    return BUILTIN_FAIL;
+
+  // process options: unify variable_names in the options list
+  term_t *opts = deref(env, goal->args[2]);
+  while (is_cons(opts)) {
+    term_t *opt = deref(env, opts->args[0]);
+    if (opt && opt->type == FUNC && opt->arity == 1 &&
+        strcmp(opt->name, "variable_names") == 0) {
+      if (!unify(ctx, opt->args[0], bindings, env))
+        return BUILTIN_FAIL;
+    }
+    opts = deref(env, opts->args[1]);
+  }
+  return BUILTIN_OK;
+}
+
+builtin_result_t builtin_write_term_to_chars(trilog_ctx_t *ctx, term_t *goal,
+                                             env_t *env) {
+  term_t *term_arg = deref(env, goal->args[0]);
+  term_t *opts = deref(env, goal->args[1]);
+
+  // parse options
+  bool quoted = false;
+  bool numbervars = false;
+  bool ignore_ops = false;
+  (void)ignore_ops; // not yet used
+  (void)numbervars; // not yet used
+  while (is_cons(opts)) {
+    term_t *opt = deref(env, opts->args[0]);
+    if (opt && opt->type == FUNC && opt->arity == 1) {
+      term_t *val = deref(env, opt->args[0]);
+      if (strcmp(opt->name, "quoted") == 0 && val && val->type == CONST &&
+          strcmp(val->name, "true") == 0)
+        quoted = true;
+      else if (strcmp(opt->name, "numbervars") == 0 && val &&
+               val->type == CONST && strcmp(val->name, "true") == 0)
+        numbervars = true;
+      else if (strcmp(opt->name, "ignore_ops") == 0 && val &&
+               val->type == CONST && strcmp(val->name, "true") == 0)
+        ignore_ops = true;
+    }
+    opts = deref(env, opts->args[1]);
+  }
+
+  bcap_t cap;
+  bcap_start(ctx, &cap);
+  print_term(ctx, term_arg, env, quoted);
+  bcap_end(ctx, &cap);
+
+  term_t *result = str_to_chars(ctx, cap.buf);
+  return unify(ctx, goal->args[2], result, env) ? BUILTIN_OK : BUILTIN_FAIL;
+}
+
 builtin_result_t builtin_open(trilog_ctx_t *ctx, term_t *goal, env_t *env) {
   term_t *path_t = deref(env, goal->args[0]);
   term_t *mode_t = deref(env, goal->args[1]);

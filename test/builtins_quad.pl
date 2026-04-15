@@ -596,3 +596,59 @@ bcapply(G) :- call(G).
 
 ?- length("abc", N).
    N = 3.
+
+% --- read_from_chars/2 ---
+
+?- read_from_chars("hello", T).
+   T = hello.
+
+?- read_from_chars("f(a, b)", T).
+   T = f(a, b).
+
+?- read_from_chars("42", T).
+   T = 42.
+
+?- read_from_chars("1+2", T).
+   T = 1+2.
+
+?- read_from_chars("[]", T).
+   T = [].
+
+?- read_from_chars("[1,2,3]", T).
+   T = [1, 2, 3].
+
+% empty char list has no term
+?- read_from_chars([], _).
+   false.
+
+% --- read_term_from_chars/3 ---
+
+?- read_term_from_chars("f(X, Y)", T, [variable_names(Vs)]).
+   T = f(X, Y), Vs = ['X'=X, 'Y'=Y].
+
+?- read_term_from_chars("hello", T, []).
+   T = hello.
+
+?- read_term_from_chars("X", T, [variable_names(Vs)]).
+   T = X, Vs = ['X'=X].
+
+% --- write_term_to_chars/3 ---
+
+?- write_term_to_chars(hello, [], Cs).
+   Cs = "hello".
+
+?- write_term_to_chars(f(a, b), [], Cs).
+   Cs = "f(a, b)".
+
+?- write_term_to_chars(42, [], Cs).
+   Cs = "42".
+
+?- write_term_to_chars([1,2,3], [], Cs).
+   Cs = "[1, 2, 3]".
+
+% roundtrip: write then read
+?- write_term_to_chars(f(a, b), [quoted(true)], Cs), read_from_chars(Cs, T).
+   Cs = "f(a, b)", T = f(a, b).
+
+?- write_term_to_chars(hello, [quoted(true)], Cs), read_from_chars(Cs, T).
+   Cs = "hello", T = hello.

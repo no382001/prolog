@@ -529,6 +529,12 @@ builtin_result_t builtin_term_to_atom(trilog_ctx_t *ctx, term_t *goal,
                                       env_t *env);
 builtin_result_t builtin_atom_to_term(trilog_ctx_t *ctx, term_t *goal,
                                       env_t *env);
+builtin_result_t builtin_read_from_chars(trilog_ctx_t *ctx, term_t *goal,
+                                         env_t *env);
+builtin_result_t builtin_read_term_from_chars(trilog_ctx_t *ctx, term_t *goal,
+                                              env_t *env);
+builtin_result_t builtin_write_term_to_chars(trilog_ctx_t *ctx, term_t *goal,
+                                             env_t *env);
 builtin_result_t builtin_open(trilog_ctx_t *ctx, term_t *goal, env_t *env);
 builtin_result_t builtin_close(trilog_ctx_t *ctx, term_t *goal, env_t *env);
 builtin_result_t builtin_read_line_to_atom(trilog_ctx_t *ctx, term_t *goal,
