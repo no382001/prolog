@@ -535,10 +535,20 @@ builtin_result_t builtin_read_term_from_chars(trilog_ctx_t *ctx, term_t *goal,
                                               env_t *env);
 builtin_result_t builtin_write_term_to_chars(trilog_ctx_t *ctx, term_t *goal,
                                              env_t *env);
+builtin_result_t builtin_sub_chars(trilog_ctx_t *ctx, term_t *goal, env_t *env);
+builtin_result_t builtin_chars_replace(trilog_ctx_t *ctx, term_t *goal,
+                                       env_t *env);
+builtin_result_t builtin_chars_replace_all(trilog_ctx_t *ctx, term_t *goal,
+                                           env_t *env);
 builtin_result_t builtin_open(trilog_ctx_t *ctx, term_t *goal, env_t *env);
 builtin_result_t builtin_close(trilog_ctx_t *ctx, term_t *goal, env_t *env);
 builtin_result_t builtin_read_line_to_atom(trilog_ctx_t *ctx, term_t *goal,
                                            env_t *env);
+builtin_result_t builtin_read_line_to_chars(trilog_ctx_t *ctx, term_t *goal,
+                                            env_t *env);
+builtin_result_t builtin_put_chars(trilog_ctx_t *ctx, term_t *goal, env_t *env);
+builtin_result_t builtin_put_chars2(trilog_ctx_t *ctx, term_t *goal,
+                                    env_t *env);
 builtin_result_t builtin_get_char(trilog_ctx_t *ctx, term_t *goal, env_t *env);
 builtin_result_t builtin_read_term(trilog_ctx_t *ctx, term_t *goal, env_t *env);
 

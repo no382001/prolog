@@ -555,6 +555,121 @@ builtin_result_t builtin_write_term_to_chars(trilog_ctx_t *ctx, term_t *goal,
   return unify(ctx, goal->args[2], result, env) ? BUILTIN_OK : BUILTIN_FAIL;
 }
 
+//****
+//* char list string operations (C-level, avoids Prolog term explosion)
+//****
+
+// sub_chars(+Chars, +Sub) -- true if Sub is a substring of Chars
+builtin_result_t builtin_sub_chars(trilog_ctx_t *ctx, term_t *goal,
+                                   env_t *env) {
+  (void)ctx;
+  term_t *text_arg = deref(env, goal->args[0]);
+  term_t *sub_arg = deref(env, goal->args[1]);
+
+  char text[BCAP_SIZE] = {0};
+  char sub[BCAP_SIZE] = {0};
+  if (!chars_to_str(env, text_arg, text, BCAP_SIZE))
+    return BUILTIN_FAIL;
+  if (!chars_to_str(env, sub_arg, sub, BCAP_SIZE))
+    return BUILTIN_FAIL;
+
+  return strstr(text, sub) ? BUILTIN_OK : BUILTIN_FAIL;
+}
+
+// chars_replace(+Text, +Search, +Replace, -Result)
+// replace first occurrence of Search in Text with Replace
+builtin_result_t builtin_chars_replace(trilog_ctx_t *ctx, term_t *goal,
+                                       env_t *env) {
+  char text[BCAP_SIZE] = {0};
+  char search[BCAP_SIZE] = {0};
+  char replace[BCAP_SIZE] = {0};
+
+  if (!chars_to_str(env, deref(env, goal->args[0]), text, BCAP_SIZE))
+    return BUILTIN_FAIL;
+  if (!chars_to_str(env, deref(env, goal->args[1]), search, BCAP_SIZE))
+    return BUILTIN_FAIL;
+  if (!chars_to_str(env, deref(env, goal->args[2]), replace, BCAP_SIZE))
+    return BUILTIN_FAIL;
+
+  int slen = (int)strlen(search);
+  if (slen == 0)
+    return BUILTIN_FAIL;
+
+  char *pos = strstr(text, search);
+  if (!pos) {
+    return unify(ctx, goal->args[3], str_to_chars(ctx, text), env)
+               ? BUILTIN_OK
+               : BUILTIN_FAIL;
+  }
+
+  char result[BCAP_SIZE] = {0};
+  int prefix_len = (int)(pos - text);
+  int rlen = (int)strlen(replace);
+  int tlen = (int)strlen(text);
+  int new_len = prefix_len + rlen + (tlen - prefix_len - slen);
+  if (new_len >= BCAP_SIZE)
+    return BUILTIN_FAIL;
+
+  memcpy(result, text, prefix_len);
+  memcpy(result + prefix_len, replace, rlen);
+  memcpy(result + prefix_len + rlen, pos + slen, tlen - prefix_len - slen);
+  result[new_len] = '\0';
+
+  return unify(ctx, goal->args[3], str_to_chars(ctx, result), env)
+             ? BUILTIN_OK
+             : BUILTIN_FAIL;
+}
+
+// chars_replace_all(+Text, +Search, +Replace, -Result)
+// replace all occurrences of Search in Text with Replace
+builtin_result_t builtin_chars_replace_all(trilog_ctx_t *ctx, term_t *goal,
+                                           env_t *env) {
+  char text[BCAP_SIZE] = {0};
+  char search[BCAP_SIZE] = {0};
+  char replace[BCAP_SIZE] = {0};
+
+  if (!chars_to_str(env, deref(env, goal->args[0]), text, BCAP_SIZE))
+    return BUILTIN_FAIL;
+  if (!chars_to_str(env, deref(env, goal->args[1]), search, BCAP_SIZE))
+    return BUILTIN_FAIL;
+  if (!chars_to_str(env, deref(env, goal->args[2]), replace, BCAP_SIZE))
+    return BUILTIN_FAIL;
+
+  int slen = (int)strlen(search);
+  if (slen == 0)
+    return BUILTIN_FAIL;
+
+  int rlen = (int)strlen(replace);
+  char result[BCAP_SIZE] = {0};
+  int rpos = 0;
+  char *p = text;
+
+  while (*p) {
+    char *found = strstr(p, search);
+    if (!found) {
+      int rem = (int)strlen(p);
+      if (rpos + rem >= BCAP_SIZE)
+        return BUILTIN_FAIL;
+      memcpy(result + rpos, p, rem);
+      rpos += rem;
+      break;
+    }
+    int chunk = (int)(found - p);
+    if (rpos + chunk + rlen >= BCAP_SIZE)
+      return BUILTIN_FAIL;
+    memcpy(result + rpos, p, chunk);
+    rpos += chunk;
+    memcpy(result + rpos, replace, rlen);
+    rpos += rlen;
+    p = found + slen;
+  }
+  result[rpos] = '\0';
+
+  return unify(ctx, goal->args[3], str_to_chars(ctx, result), env)
+             ? BUILTIN_OK
+             : BUILTIN_FAIL;
+}
+
 builtin_result_t builtin_open(trilog_ctx_t *ctx, term_t *goal, env_t *env) {
   term_t *path_t = deref(env, goal->args[0]);
   term_t *mode_t = deref(env, goal->args[1]);
@@ -634,6 +749,62 @@ builtin_result_t builtin_read_line_to_atom(trilog_ctx_t *ctx, term_t *goal,
   }
 
   return unify(ctx, goal->args[1], result, env) ? BUILTIN_OK : BUILTIN_FAIL;
+}
+
+builtin_result_t builtin_read_line_to_chars(trilog_ctx_t *ctx, term_t *goal,
+                                            env_t *env) {
+  char line[1024];
+  char *r;
+
+  term_t *stream_arg = deref(env, goal->args[0]);
+  bool is_user = stream_arg && stream_arg->type == CONST &&
+                 (strcmp(stream_arg->name, "user_input") == 0 ||
+                  strcmp(stream_arg->name, "user") == 0);
+  if (is_user) {
+    r = io_read_line(ctx, line, sizeof(line));
+  } else {
+    int id;
+    if (!get_stream_id(env, stream_arg, &id))
+      return BUILTIN_FAIL;
+    if (id < 0 || id >= MAX_OPEN_STREAMS || !ctx->open_streams[id])
+      return BUILTIN_FAIL;
+    r = io_file_read_line(ctx, ctx->open_streams[id], line, sizeof(line));
+  }
+  term_t *result;
+  if (!r) {
+    result = make_const(ctx, "end_of_file");
+  } else {
+    line[strcspn(line, "\n")] = '\0';
+    result = str_to_chars(ctx, line);
+  }
+
+  return unify(ctx, goal->args[1], result, env) ? BUILTIN_OK : BUILTIN_FAIL;
+}
+
+builtin_result_t builtin_put_chars(trilog_ctx_t *ctx, term_t *goal,
+                                   env_t *env) {
+  term_t *chars_arg = deref(env, goal->args[0]);
+  char buf[BCAP_SIZE] = {0};
+  if (!chars_to_str(env, chars_arg, buf, BCAP_SIZE))
+    return BUILTIN_FAIL;
+  io_write_str(ctx, buf);
+  return BUILTIN_OK;
+}
+
+builtin_result_t builtin_put_chars2(trilog_ctx_t *ctx, term_t *goal,
+                                    env_t *env) {
+  void *h = resolve_output_stream(ctx, env, goal->args[0]);
+  if (h == (void *)-1)
+    return BUILTIN_FAIL;
+  term_t *chars_arg = deref(env, goal->args[1]);
+  char buf[BCAP_SIZE] = {0};
+  if (!chars_to_str(env, chars_arg, buf, BCAP_SIZE))
+    return BUILTIN_FAIL;
+  if (!h)
+    io_write_str(ctx, buf);
+  else
+    io_file_write(ctx, h, buf);
+  return BUILTIN_OK;
 }
 
 builtin_result_t builtin_get_char(trilog_ctx_t *ctx, term_t *goal, env_t *env) {

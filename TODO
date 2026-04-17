@@ -18,3 +18,7 @@ ledit:
 since we are not working with that much memory, stability should be first
 
 i really shouldnt be having that dynamic array at the end of the cxt struct, c89 does not have it - i could hack it with [1] but thats ub, with malloc it could work 
+
+strings get deduplicated, so when i read a string its a list of atoms that are actually just chars, and they are deduped, but they are functor/2 ',' with 2 members, the first and the rest list of atoms
+
+string compaction, we are wasting 3x memory on strings
