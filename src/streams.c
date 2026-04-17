@@ -360,17 +360,26 @@ builtin_result_t builtin_atom_to_term(trilog_ctx_t *ctx, term_t *goal,
 //****
 
 // convert a list of single-character atoms to a C string
-static bool chars_to_str(env_t *env, term_t *list, char *buf, int max) {
+static bool chars_to_str(trilog_ctx_t *ctx, env_t *env, term_t *list, char *buf,
+                         int max) {
   int n = 0;
+  // fast path: packed string
+  if (list->type == STR) {
+    if (list->arity >= max)
+      return false;
+    memcpy(buf, list->name, list->arity);
+    buf[list->arity] = '\0';
+    return true;
+  }
   while (is_cons(list)) {
-    term_t *head = deref(env, list->args[0]);
+    term_t *head = deref(env, list_head(ctx, list));
     if (!head || head->type != CONST || !head->name || head->name[0] == '\0' ||
         head->name[1] != '\0')
       return false;
     if (n >= max - 1)
       return false;
     buf[n++] = head->name[0];
-    list = deref(env, list->args[1]);
+    list = deref(env, list_tail(ctx, list));
   }
   if (!is_nil(list))
     return false;
@@ -380,13 +389,9 @@ static bool chars_to_str(env_t *env, term_t *list, char *buf, int max) {
 
 // convert a C string to a list of single-character atoms
 static term_t *str_to_chars(trilog_ctx_t *ctx, const char *s) {
-  term_t *list = make_const(ctx, "[]");
-  for (int i = (int)strlen(s) - 1; i >= 0; i--) {
-    char ch[2] = {s[i], '\0'};
-    term_t *args[2] = {make_const(ctx, ch), list};
-    list = make_func(ctx, ".", args, 2);
-  }
-  return list;
+  int len = (int)strlen(s);
+  const char *data = intern_name(ctx, s);
+  return make_str(ctx, data, len);
 }
 
 builtin_result_t builtin_read_from_chars(trilog_ctx_t *ctx, term_t *goal,
@@ -398,7 +403,7 @@ builtin_result_t builtin_read_from_chars(trilog_ctx_t *ctx, term_t *goal,
   }
 
   char buf[BCAP_SIZE] = {0};
-  if (!chars_to_str(env, chars_arg, buf, BCAP_SIZE)) {
+  if (!chars_to_str(ctx, env, chars_arg, buf, BCAP_SIZE)) {
     throw_type_error(ctx, "list", chars_arg, "read_from_chars/2");
     return BUILTIN_ERROR;
   }
@@ -446,7 +451,7 @@ builtin_result_t builtin_read_term_from_chars(trilog_ctx_t *ctx, term_t *goal,
   }
 
   char buf[BCAP_SIZE] = {0};
-  if (!chars_to_str(env, chars_arg, buf, BCAP_SIZE)) {
+  if (!chars_to_str(ctx, env, chars_arg, buf, BCAP_SIZE)) {
     throw_type_error(ctx, "list", chars_arg, "read_term_from_chars/3");
     return BUILTIN_ERROR;
   }
@@ -507,13 +512,13 @@ builtin_result_t builtin_read_term_from_chars(trilog_ctx_t *ctx, term_t *goal,
   // process options: unify variable_names in the options list
   term_t *opts = deref(env, goal->args[2]);
   while (is_cons(opts)) {
-    term_t *opt = deref(env, opts->args[0]);
+    term_t *opt = deref(env, list_head(ctx, opts));
     if (opt && opt->type == FUNC && opt->arity == 1 &&
         strcmp(opt->name, "variable_names") == 0) {
       if (!unify(ctx, opt->args[0], bindings, env))
         return BUILTIN_FAIL;
     }
-    opts = deref(env, opts->args[1]);
+    opts = deref(env, list_tail(ctx, opts));
   }
   return BUILTIN_OK;
 }
@@ -530,7 +535,7 @@ builtin_result_t builtin_write_term_to_chars(trilog_ctx_t *ctx, term_t *goal,
   (void)ignore_ops; // not yet used
   (void)numbervars; // not yet used
   while (is_cons(opts)) {
-    term_t *opt = deref(env, opts->args[0]);
+    term_t *opt = deref(env, list_head(ctx, opts));
     if (opt && opt->type == FUNC && opt->arity == 1) {
       term_t *val = deref(env, opt->args[0]);
       if (strcmp(opt->name, "quoted") == 0 && val && val->type == CONST &&
@@ -543,7 +548,7 @@ builtin_result_t builtin_write_term_to_chars(trilog_ctx_t *ctx, term_t *goal,
                val->type == CONST && strcmp(val->name, "true") == 0)
         ignore_ops = true;
     }
-    opts = deref(env, opts->args[1]);
+    opts = deref(env, list_tail(ctx, opts));
   }
 
   bcap_t cap;
@@ -568,9 +573,9 @@ builtin_result_t builtin_sub_chars(trilog_ctx_t *ctx, term_t *goal,
 
   char text[BCAP_SIZE] = {0};
   char sub[BCAP_SIZE] = {0};
-  if (!chars_to_str(env, text_arg, text, BCAP_SIZE))
+  if (!chars_to_str(ctx, env, text_arg, text, BCAP_SIZE))
     return BUILTIN_FAIL;
-  if (!chars_to_str(env, sub_arg, sub, BCAP_SIZE))
+  if (!chars_to_str(ctx, env, sub_arg, sub, BCAP_SIZE))
     return BUILTIN_FAIL;
 
   return strstr(text, sub) ? BUILTIN_OK : BUILTIN_FAIL;
@@ -584,11 +589,11 @@ builtin_result_t builtin_chars_replace(trilog_ctx_t *ctx, term_t *goal,
   char search[BCAP_SIZE] = {0};
   char replace[BCAP_SIZE] = {0};
 
-  if (!chars_to_str(env, deref(env, goal->args[0]), text, BCAP_SIZE))
+  if (!chars_to_str(ctx, env, deref(env, goal->args[0]), text, BCAP_SIZE))
     return BUILTIN_FAIL;
-  if (!chars_to_str(env, deref(env, goal->args[1]), search, BCAP_SIZE))
+  if (!chars_to_str(ctx, env, deref(env, goal->args[1]), search, BCAP_SIZE))
     return BUILTIN_FAIL;
-  if (!chars_to_str(env, deref(env, goal->args[2]), replace, BCAP_SIZE))
+  if (!chars_to_str(ctx, env, deref(env, goal->args[2]), replace, BCAP_SIZE))
     return BUILTIN_FAIL;
 
   int slen = (int)strlen(search);
@@ -628,11 +633,11 @@ builtin_result_t builtin_chars_replace_all(trilog_ctx_t *ctx, term_t *goal,
   char search[BCAP_SIZE] = {0};
   char replace[BCAP_SIZE] = {0};
 
-  if (!chars_to_str(env, deref(env, goal->args[0]), text, BCAP_SIZE))
+  if (!chars_to_str(ctx, env, deref(env, goal->args[0]), text, BCAP_SIZE))
     return BUILTIN_FAIL;
-  if (!chars_to_str(env, deref(env, goal->args[1]), search, BCAP_SIZE))
+  if (!chars_to_str(ctx, env, deref(env, goal->args[1]), search, BCAP_SIZE))
     return BUILTIN_FAIL;
-  if (!chars_to_str(env, deref(env, goal->args[2]), replace, BCAP_SIZE))
+  if (!chars_to_str(ctx, env, deref(env, goal->args[2]), replace, BCAP_SIZE))
     return BUILTIN_FAIL;
 
   int slen = (int)strlen(search);
@@ -785,7 +790,7 @@ builtin_result_t builtin_put_chars(trilog_ctx_t *ctx, term_t *goal,
                                    env_t *env) {
   term_t *chars_arg = deref(env, goal->args[0]);
   char buf[BCAP_SIZE] = {0};
-  if (!chars_to_str(env, chars_arg, buf, BCAP_SIZE))
+  if (!chars_to_str(ctx, env, chars_arg, buf, BCAP_SIZE))
     return BUILTIN_FAIL;
   io_write_str(ctx, buf);
   return BUILTIN_OK;
@@ -798,7 +803,7 @@ builtin_result_t builtin_put_chars2(trilog_ctx_t *ctx, term_t *goal,
     return BUILTIN_FAIL;
   term_t *chars_arg = deref(env, goal->args[1]);
   char buf[BCAP_SIZE] = {0};
-  if (!chars_to_str(env, chars_arg, buf, BCAP_SIZE))
+  if (!chars_to_str(ctx, env, chars_arg, buf, BCAP_SIZE))
     return BUILTIN_FAIL;
   if (!h)
     io_write_str(ctx, buf);

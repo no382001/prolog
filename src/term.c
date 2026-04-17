@@ -112,6 +112,33 @@ term_t *make_func(trilog_ctx_t *ctx, const char *name, term_t **args,
   return t;
 }
 
+term_t *make_str(trilog_ctx_t *ctx, const char *data, int len) {
+  term_t *t = term_alloc(ctx, sizeof(term_t));
+  if (!t)
+    return NULL;
+  t->type = STR;
+  t->name = data;
+  t->arity = len;
+  return t;
+}
+
+term_t *list_head(trilog_ctx_t *ctx, const term_t *t) {
+  if (t->type == STR) {
+    assert(t->arity > 0);
+    char ch[2] = {t->name[0], '\0'};
+    return make_const(ctx, ch);
+  }
+  return t->args[0];
+}
+
+term_t *list_tail(trilog_ctx_t *ctx, const term_t *t) {
+  if (t->type == STR) {
+    assert(t->arity > 0);
+    return make_str(ctx, t->name + 1, t->arity - 1);
+  }
+  return t->args[1];
+}
+
 // make_term: backward compat wrapper (used in a few places in builtins)
 term_t *make_term(trilog_ctx_t *ctx, term_type type, const char *name,
                   term_t **args, int arity) {
@@ -135,7 +162,7 @@ term_t *make_term(trilog_ctx_t *ctx, term_type type, const char *name,
 term_t *rename_vars_mapped(trilog_ctx_t *ctx, term_t *t, var_id_map_t *map) {
   if (!t)
     return NULL;
-  if (t->type == CONST || t->type == INT)
+  if (t->type == CONST || t->type == INT || t->type == STR)
     return t;
   if (t->type == VAR) {
     int old_id = t->arity;
@@ -179,6 +206,8 @@ static term_t *copy_term_into_pool(trilog_ctx_t *ctx, term_t *t) {
   }
   case VAR:
     return make_var(ctx, t->name, t->arity);
+  case STR:
+    return make_str(ctx, t->name, t->arity);
   case FUNC: {
     term_t *args[MAX_ARGS];
     for (int i = 0; i < t->arity; i++) {

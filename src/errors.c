@@ -13,6 +13,10 @@ static void term_to_buf(const term_t *t, char *buf, int sz) {
     snprintf(buf, sz, "%s", t->name);
     return;
   }
+  if (t->type == STR) {
+    snprintf(buf, sz, "\"%.*s\"", t->arity, t->name);
+    return;
+  }
   if (t->type == FUNC) {
     // write f/n indicators in infix form
     if (strcmp(t->name, "/") == 0 && t->arity == 2) {

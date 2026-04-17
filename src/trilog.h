@@ -198,7 +198,7 @@ typedef struct {
 //* term representation
 //****
 
-typedef enum { CONST, VAR, FUNC, INT } term_type;
+typedef enum { CONST, VAR, FUNC, INT, STR } term_type;
 
 // escape sequence table used by both the parser (decode) and printer (encode).
 // each entry maps a raw byte to its two-character escape sequence.
@@ -372,13 +372,15 @@ struct trilog_ctx {
 //****
 
 static inline bool is_cons(const term_t *t) {
-  return t && t->type == FUNC && t->name[0] == '.' && t->name[1] == '\0' &&
-         t->arity == 2;
+  return t && ((t->type == FUNC && t->name[0] == '.' && t->name[1] == '\0' &&
+                t->arity == 2) ||
+               (t->type == STR && t->arity > 0));
 }
 
 static inline bool is_nil(const term_t *t) {
-  return t && t->type == CONST && t->name[0] == '[' && t->name[1] == ']' &&
-         t->name[2] == '\0';
+  return t && ((t->type == CONST && t->name[0] == '[' && t->name[1] == ']' &&
+                t->name[2] == '\0') ||
+               (t->type == STR && t->arity == 0));
 }
 
 static inline bool term_as_int(const term_t *t, int *out) {
@@ -437,6 +439,9 @@ term_t *make_int(trilog_ctx_t *ctx, int n);
 term_t *make_var(trilog_ctx_t *ctx, const char *name, int var_id);
 term_t *make_func(trilog_ctx_t *ctx, const char *name, term_t **args,
                   int arity);
+term_t *make_str(trilog_ctx_t *ctx, const char *data, int len);
+term_t *list_head(trilog_ctx_t *ctx, const term_t *t);
+term_t *list_tail(trilog_ctx_t *ctx, const term_t *t);
 
 void skip_ws(trilog_ctx_t *ctx);
 term_t *parse_term(trilog_ctx_t *ctx);

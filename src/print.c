@@ -91,22 +91,54 @@ void print_term(trilog_ctx_t *ctx, term_t *t, env_t *env, bool quoted) {
 
   t = deref(env, t);
 
+  // packed string: print directly as double-quoted string
+  if (t->type == STR) {
+    if (t->arity == 0) {
+      io_write_str(ctx, "[]");
+      return;
+    }
+    io_write_str(ctx, "\"");
+    for (int i = 0; i < t->arity; i++) {
+      char c = t->name[i];
+      if (c == '"' || c == '\\') {
+        char esc[3] = {'\\', c, '\0'};
+        io_write_str(ctx, esc);
+      } else {
+        bool found = false;
+        for (const str_escape_t *e = STR_ESCAPES; e->raw; e++) {
+          if (c == e->raw) {
+            char esc[3] = {'\\', e->seq, '\0'};
+            io_write_str(ctx, esc);
+            found = true;
+            break;
+          }
+        }
+        if (!found) {
+          char ch[2] = {c, '\0'};
+          io_write_str(ctx, ch);
+        }
+      }
+    }
+    io_write_str(ctx, "\"");
+    return;
+  }
+
   if (is_cons(t)) {
     // print char lists as double-quoted strings (double_quotes = chars)
     term_t *scan = t;
     bool is_chars = true;
     while (is_cons(scan)) {
-      term_t *h = deref(env, scan->args[0]);
+      term_t *h = deref(env, list_head(ctx, scan));
       if (h->type != CONST || !h->name || strlen(h->name) != 1) {
         is_chars = false;
         break;
       }
-      scan = deref(env, scan->args[1]);
+      scan = deref(env, list_tail(ctx, scan));
     }
     if (is_chars && is_nil(scan)) {
       io_write_str(ctx, "\"");
       while (is_cons(t)) {
-        term_t *h = deref(env, t->args[0]);
+        term_t *h = deref(env, list_head(ctx, t));
         char c = h->name[0];
         if (c == '"' || c == '\\') {
           char esc[3] = {'\\', c, '\0'};
@@ -121,7 +153,7 @@ void print_term(trilog_ctx_t *ctx, term_t *t, env_t *env, bool quoted) {
           char ch[2] = {c, '\0'};
           io_write_str(ctx, ch);
         }
-        t = deref(env, t->args[1]);
+        t = deref(env, list_tail(ctx, t));
       }
       io_write_str(ctx, "\"");
       return;
@@ -129,9 +161,8 @@ void print_term(trilog_ctx_t *ctx, term_t *t, env_t *env, bool quoted) {
 
     io_write_str(ctx, "[");
     while (is_cons(t)) {
-      assert(t->arity == 2 && "List node must have arity 2");
-      print_term(ctx, t->args[0], env, quoted);
-      t = deref(env, t->args[1]);
+      print_term(ctx, list_head(ctx, t), env, quoted);
+      t = deref(env, list_tail(ctx, t));
       if (is_cons(t))
         io_write_str(ctx, ", ");
     }

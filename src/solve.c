@@ -169,7 +169,9 @@ static bool has_more_alternatives(trilog_ctx_t *ctx, term_t *goal, env_t *env,
       if (goal_a0 && head_arity > 0) {
         term_t *ha0 = c->head->args[0];
         if (ha0->type != VAR &&
-            !(ha0->type == goal_a0->type && ha0->name == goal_a0->name))
+            !(ha0->type == goal_a0->type && ha0->name == goal_a0->name) &&
+            !(is_cons(goal_a0) && is_cons(ha0)) &&
+            !(is_nil(goal_a0) && is_nil(ha0)))
           continue;
       }
       return true;

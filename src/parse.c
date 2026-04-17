@@ -481,15 +481,9 @@ static term_t *parse_primary(trilog_ctx_t *ctx) {
     ctx->input_ptr++; // skip closing quote
     str_buf[i] = '\0';
 
-    // build list of character atoms (double_quotes = chars)
-    term_t *list = make_const(ctx, "[]");
-    for (int j = (int)i - 1; j >= 0; j--) {
-      char ch_buf[2] = {str_buf[j], '\0'};
-      term_t *ch = make_const(ctx, ch_buf);
-      term_t *cell[2] = {ch, list};
-      list = make_func(ctx, ".", cell, 2);
-    }
-    return list;
+    // build packed string term
+    const char *data = intern_name(ctx, str_buf);
+    return make_str(ctx, data, (int)i);
   }
 
   int avail = MAX_STRING_POOL - ctx->string_pool_offset - 1;

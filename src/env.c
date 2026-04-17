@@ -62,6 +62,8 @@ static term_t *copy_to_perm(trilog_ctx_t *ctx, term_t *t) {
   }
   case VAR:
     return make_var(ctx, t->name, t->arity);
+  case STR:
+    return make_str(ctx, t->name, t->arity);
   case FUNC: {
     term_t *args[MAX_ARGS];
     for (int i = 0; i < t->arity; i++) {
@@ -95,7 +97,7 @@ bool term_refs_range(env_t *env, term_t *t, int from, int to) {
   }
   if (t->type != FUNC)
     return false;
-  for (int i = 0; i < t->arity; i++) {
+  for (int i = 0; i < t->arity && t->type == FUNC; i++) {
     if (term_refs_range(env, t->args[i], from, to))
       return true;
   }
@@ -112,7 +114,7 @@ term_t *substitute(trilog_ctx_t *ctx, env_t *env, term_t *t) {
   if (!t)
     return NULL;
 
-  if (t->type == CONST || t->type == VAR) {
+  if (t->type == CONST || t->type == VAR || t->type == STR) {
     if (ctx->alloc_permanent && term_is_temp(ctx, t))
       return copy_to_perm(ctx, t);
     return t;
