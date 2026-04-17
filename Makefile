@@ -88,8 +88,8 @@ WEB_LIB_SRCS := $(filter-out src/main.c, $(SRCS))
 WEB_ENTRY := $(WEB_DIR)/main_web.c
 
 # arm cortex-m0+ constraints (rp2040, 264kb sram)
-WEB_M0_FLAGS := \
-    -DMAX_NAME=32 \
+SMALL_FLAGS := \
+    -DMAX_NAME=48 \
     -DMAX_LIST_LIT=128 \
     -DMAX_CLAUSES=256 \
     -DMAX_BINDINGS=1024 \
@@ -102,7 +102,27 @@ WEB_M0_FLAGS := \
     -DMAX_MAKE_FILES=4 \
     -DMAX_OPEN_STREAMS=4 \
     -DMAX_CLAUSE_VARS=32 \
-    -DTERM_POOL_BYTES=196608
+    -DMAX_OPS=48 \
+    -DTERM_POOL_BYTES=49152
+
+SMALL_SRCS := src/arith.c src/builtins.c src/cli.c src/debug.c src/env.c \
+              src/errors.c src/ffi.c src/io.c src/main.c src/parse.c \
+              src/print.c src/quad.c src/solve.c src/streams.c src/term.c \
+              src/unify.c
+
+.PHONY: small
+small: format
+	$(CC) -std=c11 -Os -ffunction-sections -fdata-sections -Wl,--gc-sections \
+	    $(SMALL_FLAGS) $(SMALL_SRCS) -o $(BUILD_DIR)/trilog-small
+	@strip $(BUILD_DIR)/trilog-small
+	@size $(BUILD_DIR)/trilog-small
+	@echo "--- RAM estimate ---"
+	@echo "  term_pool:   48 KB"
+	@echo "  ctx struct: ~60 KB"
+	@echo "  stack:        4 KB"
+	@echo "  total:     ~112 KB  (of 264 KB RP2040 SRAM)"
+
+WEB_M0_FLAGS := $(SMALL_FLAGS)
 
 .PHONY: web
 web: $(WEB_DIR)/trilog.js
