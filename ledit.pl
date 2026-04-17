@@ -336,32 +336,25 @@ l_do([g|L]) :- !,
 l_do_get_file(Fname) :-
     catch(
         ( open(Fname, read, S),
-          l_read_file(S),
-          close(S)
+          l_read_file(S)
         ),
         _,
         ( write('? cannot read '), write(Fname), nl )
     ).
 
 l_read_file(S) :-
-    l_read_all_lines(S, Lines),
-    l_bulk_insert(Lines).
+    l_set(read_stream, S),
+    l_read_loop.
 
-l_read_all_lines(S, [Cs|Rest]) :-
+l_read_loop :-
+    l_value(read_stream, S),
     read_line_to_chars(S, Cs),
-    Cs \== end_of_file, !,
-    l_read_all_lines(S, Rest).
-l_read_all_lines(_, []).
-
-l_bulk_insert(Lines) :-
-    l_value(line, (L1, L2)),
-    l_bulk_insert_acc(Lines, L1, NewL1),
-    ( retract(l_value(line, _)) -> true ; true ),
-    assert(l_value(line, (NewL1, L2))).
-
-l_bulk_insert_acc([], L, L).
-l_bulk_insert_acc([Text|Rest], L1, NewL1) :-
-    l_bulk_insert_acc(Rest, [Text|L1], NewL1).
+    ( Cs == end_of_file ->
+        close(S),
+        ( retract(l_value(read_stream, _)) -> true ; true )
+    ; l_set(line, (L1, L2), ([Cs|L1], L2)),
+      l_read_loop
+    ).
 
 % save
 l_do([s|L]) :- !,
