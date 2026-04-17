@@ -311,7 +311,13 @@ A:
     goal_stmt_t sub_goals = goals_alloc(ctx, 1);
     sub_goals.goals[sub_goals.count++] = sub_goal;
 
-    if (solve(ctx, &sub_goals, env)) {
+    int bfloor_save = ctx->bind_floor;
+    if (emark > ctx->bind_floor)
+      ctx->bind_floor = emark;
+    bool sub_ok = solve(ctx, &sub_goals, env);
+    ctx->bind_floor = bfloor_save;
+
+    if (sub_ok) {
       // goal succeeded — continue with remaining goals
       int nrem = cn.count - 1;
       goal_stmt_t new_cn = goals_alloc(ctx, nrem > 0 ? nrem : 0);
@@ -364,7 +370,14 @@ A:
 
       goal_stmt_t cond_goals = goals_alloc(ctx, 1);
       cond_goals.goals[cond_goals.count++] = cond;
-      if (solve(ctx, &cond_goals, env)) {
+
+      int bfloor_save = ctx->bind_floor;
+      if (emark > ctx->bind_floor)
+        ctx->bind_floor = emark;
+      bool cond_ok = solve(ctx, &cond_goals, env);
+      ctx->bind_floor = bfloor_save;
+
+      if (cond_ok) {
         // cond succeeded — commit to then branch
         goal_stmt_t new_cn = goals_alloc(ctx, cn.count);
         new_cn.goals[new_cn.count++] = then_branch;
@@ -422,7 +435,14 @@ A:
 
     goal_stmt_t cond_goals = goals_alloc(ctx, 1);
     cond_goals.goals[cond_goals.count++] = cond;
-    if (solve(ctx, &cond_goals, env)) {
+
+    int bfloor_save = ctx->bind_floor;
+    if (emark > ctx->bind_floor)
+      ctx->bind_floor = emark;
+    bool cond_ok = solve(ctx, &cond_goals, env);
+    ctx->bind_floor = bfloor_save;
+
+    if (cond_ok) {
       goal_stmt_t new_cn = goals_alloc(ctx, cn.count);
       new_cn.goals[new_cn.count++] = then_branch;
       for (int i = 1; i < cn.count; i++)
