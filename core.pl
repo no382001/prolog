@@ -37,12 +37,6 @@ reverse([H|T], Acc, R) :- reverse(T, [H|Acc], R).
 last(X, [X]).
 last(X, [_|T]) :- last(X, T).
 
-perm([], []).
-perm([H|T], P) :- perm(T, PT), insert(H, PT, P).
-
-insert(X, L, [X|L]).
-insert(X, [H|T], [H|R]) :- insert(X, T, R).
-
 between(Low, High, Low) :- Low =< High.
 between(Low, High, X) :- Low < High, Low1 is Low + 1, between(Low1, High, X).
 
@@ -52,6 +46,22 @@ repeat.
 repeat :- repeat.
 
 false :- fail.
+
+succ(X, S) :-
+    (  integer(X)
+    -> S is X + 1
+    ;  integer(S), S > 0
+    -> X is S - 1
+    ).
+
+plus(A, B, C) :-
+    (  integer(A), integer(B)
+    -> C is A + B
+    ;  integer(A), integer(C)
+    -> B is C - A
+    ;  integer(B), integer(C)
+    -> A is C - B
+    ).
 
 forall_fail(Cond, Action) :- call(Cond), \+ call(Action).
 forall(Cond, Action) :- \+ forall_fail(Cond, Action).
