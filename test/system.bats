@@ -134,3 +134,135 @@ TRILOG="./trilog"
   [ "$status" -eq 0 ]
   [[ "$output" == *"ok"* ]]
 }
+
+# --- help flag ---
+
+@test "-h prints usage and exits" {
+  run "$TRILOG" -h
+  [[ "$output" == *"Usage:"* ]]
+  [[ "$output" == *"-e"* ]]
+}
+
+# --- JUnit XML output (-j) ---
+
+@test "-j produces JUnit XML" {
+  rm -rf /tmp/trilog_junit_test
+  mkdir -p /tmp/trilog_junit_test
+  run "$TRILOG" -q test/core_quad.pl -j /tmp/trilog_junit_test
+  [ "$status" -eq 0 ]
+  [ -f /tmp/trilog_junit_test/core_quad.xml ]
+  [[ "$(cat /tmp/trilog_junit_test/core_quad.xml)" == *"<testsuite"* ]]
+  [[ "$(cat /tmp/trilog_junit_test/core_quad.xml)" == *"<testcase"* ]]
+  rm -rf /tmp/trilog_junit_test
+}
+
+# --- catch/throw ---
+
+@test "catch traps exception, recovery goal runs" {
+  result=$(printf "catch(throw(boom), boom, write(caught)).\n" | "$TRILOG" 2>&1)
+  [[ "$result" == *"caught"* ]]
+}
+
+@test "catch passes through on no exception" {
+  result=$(printf "catch(write(ok), _, write(bad)).\n" | "$TRILOG" 2>&1)
+  [[ "$result" == *"ok"* ]]
+  [[ "$result" != *"bad"* ]]
+}
+
+# --- file I/O from Prolog ---
+
+@test "open/write/close creates file with content" {
+  rm -f /tmp/trilog_fio_test.txt
+  printf "open('/tmp/trilog_fio_test.txt', write, S), write(S, hello_world), close(S).\n" \
+    | "$TRILOG" >/dev/null 2>&1
+  [ -f /tmp/trilog_fio_test.txt ]
+  [[ "$(cat /tmp/trilog_fio_test.txt)" == *"hello_world"* ]]
+  rm -f /tmp/trilog_fio_test.txt
+}
+
+# --- backtracking in pipe mode ---
+
+@test "pipe mode: all solutions printed with semicolons" {
+  result=$(printf "member(X, [aa,bb,cc]).\n" | "$TRILOG" 2>&1)
+  [[ "$result" == *"X = aa"* ]]
+  [[ "$result" == *"X = bb"* ]]
+  [[ "$result" == *"X = cc"* ]]
+  [[ "$result" == *";"* ]]
+}
+
+# --- directives in consulted files ---
+
+@test "directive in .pl file executes on consult" {
+  printf ":- assert(from_directive(yes)).\n" > /tmp/trilog_dir_test.pl
+  result=$(printf "consult('/tmp/trilog_dir_test.pl').\nfrom_directive(X), write(X).\n" \
+    | "$TRILOG" 2>&1)
+  [[ "$result" == *"yes"* ]]
+  rm -f /tmp/trilog_dir_test.pl
+}
+
+# --- multiple consults coexist ---
+
+@test "two consulted files both available" {
+  printf "fruit(apple).\n" > /tmp/trilog_a.pl
+  printf "veggie(carrot).\n" > /tmp/trilog_b.pl
+  result=$(printf "consult('/tmp/trilog_a.pl').\nconsult('/tmp/trilog_b.pl').\nfruit(X), write(X), nl.\nveggie(Y), write(Y).\n" \
+    | "$TRILOG" 2>&1)
+  [[ "$result" == *"apple"* ]]
+  [[ "$result" == *"carrot"* ]]
+  rm -f /tmp/trilog_a.pl /tmp/trilog_b.pl
+}
+
+# --- asserta vs assertz ordering ---
+
+@test "asserta inserts before, assertz after" {
+  result=$(printf "assert(c(bb)).\nasserta(c(aa)).\nassert(c(cc)).\nfindall(X,c(X),L), write(L).\n" \
+    | "$TRILOG" 2>&1)
+  [[ "$result" == *"[aa, bb, cc]"* ]]
+}
+
+# --- higher-order predicates ---
+
+@test "maplist applies predicate to each element" {
+  printf "inc(X,Y) :- Y is X + 1.\n" > /tmp/trilog_map.pl
+  result=$(printf "consult('/tmp/trilog_map.pl').\nmaplist(inc, [1,2,3], L), write(L).\n" \
+    | "$TRILOG" 2>&1)
+  [[ "$result" == *"[2, 3, 4]"* ]]
+  rm -f /tmp/trilog_map.pl
+}
+
+@test "foldl accumulates over list" {
+  printf "add(X, S0, S) :- S is S0 + X.\n" > /tmp/trilog_fold.pl
+  result=$(printf "consult('/tmp/trilog_fold.pl').\nfoldl(add, [1,2,3,4], 0, Sum), write(Sum).\n" \
+    | "$TRILOG" 2>&1)
+  [[ "$result" == *"10"* ]]
+  rm -f /tmp/trilog_fold.pl
+}
+
+# --- between/3 ---
+
+@test "between generates integer range" {
+  result=$(printf "findall(X, between(1,5,X), L), write(L).\n" | "$TRILOG" 2>&1)
+  [[ "$result" == *"[1, 2, 3, 4, 5]"* ]]
+}
+
+# --- with_output_to ---
+
+@test "with_output_to captures write into atom" {
+  result=$(printf "with_output_to(atom(X), write(hello)), write(X).\n" | "$TRILOG" 2>&1)
+  [[ "$result" == *"hello"* ]]
+}
+
+# --- term_to_atom / atom_to_term roundtrip ---
+
+@test "term_to_atom and atom_to_term roundtrip" {
+  result=$(printf "term_to_atom(foo(1,bar), A), atom_to_term(A, T, _), write(T).\n" \
+    | "$TRILOG" 2>&1)
+  [[ "$result" == *"foo(1, bar)"* ]]
+}
+
+# --- copy_term ---
+
+@test "copy_term preserves structure with fresh vars" {
+  result=$(printf "copy_term(f(X,X), f(A,B)), A = hello, write(B).\n" | "$TRILOG" 2>&1)
+  [[ "$result" == *"hello"* ]]
+}

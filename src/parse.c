@@ -996,7 +996,8 @@ bool trilog_exec_query_multi(trilog_ctx_t *ctx, char *query,
 //****
 
 static void exec_directive(trilog_ctx_t *ctx, char *buf) {
-  trilog_exec_query(ctx, buf + 2); // skip "?-" or ":-"
+  trilog_exec_query_multi(ctx, buf + 2, NULL, NULL); // silent
+  ctx->has_runtime_error = false;
 }
 
 // accumulate one trimmed line into clause[]. if a complete clause is ready,
