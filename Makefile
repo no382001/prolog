@@ -83,6 +83,13 @@ quad-junit: $(TARGET)
 	done
 	@echo "JUnit reports written to _build/test-results/"
 
+.PHONY: syscheck
+syscheck: $(TARGET)
+	bats test/*.bats
+
+.PHONY: test
+test: quad syscheck
+
 WEB_DIR := web
 WEB_LIB_SRCS := $(filter-out src/main.c, $(SRCS))
 WEB_ENTRY := $(WEB_DIR)/main_web.c
