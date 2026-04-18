@@ -26,4 +26,11 @@ i really shouldnt be having that dynamic array at the end of the cxt struct, c89
 
 strings get deduplicated, so when i read a string its a list of atoms that are actually just chars, and they are deduped, but they are functor/2 ',' with 2 members, the first and the rest list of atoms
 
-string compaction, we are wasting 3x memory on strings
+papers to look into:
+    - Aït-Kaci, "Warren's Abstract Machine: A Tutorial Reconstruction" (1991)
+    - Demoen, "Dynamic attributes, their hProlog implementation" (2002)
+    - Appleby et al., "Garbage Collection for Prolog Based on WAM" (1988)
+    - Tarau, "The BinProlog Experience: Architecture and Implementation Choices"
+    - Tarau & Dahl, "Logic Programming and Logic Grammars with First-Order Continuations"
+    - Lindholm, "Unification and the Efficient Execution of Prolog"
+    - Zhou, "Parameter Passing and Control Stack Management in Prolog Implementation Revisited" (1996)
