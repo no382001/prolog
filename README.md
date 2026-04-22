@@ -2,8 +2,6 @@
 
 A Prolog interpreter aiming to be embeddable, based on van Emden's ABC algorithm (hence the three/tri), written in C11.
 
-> This README is not up to date
-
 ## Contents
 
 - [Build](#build)
@@ -54,6 +52,8 @@ Standard Prolog syntax. Integers, atoms, functors, lists, rules and facts. Comme
 
 Prefix: `\+` (negation), `\` (bitwise complement).
 
+`op/3` and `current_op/3` are supported for defining and querying operators at runtime.
+
 ### Arithmetic
 
 Integer arithmetic via `is/2`. Operators: `+ - * / // mod max min >> << /\ \/ xor`. Unary: `- abs \`. ISO overflow and zero-divisor errors are raised.
@@ -74,10 +74,10 @@ Integer arithmetic via `is/2`. Operators: `+ - * / // mod max min >> << /\ \/ xo
 | `compare/3` `sort/2` | ordering |
 | `atom_length/2` `atom_concat/3` `atom_chars/2` `atom_codes/2` `sub_atom/5` | atoms |
 | `char_code/2` `atom_number/2` `number_chars/2` `number_codes/2` | conversion |
-| `write/1` `writeq/1` `nl` `get_char/1` | basic I/O |
+| `write/1` `write/2` `writeq/1` `writeq/2` `nl/0` `nl/1` `flush_output/0` `get_char/1` | I/O; `/2` variants take a stream as first arg |
 | `open/3` `close/1` `read_term/2` | streams |
 | `current_prolog_flag/2` | flags: `max_integer` `min_integer` `bounded` `integer_rounding_function` |
-| `is/2` `succ/2` `plus/3` | arithmetic |
+| `is/2` | arithmetic |
 
 ### Extensions
 
@@ -89,13 +89,16 @@ These are non-ISO predicates
 | `consulted(-Ls)` | unifies `Ls` with the list of currently loaded files |
 | `unconsult(+F)` | unloads all clauses contributed by file `F`; fails if `F` is not loaded |
 | `msort/2` | sort without removing duplicates |
-| `writeln/1` `with_output_to(+Sink, +Goal)` | output; Sink: `atom(A)`, `string(S)`, `codes(Cs)`, `chars(Chs)` |
-| `read_line_to_atom/2` | read one line from a stream; unifies `end_of_file` at EOF |
+| `writeln/1` `writeln/2` `with_output_to(+Sink, +Goal)` | output; Sink: `atom(A)`, `codes(Cs)`, `chars(Chs)` |
+| `read_line_to_atom/2` `read_line_to_chars/2` | read one line from a stream; unifies `end_of_file` at EOF |
+| `put_chars/1` `put_chars/2` | write a char list to stdout / stream |
+| `read_from_chars/2` `read_term_from_chars/3` | read a term from a char list |
+| `write_term_to_chars/3` | write a term to a char list with options |
 | `atom_to_term/3` `term_to_atom/2` | term <-> atom |
 
 ### Standard library (`core.pl`)
 
-Loaded automatically. Provides: `between/3`, `forall/2`, `member/2`, `append/3`, `length/2`, `reverse/2`, `last/2`.
+Loaded automatically. Provides: `false/0`, `repeat/0`, `succ/2`, `plus/3`, `between/3`, `forall/2`, `member/2`, `select/3`, `append/3`, `length/2`, `reverse/2`, `last/2`, `nth0/3`, `nth1/3`, `maplist/2-4`, `foldl/4-6`, `countall/3`.
 
 ## Embedding
 
@@ -166,8 +169,10 @@ Tests use the [quad format](https://web.liminal.cafe/~byakuren/flowlog/docs/QUAD
 ```
 
 ```sh
-make quad          # TAP output
+make quad          # TAP output via quad format
 make quad-junit    # JUnit XML → _build/test-results/
+make syscheck      # bats system tests (test/*.bats)
+make test          # quad + syscheck
 ```
 
 There are ISO conformance tests (`test/iso_quad.pl`) that run but do not fail the build.
