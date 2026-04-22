@@ -8,7 +8,6 @@ on:
 permissions:
   contents: read
   actions: read
-  checks: write
 
 jobs:
   build:
@@ -39,7 +38,6 @@ jobs:
     permissions:
       contents: read
       actions: read
-      checks: write
     steps:
       - name: checkout code
         uses: actions/checkout@v4
@@ -72,9 +70,6 @@ jobs:
         if: always()
         with:
           name: Tests
-          path: _build/test-results/*.xml
-          reporter: java-junit
-          fail-on-error: false
 
   deploy:
     runs-on: ubuntu-latest
