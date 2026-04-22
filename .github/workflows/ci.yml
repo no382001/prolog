@@ -20,7 +20,7 @@ jobs:
       - name: install build deps
         run: |
           sudo apt-get update
-          sudo apt-get install -y build-essential clang-format
+          sudo apt-get install -y build-essential clang-format bats
 
       - name: build
         run: make
@@ -49,16 +49,29 @@ jobs:
         with:
           name: trilog-build
 
+      - name: install bats
+        run: sudo apt-get install -y bats
+
       - name: run quad tests
         run: |
           chmod +x ./trilog
           make quad-junit
 
+      - name: run system tests
+        run: make syscheck-junit
+
+      - name: upload test results
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: test-results
+          path: _build/test-results/*.xml
+
       - name: publish test results
         uses: dorny/test-reporter@v1
         if: always()
         with:
-          name: Quad Tests
+          name: Tests
           path: _build/test-results/*.xml
           reporter: java-junit
           fail-on-error: false

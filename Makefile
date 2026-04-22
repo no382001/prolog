@@ -87,6 +87,11 @@ quad-junit: $(TARGET)
 syscheck: $(TARGET)
 	bats test/*.bats
 
+.PHONY: syscheck-junit
+syscheck-junit: $(TARGET)
+	@mkdir -p _build/test-results
+	bats --report-formatter junit --output _build/test-results test/*.bats
+
 .PHONY: test
 test: quad syscheck
 
