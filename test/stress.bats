@@ -5,6 +5,11 @@ STATS_FILE="/tmp/trilog_stress_stats"
 
 setup() {
   rm -f /tmp/trilog_stress_*
+  # measure baseline (just core.pl loaded, no user clauses)
+  echo 'true.' | "$TRILOG" -s 2>/tmp/trilog_stress_baseline >/dev/null
+  BASE_PERM=$(grep "^perm_pool=" /tmp/trilog_stress_baseline | cut -d= -f2)
+  BASE_CLAUSES=$(grep "^clauses=" /tmp/trilog_stress_baseline | cut -d= -f2)
+  export BASE_PERM BASE_CLAUSES
 }
 
 teardown() {
@@ -22,8 +27,8 @@ stat_val() {
   echo 'findall(X, between(1,1000,X), L), length(L, N), write(N).' \
     | timeout 10 "$TRILOG" -s 2>"$STATS_FILE" | grep -q '1000'
   # temp-only query: perm and clauses unchanged from baseline
-  [ "$(stat_val perm_pool)" -eq 20768 ]
-  [ "$(stat_val clauses)" -eq 52 ]
+  [ "$(stat_val perm_pool)" -eq "$BASE_PERM" ]
+  [ "$(stat_val clauses)" -eq "$BASE_CLAUSES" ]
   [ "$(stat_val term_pool_peak)" -gt 0 ]
 }
 
@@ -33,8 +38,8 @@ stat_val() {
   echo 'findall(X, between(1,200,X), L), reverse(L, R), sort(R, S), length(S, N), write(N).' \
     | timeout 10 "$TRILOG" -s 2>"$STATS_FILE" | grep -q '200'
   # temp-only: no perm growth
-  [ "$(stat_val perm_pool)" -eq 20768 ]
-  [ "$(stat_val clauses)" -eq 52 ]
+  [ "$(stat_val perm_pool)" -eq "$BASE_PERM" ]
+  [ "$(stat_val clauses)" -eq "$BASE_CLAUSES" ]
 }
 
 # --- 500 dynamic asserts + query ---
@@ -48,8 +53,8 @@ print('findall(X, item(X), L), length(L, N), write(N).')
   result=$(tail -1 /tmp/trilog_stress_assert.txt)
   [[ "$result" == *"500"* ]]
   # 500 asserts grow perm and clauses
-  [ "$(stat_val perm_pool)" -gt 20768 ]
-  [ "$(stat_val clauses)" -eq 552 ]
+  [ "$(stat_val perm_pool)" -gt "$BASE_PERM" ]
+  [ "$(stat_val clauses)" -eq $(( BASE_CLAUSES + 500 )) ]
   [ "$(stat_val string_pool)" -gt 644 ]
 }
 
@@ -69,8 +74,8 @@ print('findall(X, st(X), L3), length(L3, N3), write(N3), write(s), nl.')
   [ "$(echo "$result" | sed -n 1p)" = "100s" ]
   [ "$(echo "$result" | sed -n 2p)" = "0s" ]
   [ "$(echo "$result" | sed -n 3p)" = "100s" ]
-  # final state: 52 core + 100 re-asserted
-  [ "$(stat_val clauses)" -eq 152 ]
+  # final state: baseline + 100 re-asserted
+  [ "$(stat_val clauses)" -eq $(( BASE_CLAUSES + 100 )) ]
 }
 
 # --- 20 consult/unconsult cycles, no leak ---
@@ -112,8 +117,8 @@ print('append([1,2],[3],X), write(X).')
     | timeout 10 "$TRILOG" -s 2>"$STATS_FILE" | grep -c 's$')
   [ "$count" -eq 200 ]
   # backtracking is temp-only
-  [ "$(stat_val perm_pool)" -eq 20768 ]
-  [ "$(stat_val clauses)" -eq 52 ]
+  [ "$(stat_val perm_pool)" -eq "$BASE_PERM" ]
+  [ "$(stat_val clauses)" -eq "$BASE_CLAUSES" ]
 }
 
 # --- large file I/O ---
@@ -126,7 +131,7 @@ print('append([1,2],[3],X), write(X).')
   head -1 /tmp/trilog_stress_io.txt | grep -q "line(1)"
   tail -1 /tmp/trilog_stress_io.txt | grep -q "line(500)"
   # file I/O doesn't grow perm
-  [ "$(stat_val perm_pool)" -eq 20768 ]
+  [ "$(stat_val perm_pool)" -eq "$BASE_PERM" ]
 }
 
 # --- large .pl file consult ---
@@ -139,9 +144,9 @@ for i in range(500):
   result=$(printf "consult('/tmp/trilog_stress_big.pl').\nfindall(X, data(X), L), length(L, N), write(N).\n" \
     | timeout 10 "$TRILOG" -s 2>"$STATS_FILE" | tail -1)
   [[ "$result" == *"500"* ]]
-  # 500 consulted clauses: perm grows, clauses = 52 + 500
-  [ "$(stat_val perm_pool)" -gt 20768 ]
-  [ "$(stat_val clauses)" -eq 552 ]
+  # 500 consulted clauses: perm grows, clauses = baseline + 500
+  [ "$(stat_val perm_pool)" -gt "$BASE_PERM" ]
+  [ "$(stat_val clauses)" -eq $(( BASE_CLAUSES + 500 )) ]
 }
 
 # --- repeated assert/retract churn ---
@@ -157,8 +162,8 @@ for i in range(50):
 print('findall(X, churn(X), L), length(L, N), write(N).')
 " | timeout 15 "$TRILOG" -s 2>"$STATS_FILE" | tail -1)
   [[ "$result" == *"50"* ]]
-  # after 10 rounds of retractall, only 52 core + 50 final remain
-  [ "$(stat_val clauses)" -eq 102 ]
+  # after 10 rounds of retractall, only baseline + 50 final remain
+  [ "$(stat_val clauses)" -eq $(( BASE_CLAUSES + 50 )) ]
 }
 
 # --- long atom concat chain ---
@@ -168,7 +173,7 @@ print('findall(X, churn(X), L), length(L, N), write(N).')
     | timeout 5 "$TRILOG" -s 2>"$STATS_FILE")
   [[ "$result" == "40"* ]]
   # temp-only: perm unchanged, term pool used for intermediates
-  [ "$(stat_val perm_pool)" -eq 20768 ]
+  [ "$(stat_val perm_pool)" -eq "$BASE_PERM" ]
   [ "$(stat_val term_pool_peak)" -gt 0 ]
 }
 
@@ -180,8 +185,8 @@ print('findall(X, churn(X), L), length(L, N), write(N).')
     | timeout 10 "$TRILOG" -s 2>"$STATS_FILE" | tail -1)
   # sum 1..500 = 125250
   [[ "$result" == *"125250"* ]]
-  # one extra clause (add/3), temp peak from list building
-  [ "$(stat_val clauses)" -eq 53 ]
+  # one extra clause (add/3)
+  [ "$(stat_val clauses)" -eq $(( BASE_CLAUSES + 1 )) ]
   [ "$(stat_val term_pool_peak)" -gt 0 ]
 }
 
@@ -193,7 +198,7 @@ print('findall(X, churn(X), L), length(L, N), write(N).')
     | timeout 10 "$TRILOG" -s 2>"$STATS_FILE" | tail -1)
   [[ "$result" == *"200"* ]]
   # one extra clause (inc/2)
-  [ "$(stat_val clauses)" -eq 53 ]
+  [ "$(stat_val clauses)" -eq $(( BASE_CLAUSES + 1 )) ]
 }
 
 # --- deep setof dedup ---
@@ -207,5 +212,5 @@ print('setof(X, ddup(X), S), length(S, N), write(N).')
 " | timeout 15 "$TRILOG" -s 2>"$STATS_FILE" | tail -1)
   [[ "$result" == *"100"* ]]
   # 500 asserts but only 100 unique values — still 500 clauses in db
-  [ "$(stat_val clauses)" -eq 552 ]
+  [ "$(stat_val clauses)" -eq $(( BASE_CLAUSES + 500 )) ]
 }
