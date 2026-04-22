@@ -500,6 +500,8 @@ void throw_error(trilog_ctx_t *ctx, term_t *error_type, const char *context);
 void throw_instantiation_error(trilog_ctx_t *ctx, const char *context);
 void throw_type_error(trilog_ctx_t *ctx, const char *expected, term_t *got,
                       const char *context);
+void throw_domain_error(trilog_ctx_t *ctx, const char *domain, term_t *got,
+                        const char *context);
 void throw_evaluation_error(trilog_ctx_t *ctx, const char *kind,
                             const char *context);
 void throw_evaluable_error(trilog_ctx_t *ctx, const char *name, int arity,

@@ -67,6 +67,13 @@ void throw_type_error(trilog_ctx_t *ctx, const char *expected, term_t *got,
   throw_error(ctx, te, context);
 }
 
+void throw_domain_error(trilog_ctx_t *ctx, const char *domain, term_t *got,
+                        const char *context) {
+  term_t *dargs[2] = {make_const(ctx, domain), got};
+  term_t *de = make_func(ctx, "domain_error", dargs, 2);
+  throw_error(ctx, de, context);
+}
+
 void throw_evaluation_error(trilog_ctx_t *ctx, const char *kind,
                             const char *context) {
   term_t *kargs[1] = {make_const(ctx, kind)};

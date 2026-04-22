@@ -571,10 +571,30 @@ bcapply(G) :- call(G).
 ?- X = hello /* world */.
    X = hello.
 
-% --- double_quotes flag ---
+% --- current_prolog_flag/2 ---
+
+?- current_prolog_flag(bounded, V).
+   V = true.
+
+?- current_prolog_flag(integer_rounding_function, V).
+   V = toward_zero.
 
 ?- current_prolog_flag(double_quotes, V).
    V = chars.
+
+?- current_prolog_flag(max_integer, V).
+   V = '2147483647'.
+
+?- current_prolog_flag(min_integer, V).
+   V = '-2147483648'.
+
+% enumeration: all flags must be produced
+?- findall(F, current_prolog_flag(F, _), Fs), length(Fs, N), N > 0.
+   Fs = [bounded, max_integer, min_integer, integer_rounding_function, max_arity, double_quotes], N = 6.
+
+% domain_error for unknown flag
+?- current_prolog_flag(unknown_flag, _).
+   error(domain_error(prolog_flag, unknown_flag)).
 
 % "abc" parses as char list [a,b,c]
 ?- X = "abc".

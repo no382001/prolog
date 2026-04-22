@@ -1981,8 +1981,8 @@ static builtin_result_t builtin_current_op_count(trilog_ctx_t *ctx,
              : BUILTIN_FAIL;
 }
 
-static builtin_result_t builtin_current_prolog_flag(trilog_ctx_t *ctx,
-                                                    term_t *goal, env_t *env) {
+static builtin_result_t builtin_prolog_flag_value(trilog_ctx_t *ctx,
+                                                  term_t *goal, env_t *env) {
   term_t *flag = deref(env, goal->args[0]);
   if (flag->type == VAR) {
     throw_instantiation_error(ctx, "current_prolog_flag/2");
@@ -2011,7 +2011,7 @@ static builtin_result_t builtin_current_prolog_flag(trilog_ctx_t *ctx,
   } else if (strcmp(fname, "double_quotes") == 0)
     val = "chars";
   else {
-    throw_type_error(ctx, "prolog_flag", flag, "current_prolog_flag/2");
+    throw_domain_error(ctx, "prolog_flag", flag, "current_prolog_flag/2");
     return BUILTIN_ERROR;
   }
   return unify(ctx, goal->args[1], make_const(ctx, val), env) ? BUILTIN_OK
@@ -2099,7 +2099,7 @@ static const builtin_t builtins[] = {
     {"op", 3, builtin_op},
     {"current_op_entry", 4, builtin_current_op_entry},
     {"current_op_count", 1, builtin_current_op_count},
-    {"current_prolog_flag", 2, builtin_current_prolog_flag},
+    {"prolog_flag_value", 2, builtin_prolog_flag_value},
     {"msort", 2, builtin_msort},
     {"sort", 2, builtin_sort},
     {"with_output_to", 2, builtin_with_output_to},

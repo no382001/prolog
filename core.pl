@@ -136,6 +136,14 @@ countall(Goal, Count) :-
     findall(_, Goal, Xs),
     length(Xs, Count).
 
+current_prolog_flag(Flag, Value) :-
+    (   nonvar(Flag)
+    ->  prolog_flag_value(Flag, Value)
+    ;   member(Flag, [bounded, max_integer, min_integer,
+                      integer_rounding_function, max_arity, double_quotes]),
+        prolog_flag_value(Flag, Value)
+    ).
+
 current_op(Priority, Type, Name) :-
     current_op_count(N),
     N1 is N - 1,
