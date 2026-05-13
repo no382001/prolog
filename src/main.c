@@ -56,11 +56,12 @@ static int read_key_hook(trilog_ctx_t *ctx, void *ud) {
 }
 
 static void print_usage(trilog_ctx_t *ctx, const char *prog) {
-  io_writef_err(
-      ctx,
-      "Usage: %s [-d] [-f <file>] [-e <expression>] [-q <file>] [-j <dir>]\n",
-      prog);
+  io_writef_err(ctx,
+                "Usage: %s [-d] [-s] [-f <file>] [-e <expression>] [-q <file>] "
+                "[-j <dir>]\n",
+                prog);
   io_writef_err(ctx, "  -d            Enable debug mode\n");
+  io_writef_err(ctx, "  -s            Print stats to stderr on exit\n");
   io_writef_err(ctx, "  -f <file>     Load clauses from file\n");
   io_writef_err(ctx, "  -e <expr>     Execute expression and exit\n");
   io_writef_err(ctx, "  -q <file>     Run quad tests from file\n");
@@ -69,6 +70,14 @@ static void print_usage(trilog_ctx_t *ctx, const char *prog) {
   io_writef_err(ctx, "\nInteractive commands:\n");
   io_writef_err(ctx, "  debug.        Toggle debug mode\n");
   io_writef_err(ctx, "  halt.         Exit the interpreter\n");
+}
+
+static void print_exit_stats(trilog_ctx_t *ctx) {
+  int perm = ctx->term_pool_size - ctx->term_pool_perm;
+  fprintf(stderr, "perm_pool=%d\n", perm);
+  fprintf(stderr, "string_pool=%d\n", ctx->string_pool_offset);
+  fprintf(stderr, "clauses=%d\n", ctx->db_count);
+  fprintf(stderr, "term_pool_peak=%d\n", ctx->term_pool_peak);
 }
 
 static void process_line(trilog_ctx_t *ctx, char *line, bool *should_exit,
@@ -112,6 +121,8 @@ int main(int argc, char *argv[]) {
     return 1;
   }
   trilog_ctx_init(ctx, TERM_POOL_BYTES);
+  ops_init_defaults(
+      ctx); // pre-load op table so names are below any query's string_mark
 
   io_hooks_init_default(ctx);
 
@@ -126,13 +137,17 @@ int main(int argc, char *argv[]) {
   const char *expression = NULL;
   const char *quad_file = NULL;
   const char *junit_dir = NULL;
+  bool exit_stats = false;
   int opt;
 
-  while ((opt = getopt(argc, argv, "df:e:q:j:h")) != -1) {
+  while ((opt = getopt(argc, argv, "dsf:e:q:j:h")) != -1) {
     switch (opt) {
     case 'd':
       ctx->debug_enabled = true;
       io_writef_err(ctx, "Debug mode enabled\n");
+      break;
+    case 's':
+      exit_stats = true;
       break;
     case 'f':
       input_file = optarg;
@@ -167,6 +182,8 @@ int main(int argc, char *argv[]) {
     bool should_exit = false;
     process_line(ctx, line, &should_exit, false);
     int rc = parse_has_error(ctx) ? 1 : 0;
+    if (exit_stats)
+      print_exit_stats(ctx);
     free(ctx);
     return rc;
   }
@@ -197,6 +214,8 @@ int main(int argc, char *argv[]) {
     process_line(ctx, line, &should_exit, interactive);
   }
 
+  if (exit_stats)
+    print_exit_stats(ctx);
   free(ctx);
   return 0;
 }

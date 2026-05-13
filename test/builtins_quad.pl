@@ -79,7 +79,7 @@ bpair(3, 4).
    error(type_error(evaluable, foo/0)).
 
 ?- X is "hello".
-   error(type_error(evaluable, h/0)).
+   error(type_error(evaluable, "hello")).
 
 % --- comparison: less than ---
 
@@ -571,10 +571,30 @@ bcapply(G) :- call(G).
 ?- X = hello /* world */.
    X = hello.
 
-% --- double_quotes flag ---
+% --- current_prolog_flag/2 ---
+
+?- current_prolog_flag(bounded, V).
+   V = true.
+
+?- current_prolog_flag(integer_rounding_function, V).
+   V = toward_zero.
 
 ?- current_prolog_flag(double_quotes, V).
    V = chars.
+
+?- current_prolog_flag(max_integer, V).
+   V = '2147483647'.
+
+?- current_prolog_flag(min_integer, V).
+   V = '-2147483648'.
+
+% enumeration: all flags must be produced
+?- findall(F, current_prolog_flag(F, _), Fs), length(Fs, N), N > 0.
+   Fs = [bounded, max_integer, min_integer, integer_rounding_function, max_arity, double_quotes], N = 6.
+
+% domain_error for unknown flag
+?- current_prolog_flag(unknown_flag, _).
+   error(domain_error(prolog_flag, unknown_flag)).
 
 % "abc" parses as char list [a,b,c]
 ?- X = "abc".
@@ -596,3 +616,59 @@ bcapply(G) :- call(G).
 
 ?- length("abc", N).
    N = 3.
+
+% --- read_from_chars/2 ---
+
+?- read_from_chars("hello", T).
+   T = hello.
+
+?- read_from_chars("f(a, b)", T).
+   T = f(a, b).
+
+?- read_from_chars("42", T).
+   T = 42.
+
+?- read_from_chars("1+2", T).
+   T = 1+2.
+
+?- read_from_chars("[]", T).
+   T = [].
+
+?- read_from_chars("[1,2,3]", T).
+   T = [1, 2, 3].
+
+% empty char list has no term
+?- read_from_chars([], _).
+   false.
+
+% --- read_term_from_chars/3 ---
+
+?- read_term_from_chars("f(X, Y)", T, [variable_names(Vs)]).
+   T = f(X, Y), Vs = ['X'=X, 'Y'=Y].
+
+?- read_term_from_chars("hello", T, []).
+   T = hello.
+
+?- read_term_from_chars("X", T, [variable_names(Vs)]).
+   T = X, Vs = ['X'=X].
+
+% --- write_term_to_chars/3 ---
+
+?- write_term_to_chars(hello, [], Cs).
+   Cs = "hello".
+
+?- write_term_to_chars(f(a, b), [], Cs).
+   Cs = "f(a, b)".
+
+?- write_term_to_chars(42, [], Cs).
+   Cs = "42".
+
+?- write_term_to_chars([1,2,3], [], Cs).
+   Cs = "[1, 2, 3]".
+
+% roundtrip: write then read
+?- write_term_to_chars(f(a, b), [quoted(true)], Cs), read_from_chars(Cs, T).
+   Cs = "f(a, b)", T = f(a, b).
+
+?- write_term_to_chars(hello, [quoted(true)], Cs), read_from_chars(Cs, T).
+   Cs = "hello", T = hello.

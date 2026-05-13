@@ -34,6 +34,26 @@ bool unify(trilog_ctx_t *ctx, term_t *a, term_t *b, env_t *env) {
     return true;
   }
 
+  // STR (packed char list) handling
+  if (a->type == STR && b->type == STR) {
+    bool result =
+        a->arity == b->arity &&
+        (a->name == b->name || memcmp(a->name, b->name, a->arity) == 0);
+    return result;
+  }
+  if (a->type == STR && a->arity == 0 && is_nil(b))
+    return true;
+  if (b->type == STR && b->arity == 0 && is_nil(a))
+    return true;
+  if (a->type == STR && a->arity > 0 && b->type == FUNC && is_cons(b)) {
+    return unify(ctx, list_head(ctx, a), b->args[0], env) &&
+           unify(ctx, list_tail(ctx, a), b->args[1], env);
+  }
+  if (b->type == STR && b->arity > 0 && a->type == FUNC && is_cons(a)) {
+    return unify(ctx, a->args[0], list_head(ctx, b), env) &&
+           unify(ctx, a->args[1], list_tail(ctx, b), env);
+  }
+
   if ((a->type == CONST || a->type == INT) &&
       (b->type == CONST || b->type == INT)) {
     // INT and CONST with same name unify (e.g. '1' unifies with 1)

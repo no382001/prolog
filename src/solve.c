@@ -169,7 +169,9 @@ static bool has_more_alternatives(trilog_ctx_t *ctx, term_t *goal, env_t *env,
       if (goal_a0 && head_arity > 0) {
         term_t *ha0 = c->head->args[0];
         if (ha0->type != VAR &&
-            !(ha0->type == goal_a0->type && ha0->name == goal_a0->name))
+            !(ha0->type == goal_a0->type && ha0->name == goal_a0->name) &&
+            !(is_cons(goal_a0) && is_cons(ha0)) &&
+            !(is_nil(goal_a0) && is_nil(ha0)))
           continue;
       }
       return true;
@@ -250,24 +252,36 @@ A:
     goto A;
   }
 
-  // inline call/1: call(g) -> g
+  // inline call/N (N >= 1): call(G, A1, ..., An) -> G(A1, ..., An)
   if (first_goal->type == FUNC && strcmp(first_goal->name, "call") == 0 &&
-      first_goal->arity == 1) {
-    term_t *arg = deref(env, first_goal->args[0]);
-    if (arg->type == VAR) {
-      throw_instantiation_error(ctx, "call/1");
+      first_goal->arity >= 1) {
+    term_t *g = deref(env, first_goal->args[0]);
+    int extra = first_goal->arity - 1;
+    if (g->type == VAR) {
+      throw_instantiation_error(ctx, "call/N");
       return false;
     }
-    if (arg->type == INT) {
-      throw_type_error(ctx, "callable", arg, "call/1");
+    if (g->type != FUNC && g->type != CONST) {
+      throw_type_error(ctx, "callable", g, "call/N");
       return false;
     }
-    if (arg->type != FUNC && arg->type != CONST) {
-      throw_type_error(ctx, "callable", arg, "call/1");
-      return false;
+    term_t *new_goal;
+    if (extra == 0) {
+      new_goal = g;
+    } else {
+      int base_arity = (g->type == FUNC) ? g->arity : 0;
+      int new_arity = base_arity + extra;
+      term_t *args[16];
+      for (int i = 0; i < base_arity; i++)
+        args[i] = g->args[i];
+      for (int i = 0; i < extra; i++)
+        args[base_arity + i] = deref(env, first_goal->args[1 + i]);
+      new_goal = make_func(ctx, g->name, args, new_arity);
+      if (!new_goal)
+        return false;
     }
     goal_stmt_t new_cn = goals_alloc(ctx, cn.count);
-    new_cn.goals[new_cn.count++] = arg;
+    new_cn.goals[new_cn.count++] = new_goal;
     for (int i = 1; i < cn.count; i++)
       new_cn.goals[new_cn.count++] = cn.goals[i];
     cn = new_cn;
@@ -299,7 +313,13 @@ A:
     goal_stmt_t sub_goals = goals_alloc(ctx, 1);
     sub_goals.goals[sub_goals.count++] = sub_goal;
 
-    if (solve(ctx, &sub_goals, env)) {
+    int bfloor_save = ctx->bind_floor;
+    if (emark > ctx->bind_floor)
+      ctx->bind_floor = emark;
+    bool sub_ok = solve(ctx, &sub_goals, env);
+    ctx->bind_floor = bfloor_save;
+
+    if (sub_ok) {
       // goal succeeded — continue with remaining goals
       int nrem = cn.count - 1;
       goal_stmt_t new_cn = goals_alloc(ctx, nrem > 0 ? nrem : 0);
@@ -352,7 +372,14 @@ A:
 
       goal_stmt_t cond_goals = goals_alloc(ctx, 1);
       cond_goals.goals[cond_goals.count++] = cond;
-      if (solve(ctx, &cond_goals, env)) {
+
+      int bfloor_save = ctx->bind_floor;
+      if (emark > ctx->bind_floor)
+        ctx->bind_floor = emark;
+      bool cond_ok = solve(ctx, &cond_goals, env);
+      ctx->bind_floor = bfloor_save;
+
+      if (cond_ok) {
         // cond succeeded — commit to then branch
         goal_stmt_t new_cn = goals_alloc(ctx, cn.count);
         new_cn.goals[new_cn.count++] = then_branch;
@@ -410,7 +437,14 @@ A:
 
     goal_stmt_t cond_goals = goals_alloc(ctx, 1);
     cond_goals.goals[cond_goals.count++] = cond;
-    if (solve(ctx, &cond_goals, env)) {
+
+    int bfloor_save = ctx->bind_floor;
+    if (emark > ctx->bind_floor)
+      ctx->bind_floor = emark;
+    bool cond_ok = solve(ctx, &cond_goals, env);
+    ctx->bind_floor = bfloor_save;
+
+    if (cond_ok) {
       goal_stmt_t new_cn = goals_alloc(ctx, cn.count);
       new_cn.goals[new_cn.count++] = then_branch;
       for (int i = 1; i < cn.count; i++)

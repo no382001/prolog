@@ -90,10 +90,34 @@ typedef __builtin_va_list va_list;
 #ifndef MAX_DYNAMIC_PREDS
 #define MAX_DYNAMIC_PREDS 64
 #endif
+#ifndef MAX_OPS
+#define MAX_OPS 128
+#endif
 #ifndef TERM_POOL_BYTES
 #define TERM_POOL_BYTES (4 * 1024 * 1024)
 #endif
 #define TRILOG_CTX_SIZE(pool_bytes) (sizeof(trilog_ctx_t) + (pool_bytes))
+
+//****
+//* operator table types
+//****
+
+typedef enum {
+  OP_NONE = 0,
+  OP_XFX, // infix, non-associative
+  OP_XFY, // infix, right-associative
+  OP_YFX, // infix, left-associative
+  OP_FX,  // prefix, non-associative
+  OP_FY,  // prefix, associative
+  OP_XF,  // postfix, non-associative
+  OP_YF,  // postfix, associative
+} op_assoc_t;
+
+typedef struct {
+  const char *name; // interned
+  int priority;     // 1..1200; 0 means slot is free
+  op_assoc_t assoc;
+} op_entry_t;
 
 //****
 //* core types
@@ -174,7 +198,7 @@ typedef struct {
 //* term representation
 //****
 
-typedef enum { CONST, VAR, FUNC, INT } term_type;
+typedef enum { CONST, VAR, FUNC, INT, STR } term_type;
 
 // escape sequence table used by both the parser (decode) and printer (encode).
 // each entry maps a raw byte to its two-character escape sequence.
@@ -272,6 +296,8 @@ struct trilog_ctx {
   int bind_floor;       // lco cannot reclaim bindings below this
   bool alloc_permanent; // when true, allocate from perm end
   bool db_dirty;        // set when assert/retract modifies the database
+  bool ops_dirty;       // set when op_table is modified (prevents string pool
+                        // rollback)
 
   char string_pool[MAX_STRING_POOL];
   int string_pool_offset;
@@ -335,6 +361,9 @@ struct trilog_ctx {
   } dynamic_preds[MAX_DYNAMIC_PREDS];
   int dynamic_pred_count;
 
+  op_entry_t op_table[MAX_OPS];
+  int op_count;
+
   _Alignas(8) char term_pool[]; // fam - must be last field
 };
 
@@ -343,13 +372,15 @@ struct trilog_ctx {
 //****
 
 static inline bool is_cons(const term_t *t) {
-  return t && t->type == FUNC && t->name[0] == '.' && t->name[1] == '\0' &&
-         t->arity == 2;
+  return t && ((t->type == FUNC && t->name[0] == '.' && t->name[1] == '\0' &&
+                t->arity == 2) ||
+               (t->type == STR && t->arity > 0));
 }
 
 static inline bool is_nil(const term_t *t) {
-  return t && t->type == CONST && t->name[0] == '[' && t->name[1] == ']' &&
-         t->name[2] == '\0';
+  return t && ((t->type == CONST && t->name[0] == '[' && t->name[1] == ']' &&
+                t->name[2] == '\0') ||
+               (t->type == STR && t->arity == 0));
 }
 
 static inline bool term_as_int(const term_t *t, int *out) {
@@ -408,6 +439,9 @@ term_t *make_int(trilog_ctx_t *ctx, int n);
 term_t *make_var(trilog_ctx_t *ctx, const char *name, int var_id);
 term_t *make_func(trilog_ctx_t *ctx, const char *name, term_t **args,
                   int arity);
+term_t *make_str(trilog_ctx_t *ctx, const char *data, int len);
+term_t *list_head(trilog_ctx_t *ctx, const term_t *t);
+term_t *list_tail(trilog_ctx_t *ctx, const term_t *t);
 
 void skip_ws(trilog_ctx_t *ctx);
 term_t *parse_term(trilog_ctx_t *ctx);
@@ -452,6 +486,9 @@ void print_bindings(trilog_ctx_t *ctx, env_t *env);
 
 void parse_error(trilog_ctx_t *ctx, const char *fmt, ...);
 void parse_error_clear(trilog_ctx_t *ctx);
+void ops_init_defaults(trilog_ctx_t *ctx);
+op_assoc_t op_assoc_from_atom(const char *s);
+const char *op_assoc_to_atom(op_assoc_t a);
 bool parse_has_error(trilog_ctx_t *ctx);
 void parse_error_print(trilog_ctx_t *ctx);
 
@@ -463,6 +500,8 @@ void throw_error(trilog_ctx_t *ctx, term_t *error_type, const char *context);
 void throw_instantiation_error(trilog_ctx_t *ctx, const char *context);
 void throw_type_error(trilog_ctx_t *ctx, const char *expected, term_t *got,
                       const char *context);
+void throw_domain_error(trilog_ctx_t *ctx, const char *domain, term_t *got,
+                        const char *context);
 void throw_evaluation_error(trilog_ctx_t *ctx, const char *kind,
                             const char *context);
 void throw_evaluable_error(trilog_ctx_t *ctx, const char *name, int arity,
@@ -483,8 +522,6 @@ builtin_result_t builtin_le(trilog_ctx_t *ctx, term_t *goal, env_t *env);
 builtin_result_t builtin_ge(trilog_ctx_t *ctx, term_t *goal, env_t *env);
 builtin_result_t builtin_arith_eq(trilog_ctx_t *ctx, term_t *goal, env_t *env);
 builtin_result_t builtin_arith_ne(trilog_ctx_t *ctx, term_t *goal, env_t *env);
-builtin_result_t builtin_succ(trilog_ctx_t *ctx, term_t *goal, env_t *env);
-builtin_result_t builtin_plus(trilog_ctx_t *ctx, term_t *goal, env_t *env);
 
 // streams (streams.c)
 builtin_result_t builtin_nl1(trilog_ctx_t *ctx, term_t *goal, env_t *env);
@@ -497,10 +534,21 @@ builtin_result_t builtin_term_to_atom(trilog_ctx_t *ctx, term_t *goal,
                                       env_t *env);
 builtin_result_t builtin_atom_to_term(trilog_ctx_t *ctx, term_t *goal,
                                       env_t *env);
+builtin_result_t builtin_read_from_chars(trilog_ctx_t *ctx, term_t *goal,
+                                         env_t *env);
+builtin_result_t builtin_read_term_from_chars(trilog_ctx_t *ctx, term_t *goal,
+                                              env_t *env);
+builtin_result_t builtin_write_term_to_chars(trilog_ctx_t *ctx, term_t *goal,
+                                             env_t *env);
 builtin_result_t builtin_open(trilog_ctx_t *ctx, term_t *goal, env_t *env);
 builtin_result_t builtin_close(trilog_ctx_t *ctx, term_t *goal, env_t *env);
 builtin_result_t builtin_read_line_to_atom(trilog_ctx_t *ctx, term_t *goal,
                                            env_t *env);
+builtin_result_t builtin_read_line_to_chars(trilog_ctx_t *ctx, term_t *goal,
+                                            env_t *env);
+builtin_result_t builtin_put_chars(trilog_ctx_t *ctx, term_t *goal, env_t *env);
+builtin_result_t builtin_put_chars2(trilog_ctx_t *ctx, term_t *goal,
+                                    env_t *env);
 builtin_result_t builtin_get_char(trilog_ctx_t *ctx, term_t *goal, env_t *env);
 builtin_result_t builtin_read_term(trilog_ctx_t *ctx, term_t *goal, env_t *env);
 

@@ -112,6 +112,33 @@ term_t *make_func(trilog_ctx_t *ctx, const char *name, term_t **args,
   return t;
 }
 
+term_t *make_str(trilog_ctx_t *ctx, const char *data, int len) {
+  term_t *t = term_alloc(ctx, sizeof(term_t));
+  if (!t)
+    return NULL;
+  t->type = STR;
+  t->name = data;
+  t->arity = len;
+  return t;
+}
+
+term_t *list_head(trilog_ctx_t *ctx, const term_t *t) {
+  if (t->type == STR) {
+    assert(t->arity > 0);
+    char ch[2] = {t->name[0], '\0'};
+    return make_const(ctx, ch);
+  }
+  return t->args[0];
+}
+
+term_t *list_tail(trilog_ctx_t *ctx, const term_t *t) {
+  if (t->type == STR) {
+    assert(t->arity > 0);
+    return make_str(ctx, t->name + 1, t->arity - 1);
+  }
+  return t->args[1];
+}
+
 // make_term: backward compat wrapper (used in a few places in builtins)
 term_t *make_term(trilog_ctx_t *ctx, term_type type, const char *name,
                   term_t **args, int arity) {
@@ -135,7 +162,7 @@ term_t *make_term(trilog_ctx_t *ctx, term_type type, const char *name,
 term_t *rename_vars_mapped(trilog_ctx_t *ctx, term_t *t, var_id_map_t *map) {
   if (!t)
     return NULL;
-  if (t->type == CONST || t->type == INT)
+  if (t->type == CONST || t->type == INT || t->type == STR)
     return t;
   if (t->type == VAR) {
     int old_id = t->arity;
@@ -179,6 +206,8 @@ static term_t *copy_term_into_pool(trilog_ctx_t *ctx, term_t *t) {
   }
   case VAR:
     return make_var(ctx, t->name, t->arity);
+  case STR:
+    return make_str(ctx, t->name, t->arity);
   case FUNC: {
     term_t *args[MAX_ARGS];
     for (int i = 0; i < t->arity; i++) {
@@ -192,13 +221,64 @@ static term_t *copy_term_into_pool(trilog_ctx_t *ctx, term_t *t) {
   return NULL;
 }
 
-static void patch_term_ptrs(term_t *t, int perm_start) {
+// find the lowest perm-pool offset reachable from a term tree
+static int min_perm_offset(term_t *t, char *base, int perm_lo, int perm_hi) {
+  if (!t)
+    return perm_hi;
+  int off = (int)((char *)t - base);
+  if (off < perm_lo || off >= perm_hi)
+    return perm_hi; // not in perm region
+  int mn = off;
+  if (t->type == FUNC)
+    for (int i = 0; i < t->arity; i++) {
+      int c = min_perm_offset(t->args[i], base, perm_lo, perm_hi);
+      if (c < mn)
+        mn = c;
+    }
+  return mn;
+}
+
+// trim dead space at the bottom of the perm pool by finding the lowest
+// address still referenced by a live clause and raising term_pool_perm.
+// zero-copy, works regardless of pool fullness.
+static void trim_perm_pool(trilog_ctx_t *ctx) {
+  int perm_lo = ctx->term_pool_perm;
+  int perm_hi = ctx->term_pool_size;
+  if (perm_lo >= perm_hi)
+    return;
+  if (ctx->db_count == 0) {
+    ctx->term_pool_perm = ctx->term_pool_size;
+    return;
+  }
+  char *base = ctx->term_pool;
+  int mn = perm_hi;
+  for (int i = 0; i < ctx->db_count; i++) {
+    clause_t *c = &ctx->database[i];
+    int h = min_perm_offset(c->head, base, perm_lo, perm_hi);
+    if (h < mn)
+      mn = h;
+    if (c->body) {
+      int boff = (int)((char *)c->body - base);
+      if (boff >= perm_lo && boff < mn)
+        mn = boff;
+      for (int j = 0; j < c->body_count; j++) {
+        int g = min_perm_offset(c->body[j], base, perm_lo, perm_hi);
+        if (g < mn)
+          mn = g;
+      }
+    }
+  }
+  if (mn > perm_lo)
+    ctx->term_pool_perm = mn;
+}
+
+static void rebase_term_ptrs(term_t *t, char *old_base, char *new_base) {
   if (!t || t->type != FUNC)
     return;
   for (int i = 0; i < t->arity; i++) {
     if (t->args[i]) {
-      t->args[i] = (term_t *)((char *)t->args[i] - perm_start);
-      patch_term_ptrs(t->args[i], perm_start);
+      t->args[i] = (term_t *)(new_base + ((char *)t->args[i] - old_base));
+      rebase_term_ptrs(t->args[i], old_base, new_base);
     }
   }
 }
@@ -206,43 +286,44 @@ static void patch_term_ptrs(term_t *t, int perm_start) {
 void compact_perm_pool(trilog_ctx_t *ctx) {
   if (ctx->term_pool_offset != 0)
     return;
+
+  // phase 1: trim contiguous dead space at the bottom of perm (zero-copy)
+  trim_perm_pool(ctx);
+
+  // phase 2: full defrag for interleaved dead space (needs perm < 50%)
   int perm_start = ctx->term_pool_perm;
   int perm_used = ctx->term_pool_size - perm_start;
-  if (perm_used <= 0)
-    return;
-  if (perm_used * 2 > ctx->term_pool_size)
+  if (perm_used <= 0 || perm_used * 2 > ctx->term_pool_size)
     return;
 
-  // phase 1: copy perm region into staging area at bottom of buffer
-  memcpy(ctx->term_pool, ctx->term_pool + perm_start, (size_t)perm_used);
-  ctx->term_pool_offset = perm_used; // protect staging from perm allocs
+  char *old_base = ctx->term_pool + perm_start;
+  memcpy(ctx->term_pool, old_base, (size_t)perm_used);
+  char *staging = ctx->term_pool;
+  ctx->term_pool_offset = perm_used;
 
-  // phase 2: adjust clause-level pointers into staging area
   for (int i = 0; i < ctx->db_count; i++) {
     clause_t *c = &ctx->database[i];
     if (c->body != NULL) {
-      term_t **staging_body = (term_t **)((char *)c->body - perm_start);
+      term_t **sb = (term_t **)(staging + ((char *)c->body - old_base));
       for (int j = 0; j < c->body_count; j++)
-        if (staging_body[j])
-          staging_body[j] = (term_t *)((char *)staging_body[j] - perm_start);
-      c->body = staging_body;
+        if (sb[j])
+          sb[j] = (term_t *)(staging + ((char *)sb[j] - old_base));
+      c->body = sb;
     }
     if (c->head)
-      c->head = (term_t *)((char *)c->head - perm_start);
+      c->head = (term_t *)(staging + ((char *)c->head - old_base));
   }
 
-  // phase 3: fix internal args[] pointers within staging area
   for (int i = 0; i < ctx->db_count; i++) {
     clause_t *c = &ctx->database[i];
     if (c->head)
-      patch_term_ptrs(c->head, perm_start);
+      rebase_term_ptrs(c->head, old_base, staging);
     if (c->body != NULL)
       for (int j = 0; j < c->body_count; j++)
         if (c->body[j])
-          patch_term_ptrs(c->body[j], perm_start);
+          rebase_term_ptrs(c->body[j], old_base, staging);
   }
 
-  // phase 4: reset perm and rebuild from staging
   ctx->term_pool_perm = ctx->term_pool_size;
   ctx->alloc_permanent = true;
   for (int i = 0; i < ctx->db_count; i++) {
@@ -264,8 +345,8 @@ void compact_perm_pool(trilog_ctx_t *ctx) {
         return;
       }
       for (int j = 0; j < c->body_count; j++) {
-        nb[j] = c->body ? copy_term_into_pool(ctx, c->body[j]) : NULL;
-        if (!nb[j]) {
+        nb[j] = c->body[j] ? copy_term_into_pool(ctx, c->body[j]) : NULL;
+        if (c->body[j] && !nb[j]) {
           ctx->alloc_permanent = false;
           ctx->term_pool_offset = 0;
           return;
@@ -277,7 +358,5 @@ void compact_perm_pool(trilog_ctx_t *ctx) {
     }
   }
   ctx->alloc_permanent = false;
-
-  // phase 5: clear staging
   ctx->term_pool_offset = 0;
 }

@@ -49,6 +49,9 @@ static bool terms_identical(term_t *a, term_t *b, env_t *env) {
   b = deref(env, b);
   if (a == b)
     return true;
+  if (a->type == STR && b->type == STR)
+    return a->arity == b->arity &&
+           (a->name == b->name || memcmp(a->name, b->name, a->arity) == 0);
   if (a->type != b->type)
     return false;
   if (a->type == VAR)
@@ -124,6 +127,12 @@ static int term_order(term_t *a, term_t *b, env_t *env) {
     rb = 4;
     break;
   }
+
+  // STR compares as a compound ./2 list — normalize
+  if (a->type == STR)
+    ra = 4;
+  if (b->type == STR)
+    rb = 4;
 
   if (ra != rb)
     return ra < rb ? -1 : 1;
@@ -241,9 +250,9 @@ static bool findall_callback(trilog_ctx_t *ctx, env_t *env, void *userdata,
 static term_t *reverse_list(trilog_ctx_t *ctx, term_t *list) {
   term_t *result = make_const(ctx, "[]");
   while (is_cons(list)) {
-    term_t *args[2] = {list->args[0], result};
+    term_t *args[2] = {list_head(ctx, list), result};
     result = make_func(ctx, ".", args, 2);
-    list = list->args[1];
+    list = list_tail(ctx, list);
   }
   return result;
 }
@@ -308,7 +317,8 @@ static builtin_result_t builtin_bagof(trilog_ctx_t *ctx, term_t *goal,
   return collect_solutions(ctx, goal, env, true);
 }
 
-static int list_to_array(env_t *env, term_t *list, term_t **arr, int max);
+static int list_to_array(trilog_ctx_t *ctx, env_t *env, term_t *list,
+                         term_t **arr, int max);
 static term_t *array_to_list(trilog_ctx_t *ctx, term_t **arr, int n);
 
 static builtin_result_t builtin_setof(trilog_ctx_t *ctx, term_t *goal,
@@ -358,8 +368,8 @@ static builtin_result_t builtin_setof(trilog_ctx_t *ctx, term_t *goal,
 
   // sort and deduplicate
   term_t *elems[MAX_LIST_LIT];
-  int n =
-      list_to_array(env, reverse_list(ctx, state.list), elems, MAX_LIST_LIT);
+  int n = list_to_array(ctx, env, reverse_list(ctx, state.list), elems,
+                        MAX_LIST_LIT);
   if (n < 0)
     return BUILTIN_FAIL;
   for (int i = 1; i < n; i++) {
@@ -394,15 +404,56 @@ static bool not_found_callback(trilog_ctx_t *ctx, env_t *env, void *userdata,
 //* exceptions and meta-predicates
 //****
 
+// capture buffer helpers for serializing a term to runtime_error string
+typedef struct {
+  char buf[MAX_ERROR_MSG];
+  int pos;
+} throw_cap_t;
+
+static void throw_cap_write(trilog_ctx_t *ctx, const char *s, void *ud) {
+  (void)ctx;
+  throw_cap_t *c = ud;
+  int rem = (int)sizeof(c->buf) - c->pos - 1;
+  int len = (int)strlen(s);
+  if (len > rem)
+    len = rem;
+  if (len > 0) {
+    memcpy(c->buf + c->pos, s, len);
+    c->pos += len;
+    c->buf[c->pos] = '\0';
+  }
+}
+
+static void throw_cap_writef(trilog_ctx_t *ctx, const char *fmt, va_list args,
+                             void *ud) {
+  (void)ctx;
+  throw_cap_t *c = ud;
+  int rem = (int)sizeof(c->buf) - c->pos - 1;
+  if (rem > 0) {
+    int n = vsnprintf(c->buf + c->pos, rem + 1, fmt, args);
+    if (n > 0)
+      c->pos += (n < rem) ? n : rem;
+    c->buf[c->pos] = '\0';
+  }
+}
+
 static builtin_result_t builtin_throw(trilog_ctx_t *ctx, term_t *goal,
                                       env_t *env) {
   term_t *ball = deref(env, goal->args[0]);
   ctx->thrown_ball = ball;
   ctx->has_runtime_error = true;
-  // extract readable string from error(type, _) if iso form
+  // serialize error type to runtime_error string using print_term
   if (ball->type == FUNC && strcmp(ball->name, "error") == 0 &&
       ball->arity == 2) {
-    snprintf(ctx->runtime_error, MAX_ERROR_MSG, "%s", ball->args[0]->name);
+    throw_cap_t cap = {{0}, 0};
+    io_hooks_t saved = ctx->io_hooks;
+    ctx->io_hooks.write_str = throw_cap_write;
+    ctx->io_hooks.writef = throw_cap_writef;
+    ctx->io_hooks.userdata = &cap;
+    print_term(ctx, ball->args[0], env, false);
+    ctx->io_hooks = saved;
+    strncpy(ctx->runtime_error, cap.buf, MAX_ERROR_MSG - 1);
+    ctx->runtime_error[MAX_ERROR_MSG - 1] = '\0';
   } else {
     snprintf(ctx->runtime_error, MAX_ERROR_MSG, "unhandled exception");
   }
@@ -496,6 +547,8 @@ static builtin_result_t builtin_is_list(trilog_ctx_t *ctx, term_t *goal,
                                         env_t *env) {
   (void)ctx;
   term_t *t = deref(env, goal->args[0]);
+  if (t->type == STR)
+    return BUILTIN_OK;
   while (is_cons(t))
     t = deref(env, t->args[1]);
   return is_nil(t) ? BUILTIN_OK : BUILTIN_FAIL;
@@ -584,7 +637,7 @@ static builtin_result_t builtin_list_goal(trilog_ctx_t *ctx, term_t *goal,
                                           env_t *env) {
   term_t *list = goal;
   while (is_cons(list)) {
-    term_t *h = deref(env, list->args[0]);
+    term_t *h = deref(env, list_head(ctx, list));
     if (h->type == VAR) {
       throw_instantiation_error(ctx, "[...] goal");
       return BUILTIN_ERROR;
@@ -604,7 +657,7 @@ static builtin_result_t builtin_list_goal(trilog_ctx_t *ctx, term_t *goal,
       return BUILTIN_FAIL;
     if (!trilog_load_file(ctx, filename))
       return BUILTIN_FAIL;
-    list = deref(env, list->args[1]);
+    list = deref(env, list_tail(ctx, list));
   }
   if (!is_nil(list)) {
     throw_type_error(ctx, "list", list, "[...] goal");
@@ -844,13 +897,9 @@ static builtin_result_t builtin_sub_atom(trilog_ctx_t *ctx, term_t *goal,
 }
 
 static term_t *str_to_char_list(trilog_ctx_t *ctx, const char *s) {
-  term_t *list = make_const(ctx, "[]");
-  for (int i = (int)strlen(s) - 1; i >= 0; i--) {
-    char ch[2] = {s[i], '\0'};
-    term_t *args[2] = {make_const(ctx, ch), list};
-    list = make_func(ctx, ".", args, 2);
-  }
-  return list;
+  int len = (int)strlen(s);
+  const char *data = intern_name(ctx, s);
+  return make_str(ctx, data, len);
 }
 
 static term_t *str_to_code_list(trilog_ctx_t *ctx, const char *s) {
@@ -864,14 +913,23 @@ static term_t *str_to_code_list(trilog_ctx_t *ctx, const char *s) {
   return list;
 }
 
-static bool char_list_to_str(env_t *env, term_t *list, char *buf, int max) {
+static bool char_list_to_str(trilog_ctx_t *ctx, env_t *env, term_t *list,
+                             char *buf, int max) {
   int n = 0;
+  // fast path: packed string
+  if (list->type == STR) {
+    if (list->arity >= max)
+      return false;
+    memcpy(buf, list->name, list->arity);
+    buf[list->arity] = '\0';
+    return true;
+  }
   while (is_cons(list)) {
-    const char *cs = term_atom_str(deref(env, list->args[0]));
+    const char *cs = term_atom_str(deref(env, list_head(ctx, list)));
     if (!cs || cs[1] != '\0' || n >= max - 1)
       return false;
     buf[n++] = cs[0];
-    list = deref(env, list->args[1]);
+    list = deref(env, list_tail(ctx, list));
   }
   if (!is_nil(list))
     return false;
@@ -879,15 +937,16 @@ static bool char_list_to_str(env_t *env, term_t *list, char *buf, int max) {
   return true;
 }
 
-static bool code_list_to_str(env_t *env, term_t *list, char *buf, int max) {
+static bool code_list_to_str(trilog_ctx_t *ctx, env_t *env, term_t *list,
+                             char *buf, int max) {
   int n = 0;
   while (is_cons(list)) {
     int c;
-    if (!term_as_int(deref(env, list->args[0]), &c) || c < 0 || c > 255 ||
-        n >= max - 1)
+    if (!term_as_int(deref(env, list_head(ctx, list)), &c) || c < 0 ||
+        c > 255 || n >= max - 1)
       return false;
     buf[n++] = (char)c;
-    list = deref(env, list->args[1]);
+    list = deref(env, list_tail(ctx, list));
   }
   if (!is_nil(list))
     return false;
@@ -914,7 +973,7 @@ static builtin_result_t builtin_atom_chars(trilog_ctx_t *ctx, term_t *goal,
     return BUILTIN_ERROR;
   }
   char buf[MAX_NAME] = {0};
-  if (!char_list_to_str(env, list, buf, MAX_NAME))
+  if (!char_list_to_str(ctx, env, list, buf, MAX_NAME))
     return BUILTIN_FAIL;
   return unify(ctx, goal->args[0], make_const(ctx, buf), env) ? BUILTIN_OK
                                                               : BUILTIN_FAIL;
@@ -939,7 +998,7 @@ static builtin_result_t builtin_atom_codes(trilog_ctx_t *ctx, term_t *goal,
     return BUILTIN_ERROR;
   }
   char buf[MAX_NAME] = {0};
-  if (!code_list_to_str(env, list, buf, MAX_NAME))
+  if (!code_list_to_str(ctx, env, list, buf, MAX_NAME))
     return BUILTIN_FAIL;
   return unify(ctx, goal->args[0], make_const(ctx, buf), env) ? BUILTIN_OK
                                                               : BUILTIN_FAIL;
@@ -1024,7 +1083,7 @@ static builtin_result_t builtin_number_codes(trilog_ctx_t *ctx, term_t *goal,
     return BUILTIN_ERROR;
   }
   char buf[MAX_NAME] = {0};
-  if (!code_list_to_str(env, list, buf, MAX_NAME) || !is_integer_str(buf))
+  if (!code_list_to_str(ctx, env, list, buf, MAX_NAME) || !is_integer_str(buf))
     return BUILTIN_FAIL;
   {
     int v = 0, sign = 1;
@@ -1059,7 +1118,7 @@ static builtin_result_t builtin_number_chars(trilog_ctx_t *ctx, term_t *goal,
     return BUILTIN_ERROR;
   }
   char buf[MAX_NAME] = {0};
-  if (!char_list_to_str(env, list, buf, MAX_NAME) || !is_integer_str(buf))
+  if (!char_list_to_str(ctx, env, list, buf, MAX_NAME) || !is_integer_str(buf))
     return BUILTIN_FAIL;
   {
     int v = 0, sign = 1;
@@ -1209,12 +1268,12 @@ static builtin_result_t builtin_univ(trilog_ctx_t *ctx, term_t *goal,
     throw_type_error(ctx, "list", list, "=../2");
     return BUILTIN_ERROR;
   }
-  term_t *head = deref(env, cur->args[0]);
+  term_t *head = deref(env, list_head(ctx, cur));
   if (head->type == VAR) {
     throw_instantiation_error(ctx, "=../2");
     return BUILTIN_ERROR;
   }
-  cur = deref(env, cur->args[1]);
+  cur = deref(env, list_tail(ctx, cur));
   // head must be atom when list has args; must be atomic when arity 0
   if (is_cons(cur) && head->type != CONST) {
     throw_type_error(ctx, "atom", head, "=../2");
@@ -1232,8 +1291,8 @@ static builtin_result_t builtin_univ(trilog_ctx_t *ctx, term_t *goal,
   while (is_cons(cur)) {
     if (ar >= MAX_ARGS)
       return BUILTIN_FAIL;
-    args[ar++] = deref(env, cur->args[0]);
-    cur = deref(env, cur->args[1]);
+    args[ar++] = deref(env, list_head(ctx, cur));
+    cur = deref(env, list_tail(ctx, cur));
   }
   if (!is_nil(cur)) {
     throw_type_error(ctx, "list", list, "=../2");
@@ -1321,6 +1380,7 @@ static builtin_result_t builtin_assertz(trilog_ctx_t *ctx, term_t *goal,
   c->body_count = 0;
   if (arg->type == FUNC && strcmp(arg->name, ":-") == 0 && arg->arity == 2) {
     c->head = deref(env, arg->args[0]);
+    c->body = (term_t **)term_alloc(ctx, MAX_GOALS * sizeof(term_t *));
     flatten_body(env, deref(env, arg->args[1]), c);
   } else {
     c->head = arg;
@@ -1358,6 +1418,7 @@ static builtin_result_t builtin_asserta(trilog_ctx_t *ctx, term_t *goal,
   c->body_count = 0;
   if (arg->type == FUNC && strcmp(arg->name, ":-") == 0 && arg->arity == 2) {
     c->head = deref(env, arg->args[0]);
+    c->body = (term_t **)term_alloc(ctx, MAX_GOALS * sizeof(term_t *));
     flatten_body(env, deref(env, arg->args[1]), c);
   } else {
     c->head = arg;
@@ -1464,14 +1525,15 @@ static builtin_result_t builtin_retractall(trilog_ctx_t *ctx, term_t *goal,
   return BUILTIN_OK;
 }
 
-static int list_to_array(env_t *env, term_t *list, term_t **arr, int max) {
+static int list_to_array(trilog_ctx_t *ctx, env_t *env, term_t *list,
+                         term_t **arr, int max) {
   int n = 0;
   list = deref(env, list);
   while (is_cons(list)) {
     if (n >= max)
       return -1;
-    arr[n++] = deref(env, list->args[0]);
-    list = deref(env, list->args[1]);
+    arr[n++] = deref(env, list_head(ctx, list));
+    list = deref(env, list_tail(ctx, list));
   }
   return is_nil(list) ? n : -1;
 }
@@ -1492,7 +1554,7 @@ static term_t *array_to_list(trilog_ctx_t *ctx, term_t **arr, int n) {
 static builtin_result_t builtin_msort(trilog_ctx_t *ctx, term_t *goal,
                                       env_t *env) {
   term_t *elems[MAX_LIST_LIT];
-  int n = list_to_array(env, goal->args[0], elems, MAX_LIST_LIT);
+  int n = list_to_array(ctx, env, goal->args[0], elems, MAX_LIST_LIT);
   if (n < 0)
     return BUILTIN_FAIL;
   // insertion sort by term_order
@@ -1513,7 +1575,7 @@ static builtin_result_t builtin_msort(trilog_ctx_t *ctx, term_t *goal,
 static builtin_result_t builtin_sort(trilog_ctx_t *ctx, term_t *goal,
                                      env_t *env) {
   term_t *elems[MAX_LIST_LIT];
-  int n = list_to_array(env, goal->args[0], elems, MAX_LIST_LIT);
+  int n = list_to_array(ctx, env, goal->args[0], elems, MAX_LIST_LIT);
   if (n < 0)
     return BUILTIN_FAIL;
   // insertion sort
@@ -1714,8 +1776,213 @@ static builtin_result_t builtin_unconsult(trilog_ctx_t *ctx, term_t *goal,
 
 // current_prolog_flag/2
 // TODO: flags are all hardcoded constants; set_prolog_flag/2 is not implemented
-static builtin_result_t builtin_current_prolog_flag(trilog_ctx_t *ctx,
-                                                    term_t *goal, env_t *env) {
+// op/3 and current_op/3
+
+// OP_NONE=0, OP_XFX=1, OP_XFY=2, OP_YFX=3, OP_FX=4, OP_FY=5, OP_XF=6, OP_YF=7
+static const char *op_assoc_names[] = {
+    "none", "xfx", "xfy", "yfx", "fx", "fy", "xf", "yf",
+};
+#define OP_ASSOC_COUNT                                                         \
+  ((int)(sizeof(op_assoc_names) / sizeof(op_assoc_names[0])))
+
+op_assoc_t op_assoc_from_atom(const char *s) {
+  if (!s)
+    return OP_NONE;
+  for (int i = 1; i < OP_ASSOC_COUNT; i++)
+    if (strcmp(s, op_assoc_names[i]) == 0)
+      return (op_assoc_t)i;
+  return OP_NONE;
+}
+
+const char *op_assoc_to_atom(op_assoc_t a) {
+  if (a >= 0 && a < OP_ASSOC_COUNT)
+    return op_assoc_names[a];
+  return "none";
+}
+
+static bool op_name_valid(const char *name) {
+  if (!name)
+    return false;
+  // C2: '{}' and '[]' cannot be operators
+  if (strcmp(name, "{}") == 0 || strcmp(name, "[]") == 0)
+    return false;
+  // C2: '|' may only be infix with priority >= 1001 — checked by caller
+  return true;
+}
+
+static builtin_result_t do_op(trilog_ctx_t *ctx, int prio, op_assoc_t assoc,
+                              const char *name) {
+  ops_init_defaults(ctx);
+  ctx->ops_dirty = true;
+
+  // C2: '|' must be infix (xfy/yfx/xfx) with prio >= 1001, or removed (prio==0)
+  if (strcmp(name, "|") == 0 && prio != 0) {
+    bool is_infix = (assoc == OP_XFY || assoc == OP_YFX || assoc == OP_XFX);
+    if (!is_infix || prio < 1001) {
+      term_t *op_atom = make_const(ctx, name);
+      throw_permission_error(ctx, "create", "operator", op_atom, "op/3");
+      return BUILTIN_ERROR;
+    }
+  }
+
+  // find existing entry for this (name, class) and update or remove it
+  bool is_infix_assoc = (assoc == OP_XFX || assoc == OP_XFY || assoc == OP_YFX);
+  bool is_prefix_assoc = (assoc == OP_FX || assoc == OP_FY);
+  (void)is_prefix_assoc;
+
+  for (int i = 0; i < ctx->op_count; i++) {
+    op_entry_t *e = &ctx->op_table[i];
+    if (e->name == NULL || strcmp(e->name, name) != 0)
+      continue;
+    bool slot_infix =
+        (e->assoc == OP_XFX || e->assoc == OP_XFY || e->assoc == OP_YFX);
+    // same class (infix vs prefix vs postfix) → update
+    if (slot_infix == is_infix_assoc ||
+        ((e->assoc == OP_FX || e->assoc == OP_FY) == is_prefix_assoc)) {
+      if (prio == 0)
+        e->priority = 0; // remove (keep slot, zero priority means inactive)
+      else {
+        e->priority = prio;
+        e->assoc = assoc;
+      }
+      return BUILTIN_OK;
+    }
+  }
+
+  if (prio == 0)
+    return BUILTIN_OK; // removing non-existent op is fine
+
+  // add new entry
+  if (ctx->op_count >= MAX_OPS) {
+    ctx->has_runtime_error = true;
+    snprintf(ctx->runtime_error, MAX_ERROR_MSG, "operator table full");
+    return BUILTIN_ERROR;
+  }
+  const char *iname = intern_name(ctx, name);
+  op_entry_t *e = &ctx->op_table[ctx->op_count++];
+  e->name = iname;
+  e->priority = prio;
+  e->assoc = assoc;
+  return BUILTIN_OK;
+}
+
+static builtin_result_t builtin_op(trilog_ctx_t *ctx, term_t *goal,
+                                   env_t *env) {
+  term_t *prio_t = deref(env, goal->args[0]);
+  term_t *type_t = deref(env, goal->args[1]);
+  term_t *name_t = deref(env, goal->args[2]);
+
+  if (prio_t->type == VAR || type_t->type == VAR) {
+    throw_instantiation_error(ctx, "op/3");
+    return BUILTIN_ERROR;
+  }
+  int prio = 0;
+  if (!term_as_int(prio_t, &prio) || prio < 0 || prio > 1200) {
+    throw_type_error(ctx, "integer", prio_t, "op/3");
+    return BUILTIN_ERROR;
+  }
+  const char *type_s = term_atom_str(type_t);
+  if (!type_s) {
+    throw_type_error(ctx, "atom", type_t, "op/3");
+    return BUILTIN_ERROR;
+  }
+  op_assoc_t assoc = op_assoc_from_atom(type_s);
+  if (assoc == OP_NONE) {
+    term_t *dargs[2] = {make_const(ctx, "operator_specifier"), type_t};
+    term_t *de = make_func(ctx, "domain_error", dargs, 2);
+    throw_error(ctx, de, "op/3");
+    return BUILTIN_ERROR;
+  }
+
+  // name_t may be an atom or a list of atoms
+  if (name_t->type == CONST || name_t->type == FUNC) {
+    // check for list
+    term_t *cur = name_t;
+    bool is_list = false;
+    if (is_nil(cur)) {
+      // '[]' as an atom cannot be made an operator (ISO 8.14.3 C2)
+      throw_permission_error(ctx, "create", "operator", name_t, "op/3");
+      return BUILTIN_ERROR;
+    }
+    if (is_cons(cur))
+      is_list = true;
+    if (is_list) {
+      while (is_cons(cur)) {
+        term_t *head = deref(env, list_head(ctx, cur));
+        const char *hname = term_atom_str(head);
+        if (!hname) {
+          throw_type_error(ctx, "atom", head, "op/3");
+          return BUILTIN_ERROR;
+        }
+        if (!op_name_valid(hname)) {
+          throw_permission_error(ctx, "create", "operator",
+                                 make_const(ctx, hname), "op/3");
+          return BUILTIN_ERROR;
+        }
+        builtin_result_t r = do_op(ctx, prio, assoc, hname);
+        if (r != BUILTIN_OK)
+          return r;
+        cur = deref(env, list_tail(ctx, cur));
+      }
+      return BUILTIN_OK;
+    }
+    // single atom
+    const char *opname = term_atom_str(name_t);
+    if (!opname) {
+      throw_type_error(ctx, "atom", name_t, "op/3");
+      return BUILTIN_ERROR;
+    }
+    if (!op_name_valid(opname)) {
+      throw_permission_error(ctx, "create", "operator", make_const(ctx, opname),
+                             "op/3");
+      return BUILTIN_ERROR;
+    }
+    return do_op(ctx, prio, assoc, opname);
+  }
+  if (name_t->type == VAR) {
+    throw_instantiation_error(ctx, "op/3");
+    return BUILTIN_ERROR;
+  }
+  throw_type_error(ctx, "atom", name_t, "op/3");
+  return BUILTIN_ERROR;
+}
+
+// current_op_entry/4(+Idx, -Prio, -Type, -Name) — index-based enumeration
+static builtin_result_t builtin_current_op_entry(trilog_ctx_t *ctx,
+                                                 term_t *goal, env_t *env) {
+  ops_init_defaults(ctx);
+  term_t *idx_t = deref(env, goal->args[0]);
+  int idx = 0;
+  if (!term_as_int(idx_t, &idx) || idx < 0 || idx >= ctx->op_count)
+    return BUILTIN_FAIL;
+  op_entry_t *e = &ctx->op_table[idx];
+  if (e->priority == 0)
+    return BUILTIN_FAIL;
+
+  term_t *prio_t2 = make_int(ctx, e->priority);
+  term_t *type_t2 = make_const(ctx, op_assoc_to_atom(e->assoc));
+  term_t *name_t2 = make_const(ctx, e->name);
+
+  if (!unify(ctx, goal->args[1], prio_t2, env))
+    return BUILTIN_FAIL;
+  if (!unify(ctx, goal->args[2], type_t2, env))
+    return BUILTIN_FAIL;
+  if (!unify(ctx, goal->args[3], name_t2, env))
+    return BUILTIN_FAIL;
+  return BUILTIN_OK;
+}
+
+// current_op_count/1(-N) — number of entries (including inactive/removed ones)
+static builtin_result_t builtin_current_op_count(trilog_ctx_t *ctx,
+                                                 term_t *goal, env_t *env) {
+  ops_init_defaults(ctx);
+  return unify(ctx, goal->args[0], make_int(ctx, ctx->op_count), env)
+             ? BUILTIN_OK
+             : BUILTIN_FAIL;
+}
+
+static builtin_result_t builtin_prolog_flag_value(trilog_ctx_t *ctx,
+                                                  term_t *goal, env_t *env) {
   term_t *flag = deref(env, goal->args[0]);
   if (flag->type == VAR) {
     throw_instantiation_error(ctx, "current_prolog_flag/2");
@@ -1744,7 +2011,7 @@ static builtin_result_t builtin_current_prolog_flag(trilog_ctx_t *ctx,
   } else if (strcmp(fname, "double_quotes") == 0)
     val = "chars";
   else {
-    throw_type_error(ctx, "prolog_flag", flag, "current_prolog_flag/2");
+    throw_domain_error(ctx, "prolog_flag", flag, "current_prolog_flag/2");
     return BUILTIN_ERROR;
   }
   return unify(ctx, goal->args[1], make_const(ctx, val), env) ? BUILTIN_OK
@@ -1829,17 +2096,24 @@ static const builtin_t builtins[] = {
     {"abolish", 1, builtin_abolish},
     {"consulted", 1, builtin_consulted},
     {"unconsult", 1, builtin_unconsult},
-    {"current_prolog_flag", 2, builtin_current_prolog_flag},
-    {"succ", 2, builtin_succ},
-    {"plus", 3, builtin_plus},
+    {"op", 3, builtin_op},
+    {"current_op_entry", 4, builtin_current_op_entry},
+    {"current_op_count", 1, builtin_current_op_count},
+    {"prolog_flag_value", 2, builtin_prolog_flag_value},
     {"msort", 2, builtin_msort},
     {"sort", 2, builtin_sort},
     {"with_output_to", 2, builtin_with_output_to},
     {"term_to_atom", 2, builtin_term_to_atom},
     {"atom_to_term", 3, builtin_atom_to_term},
+    {"read_from_chars", 2, builtin_read_from_chars},
+    {"read_term_from_chars", 3, builtin_read_term_from_chars},
+    {"write_term_to_chars", 3, builtin_write_term_to_chars},
     {"open", 3, builtin_open},
     {"close", 1, builtin_close},
     {"read_line_to_atom", 2, builtin_read_line_to_atom},
+    {"read_line_to_chars", 2, builtin_read_line_to_chars},
+    {"put_chars", 1, builtin_put_chars},
+    {"put_chars", 2, builtin_put_chars2},
     {"get_char", 1, builtin_get_char},
     {"read_term", 2, builtin_read_term},
     {NULL, 0, NULL}};
