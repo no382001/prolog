@@ -1,3 +1,5 @@
+#ifndef TRILOG_FREESTANDING
+
 #ifndef _POSIX_C_SOURCE
 #define _POSIX_C_SOURCE 200809L
 #endif
@@ -16,3 +18,13 @@ static inline long long trilog_file_mtime(const char *path) {
   struct stat st;
   return (stat(path, &st) == 0) ? (long long)st.st_mtime : -1LL;
 }
+
+#else // TRILOG_FREESTANDING
+
+#include "trilog.h"
+
+#ifndef assert
+#define assert(x) ((void)(x))
+#endif
+
+#endif // TRILOG_FREESTANDING
