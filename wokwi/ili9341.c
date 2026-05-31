@@ -1,10 +1,9 @@
-#include "ssd1306.h"
+#include "ili9341.h"
+#include "pico/stdlib.h"
+#include "hardware/gpio.h"
 #include <string.h>
 
-static i2c_inst_t *_i2c;
-static uint8_t     _buf[SSD1306_PAGES][SSD1306_W];
-
-/* 5x8 font, ASCII 32-127. Column bytes, bit0=top pixel. */
+/* 5x8 font, ASCII 32-127. Column bytes, bit0=top. */
 static const uint8_t font5x8[96][5] = {
     {0x00,0x00,0x00,0x00,0x00}, /* sp */
     {0x00,0x00,0x5F,0x00,0x00}, /* !  */
@@ -104,65 +103,100 @@ static const uint8_t font5x8[96][5] = {
     {0x00,0x00,0x00,0x00,0x00}, /* DEL */
 };
 
-static void cmd(uint8_t c) {
-    uint8_t buf[2] = {0x00, c};
-    i2c_write_blocking(_i2c, SSD1306_ADDR, buf, 2, false);
-}
+static uint8_t _linebuf[ILI_W * 2];
 
-void ssd1306_init(i2c_inst_t *i2c) {
-    _i2c = i2c;
-    cmd(0xAE);        /* display off */
-    cmd(0xD5); cmd(0x80); /* clock */
-    cmd(0xA8); cmd(0x3F); /* mux 64 rows */
-    cmd(0xD3); cmd(0x00); /* offset 0 */
-    cmd(0x40);        /* start line 0 */
-    cmd(0x8D); cmd(0x14); /* charge pump on */
-    cmd(0x20); cmd(0x00); /* horizontal addressing */
-    cmd(0xA1);        /* seg remap */
-    cmd(0xC8);        /* com scan reversed */
-    cmd(0xDA); cmd(0x12); /* com pins 128x64 */
-    cmd(0x81); cmd(0x7F); /* contrast */
-    cmd(0xD9); cmd(0xF1); /* precharge */
-    cmd(0xDB); cmd(0x40); /* vcomh */
-    cmd(0xA4);        /* resume ram */
-    cmd(0xA6);        /* normal (not inverted) */
-    cmd(0xAF);        /* display on */
-    ssd1306_clear();
-    ssd1306_flush();
-}
-
-void ssd1306_clear(void) {
-    memset(_buf, 0, sizeof(_buf));
-}
-
-static void draw_char(int page, int x, char c) {
-    if ((unsigned char)c < 32 || (unsigned char)c > 127) c = '?';
-    const uint8_t *g = font5x8[(unsigned char)c - 32];
-    for (int col = 0; col < 5 && x + col < SSD1306_W; col++)
-        _buf[page][x + col] = g[col];
-}
-
-void ssd1306_puts(int row, int col, const char *s) {
-    if (row < 0 || row >= SSD1306_PAGES) return;
-    int x = col * 6;
-    while (*s && x < SSD1306_W) {
-        draw_char(row, x, *s++);
-        x += 6;
+static void ili_cmd(uint8_t cmd, const uint8_t *data, size_t len) {
+    gpio_put(ILI_CS, 0);
+    gpio_put(ILI_DC, 0);
+    spi_write_blocking(spi0, &cmd, 1);
+    if (len) {
+        gpio_put(ILI_DC, 1);
+        spi_write_blocking(spi0, data, len);
     }
+    gpio_put(ILI_CS, 1);
 }
 
-void ssd1306_hline(int row) {
-    if (row < 0 || row >= SSD1306_PAGES) return;
-    memset(_buf[row], 0x08, SSD1306_W); /* bit 3 = middle of page */
+static void set_window(uint16_t x0, uint16_t y0, uint16_t x1, uint16_t y1) {
+    uint8_t d[4];
+    d[0]=x0>>8; d[1]=x0&0xFF; d[2]=x1>>8; d[3]=x1&0xFF;
+    ili_cmd(0x2A, d, 4);
+    d[0]=y0>>8; d[1]=y0&0xFF; d[2]=y1>>8; d[3]=y1&0xFF;
+    ili_cmd(0x2B, d, 4);
 }
 
-void ssd1306_flush(void) {
-    uint8_t cmds[] = {0x00, 0x21, 0, 127, 0x22, 0, SSD1306_PAGES - 1};
-    i2c_write_blocking(_i2c, SSD1306_ADDR, cmds, sizeof(cmds), false);
-    uint8_t line[SSD1306_W + 1];
-    line[0] = 0x40;
-    for (int p = 0; p < SSD1306_PAGES; p++) {
-        memcpy(line + 1, _buf[p], SSD1306_W);
-        i2c_write_blocking(_i2c, SSD1306_ADDR, line, SSD1306_W + 1, false);
+void ili9341_init(void) {
+    spi_init(spi0, 10 * 1000 * 1000);
+    gpio_set_function(ILI_SCK,  GPIO_FUNC_SPI);
+    gpio_set_function(ILI_MOSI, GPIO_FUNC_SPI);
+
+    gpio_init(ILI_CS);  gpio_set_dir(ILI_CS,  GPIO_OUT); gpio_put(ILI_CS,  1);
+    gpio_init(ILI_DC);  gpio_set_dir(ILI_DC,  GPIO_OUT); gpio_put(ILI_DC,  1);
+    gpio_init(ILI_RST); gpio_set_dir(ILI_RST, GPIO_OUT);
+
+    gpio_put(ILI_RST, 1); sleep_ms(10);
+    gpio_put(ILI_RST, 0); sleep_ms(50);
+    gpio_put(ILI_RST, 1); sleep_ms(120);
+
+    ili_cmd(0x01, NULL, 0); sleep_ms(50);   /* software reset */
+    ili_cmd(0x11, NULL, 0); sleep_ms(120);  /* sleep out      */
+
+    ili_cmd(0xC0, (uint8_t[]){0x23},       1); /* power ctrl 1  */
+    ili_cmd(0xC1, (uint8_t[]){0x10},       1); /* power ctrl 2  */
+    ili_cmd(0xC5, (uint8_t[]){0x3E,0x28},  2); /* VCOM ctrl 1   */
+    ili_cmd(0xC7, (uint8_t[]){0x86},       1); /* VCOM ctrl 2   */
+    ili_cmd(0x36, (uint8_t[]){0x28},       1); /* MADCTL: landscape, BGR */
+    ili_cmd(0x3A, (uint8_t[]){0x55},       1); /* 16-bit color  */
+    ili_cmd(0xB1, (uint8_t[]){0x00,0x18},  2); /* frame rate    */
+    ili_cmd(0xB6, (uint8_t[]){0x08,0x82,0x27}, 3);
+    ili_cmd(0x26, (uint8_t[]){0x01},       1); /* gamma curve   */
+    ili_cmd(0x29, NULL, 0);                    /* display on    */
+
+    ili9341_fill(ILI_BLACK);
+}
+
+void ili9341_fill(uint16_t color) {
+    set_window(0, 0, ILI_W - 1, ILI_H - 1);
+    for (int i = 0; i < ILI_W; i++) {
+        _linebuf[i*2]   = color >> 8;
+        _linebuf[i*2+1] = color & 0xFF;
     }
+    gpio_put(ILI_CS, 0);
+    gpio_put(ILI_DC, 0);
+    uint8_t cmd = 0x2C;
+    spi_write_blocking(spi0, &cmd, 1);
+    gpio_put(ILI_DC, 1);
+    for (int y = 0; y < ILI_H; y++)
+        spi_write_blocking(spi0, _linebuf, ILI_W * 2);
+    gpio_put(ILI_CS, 1);
+}
+
+void ili9341_draw_row(int row, const char *text, uint16_t fg, uint16_t bg) {
+    int y0 = row * CHAR_H;
+    set_window(0, y0, ILI_W - 1, y0 + CHAR_H - 1);
+
+    int len = (int)strlen(text);
+
+    gpio_put(ILI_CS, 0);
+    gpio_put(ILI_DC, 0);
+    uint8_t cmd = 0x2C;
+    spi_write_blocking(spi0, &cmd, 1);
+    gpio_put(ILI_DC, 1);
+
+    for (int py = 0; py < CHAR_H; py++) {
+        for (int px = 0; px < ILI_W; px++) {
+            int ci  = px / CHAR_W;
+            int col = px % CHAR_W;
+            uint16_t color = bg;
+            if (py < 8 && col < 5 && ci < len) {
+                unsigned char c = (unsigned char)text[ci];
+                if (c >= 32 && c <= 127)
+                    if ((font5x8[c - 32][col] >> py) & 1)
+                        color = fg;
+            }
+            _linebuf[px*2]   = color >> 8;
+            _linebuf[px*2+1] = color & 0xFF;
+        }
+        spi_write_blocking(spi0, _linebuf, ILI_W * 2);
+    }
+    gpio_put(ILI_CS, 1);
 }

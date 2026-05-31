@@ -42,19 +42,33 @@ set(SRCS
   ../src/streams.c
   ../src/term.c
   ../src/unify.c
-  ssd1306.c
+  ili9341.c
+  leds.c
   main_rp2040.c
 )
 
+add_custom_command(
+  OUTPUT  ${CMAKE_CURRENT_BINARY_DIR}/core_embed.h
+  COMMAND xxd -i -n core_pl ${CMAKE_CURRENT_SOURCE_DIR}/../core.pl
+          > ${CMAKE_CURRENT_BINARY_DIR}/core_embed.h
+  DEPENDS ${CMAKE_CURRENT_SOURCE_DIR}/../core.pl
+)
+add_custom_target(gen_embeds DEPENDS ${CMAKE_CURRENT_BINARY_DIR}/core_embed.h)
+
 add_executable(trilog ${SRCS})
+add_dependencies(trilog gen_embeds)
 
 target_compile_options(trilog PRIVATE ${SMALL_FLAGS})
 target_compile_definitions(trilog PRIVATE PICO_BUILD)
-target_include_directories(trilog PRIVATE ${CMAKE_CURRENT_SOURCE_DIR} ${CMAKE_CURRENT_SOURCE_DIR}/../src)
+target_include_directories(trilog PRIVATE
+  ${CMAKE_CURRENT_SOURCE_DIR}
+  ${CMAKE_CURRENT_SOURCE_DIR}/../src
+  ${CMAKE_CURRENT_BINARY_DIR}
+)
 
 pico_enable_stdio_usb(trilog 1)
 pico_enable_stdio_uart(trilog 0)
 
-target_link_libraries(trilog pico_stdlib hardware_i2c)
+target_link_libraries(trilog pico_stdlib hardware_spi hardware_gpio)
 
 pico_add_extra_outputs(trilog)

@@ -1,5 +1,6 @@
 _build/*
 wokwi/build/
+wokwi/core_embed.h
 *.o
 *.a
 *.so

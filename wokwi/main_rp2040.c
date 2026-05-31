@@ -1,6 +1,7 @@
 #include "pico/stdlib.h"
-#include "hardware/i2c.h"
-#include "ssd1306.h"
+#include "hardware/spi.h"
+#include "ili9341.h"
+#include "leds.h"
 #include <stdarg.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -9,38 +10,113 @@
 #include "../src/trilog.h"
 #include "core_embed.h"
 
-#define I2C_SDA 4
-#define I2C_SCL 5
+/* --- display history ---
+   Row 0           : header (drawn once at startup)
+   Rows 1..HIST_N  : scrolling REPL output
+   Row GRID_ROWS-3 : separator
+   Row GRID_ROWS-2 : heap / string stats
+   Row GRID_ROWS-1 : cls / binds / infer stats              */
 
-#define DISP_COLS SSD1306_COLS  /* 21 */
-#define OUT_LINES 2
+#define HIST_N (GRID_ROWS - 4)   /* 22 history lines */
+
+static char     hist[HIST_N][GRID_COLS + 1];
+static uint16_t hist_fg[HIST_N];
+static int      hist_n = 0;
+
+static void hist_push(const char *line, uint16_t color) {
+    if (hist_n == HIST_N) {
+        memmove(hist,    hist    + 1, (HIST_N - 1) * sizeof(hist[0]));
+        memmove(hist_fg, hist_fg + 1, (HIST_N - 1) * sizeof(hist_fg[0]));
+        hist_n--;
+    }
+    strncpy(hist[hist_n], line, GRID_COLS);
+    hist[hist_n][GRID_COLS] = '\0';
+    hist_fg[hist_n] = color;
+    hist_n++;
+}
+
+/* Push multi-line output from a buffer into history. */
+static void hist_push_output(const char *buf, uint16_t color) {
+    const char *p = buf;
+    char line[GRID_COLS + 1];
+    while (*p) {
+        const char *nl = strchr(p, '\n');
+        int len = nl ? (int)(nl - p) : (int)strlen(p);
+        if (len > 0) {
+            int take = len < GRID_COLS ? len : GRID_COLS;
+            memcpy(line, p, (size_t)take);
+            line[take] = '\0';
+            hist_push(line, color);
+        }
+        if (!nl) break;
+        p = nl + 1;
+    }
+}
+
+static void disp_redraw_history(void) {
+    for (int i = 0; i < HIST_N; i++) {
+        const char *text = (i < hist_n) ? hist[i] : "";
+        uint16_t    fg   = (i < hist_n) ? hist_fg[i] : ILI_BLACK;
+        ili9341_draw_row(1 + i, text, fg, ILI_BLACK);
+    }
+}
+
+static void disp_update_stats(trilog_ctx_t *ctx) {
+    trilog_usage_t u = trilog_get_usage(ctx);
+
+    /* separator */
+    char sep[GRID_COLS + 1];
+    memset(sep, '-', GRID_COLS); sep[GRID_COLS] = '\0';
+    ili9341_draw_row(GRID_ROWS - 3, sep, ILI_DKGRAY, ILI_BLACK);
+
+    /* row: heap [####   ]52%  str [##     ]15% */
+    auto void bar(char *dst, int used, int total, int w) {
+        int f = total > 0 ? (used * w / total) : 0;
+        *dst++ = '[';
+        for (int i = 0; i < w; i++) *dst++ = (i < f) ? '#' : ' ';
+        *dst++ = ']'; *dst = '\0';
+    }
+    char b1[12], b2[12], row[GRID_COLS + 1];
+    int hp = u.term_pool_total   ? u.term_pool_used   * 100 / u.term_pool_total   : 0;
+    int sp = u.string_pool_total ? u.string_pool_used * 100 / u.string_pool_total : 0;
+    bar(b1, u.term_pool_used,   u.term_pool_total,   8);
+    bar(b2, u.string_pool_used, u.string_pool_total, 8);
+    snprintf(row, sizeof(row), "heap%s%3d%%  str%s%3d%%", b1, hp, b2, sp);
+    ili9341_draw_row(GRID_ROWS - 2, row, ILI_GREEN, ILI_BLACK);
+
+    /* row: cls N/256  binds N/1024  infer NM */
+    int infer = ctx->stats.son_calls;
+    char inf_s[16];
+    if      (infer >= 1000000) snprintf(inf_s, sizeof(inf_s), "%dM", infer/1000000);
+    else if (infer >= 1000)    snprintf(inf_s, sizeof(inf_s), "%dK", infer/1000);
+    else                       snprintf(inf_s, sizeof(inf_s), "%d",  infer);
+    snprintf(row, sizeof(row), "cls %d/%d  binds %d/%d  infer %s",
+             u.clauses_used, u.clauses_total,
+             u.bindings_used, u.bindings_total, inf_s);
+    ili9341_draw_row(GRID_ROWS - 1, row, ILI_CYAN, ILI_BLACK);
+}
+
+/* --- trilog context and output buffer --- */
 
 static uint8_t ctx_buf[TRILOG_CTX_SIZE(TERM_POOL_BYTES)];
 static trilog_ctx_t *g_ctx;
 
-/* --- output capture for display --- */
-static char g_outbuf[512];
-static int  g_outpos;
-
-static char disp_query[DISP_COLS + 1];
-static char disp_out[OUT_LINES][DISP_COLS + 1];
-
-/* --- I/O hooks --- */
+static char g_out[1024];
+static int  g_out_pos;
 
 static void rp2040_write_str(trilog_ctx_t *ctx, const char *s, void *ud) {
     (void)ctx; (void)ud;
     printf("%s", s);
     stdio_flush();
     int len = (int)strlen(s);
-    int rem = (int)sizeof(g_outbuf) - 1 - g_outpos;
+    int rem = (int)sizeof(g_out) - 1 - g_out_pos;
     if (len > rem) len = rem;
-    memcpy(g_outbuf + g_outpos, s, (size_t)len);
-    g_outpos += len;
-    g_outbuf[g_outpos] = '\0';
+    memcpy(g_out + g_out_pos, s, (size_t)len);
+    g_out_pos += len;
+    g_out[g_out_pos] = '\0';
 }
 
 static void rp2040_writef(trilog_ctx_t *ctx, const char *fmt, va_list ap, void *ud) {
-    (void)ctx; (void)ud;
     char tmp[256];
     vsnprintf(tmp, sizeof(tmp), fmt, ap);
     rp2040_write_str(ctx, tmp, ud);
@@ -48,7 +124,7 @@ static void rp2040_writef(trilog_ctx_t *ctx, const char *fmt, va_list ap, void *
 
 static char *rp2040_read_line(trilog_ctx_t *ctx, char *buf, int size, void *ud) {
     (void)ctx; (void)ud;
-    int i = 0, c;
+    int i = 0, c = 0;
     while (i < size - 1) {
         c = getchar();
         if (c == '\n' || c == EOF) break;
@@ -58,137 +134,27 @@ static char *rp2040_read_line(trilog_ctx_t *ctx, char *buf, int size, void *ud) 
             continue;
         }
         buf[i++] = (char)c;
-        putchar(c);
-        stdio_flush();
+        putchar(c); stdio_flush();
     }
     buf[i] = '\0';
-    putchar('\n');
-    stdio_flush();
+    putchar('\n'); stdio_flush();
     return (i == 0 && c == EOF) ? NULL : buf;
 }
 
-static int rp2040_read_char(trilog_ctx_t *ctx, void *ud) {
-    (void)ctx; (void)ud;
-    return getchar();
-}
-
-static bool rp2040_file_exists(trilog_ctx_t *ctx, const char *path, void *ud) {
-    (void)ctx; (void)path; (void)ud;
-    return false;
-}
-
-static long long rp2040_file_mtime(trilog_ctx_t *ctx, const char *path, void *ud) {
-    (void)ctx; (void)path; (void)ud;
-    return -1;
-}
-
-static double rp2040_clock(trilog_ctx_t *ctx, void *ud) {
-    (void)ctx; (void)ud;
-    return (double)time_us_64() / 1e6;
-}
-
-/* --- display update --- */
-
-static void truncate_copy(char *dst, const char *src, int max) {
-    int len = (int)strlen(src);
-    if (len <= max) {
-        strncpy(dst, src, (size_t)max);
-        dst[max] = '\0';
-    } else {
-        memcpy(dst, src, (size_t)(max - 1));
-        dst[max - 1] = '.';
-        dst[max] = '\0';
-    }
-}
-
-static void disp_parse_output(void) {
-    memset(disp_out, ' ', sizeof(disp_out));
-    for (int i = 0; i < OUT_LINES; i++) disp_out[i][DISP_COLS] = '\0';
-
-    int line = 0;
-    char *p = g_outbuf;
-    while (*p && line < OUT_LINES) {
-        char *nl = strchr(p, '\n');
-        int len = nl ? (int)(nl - p) : (int)strlen(p);
-        if (len > 0) {
-            truncate_copy(disp_out[line], p, DISP_COLS);
-            line++;
-        }
-        if (!nl) break;
-        p = nl + 1;
-    }
-}
-
-static void disp_bar(char *buf, int used, int total, int bar_w) {
-    int filled = total > 0 ? (used * bar_w / total) : 0;
-    if (filled > bar_w) filled = bar_w;
-    buf[0] = '[';
-    for (int i = 0; i < bar_w; i++) buf[1 + i] = (i < filled) ? '#' : ' ';
-    buf[1 + bar_w] = ']';
-    buf[2 + bar_w] = '\0';
-}
-
-static void disp_update(void) {
-    trilog_usage_t u = trilog_get_usage(g_ctx);
-
-    ssd1306_clear();
-
-    /* row 0: header */
-    ssd1306_puts(0, 0, "trilog  M0+ 264K");
-
-    /* row 1: last query */
-    char qline[DISP_COLS + 4];
-    snprintf(qline, sizeof(qline), "?-%s", disp_query);
-    ssd1306_puts(1, 0, qline);
-
-    /* rows 2-3: output */
-    disp_parse_output();
-    ssd1306_puts(2, 0, disp_out[0]);
-    ssd1306_puts(3, 0, disp_out[1]);
-
-    /* row 4: separator */
-    ssd1306_hline(4);
-
-    /* row 5: heap bar  used/total */
-    char bar[12];
-    disp_bar(bar, u.term_pool_used, u.term_pool_total, 7);
-    char row5[DISP_COLS + 1];
-    int hp = u.term_pool_total > 0
-        ? (u.term_pool_used * 100 / u.term_pool_total) : 0;
-    snprintf(row5, sizeof(row5), "heap%s%3d%%", bar, hp);
-    ssd1306_puts(5, 0, row5);
-
-    /* row 6: str + cls */
-    char row6[DISP_COLS + 1];
-    int sp = u.string_pool_total > 0
-        ? (u.string_pool_used * 100 / u.string_pool_total) : 0;
-    snprintf(row6, sizeof(row6), "str:%3d%% cls:%3d", sp, u.clauses_used);
-    ssd1306_puts(6, 0, row6);
-
-    /* row 7: inferences */
-    char row7[DISP_COLS + 1];
-    int infer = g_ctx->stats.son_calls;
-    if (infer >= 1000000)
-        snprintf(row7, sizeof(row7), "infer:%dM", infer / 1000000);
-    else if (infer >= 1000)
-        snprintf(row7, sizeof(row7), "infer:%dK", infer / 1000);
-    else
-        snprintf(row7, sizeof(row7), "infer:%d", infer);
-    ssd1306_puts(7, 0, row7);
-
-    ssd1306_flush();
-}
+static int      rp2040_read_char(trilog_ctx_t *ctx, void *ud)                        { (void)ctx;(void)ud; return getchar(); }
+static bool     rp2040_file_exists(trilog_ctx_t *ctx, const char *p, void *ud)        { (void)ctx;(void)p;(void)ud; return false; }
+static long long rp2040_file_mtime(trilog_ctx_t *ctx, const char *p, void *ud)        { (void)ctx;(void)p;(void)ud; return -1; }
+static double   rp2040_clock(trilog_ctx_t *ctx, void *ud)                             { (void)ctx;(void)ud; return (double)time_us_64()/1e6; }
 
 int main(void) {
     stdio_init_all();
+    leds_init();
+    ili9341_init();
 
-    /* I2C for OLED */
-    i2c_init(i2c0, 400000);
-    gpio_set_function(I2C_SDA, GPIO_FUNC_I2C);
-    gpio_set_function(I2C_SCL, GPIO_FUNC_I2C);
-    gpio_pull_up(I2C_SDA);
-    gpio_pull_up(I2C_SCL);
-    ssd1306_init(i2c0);
+    /* header row (drawn once) */
+    char hdr[GRID_COLS + 1];
+    snprintf(hdr, sizeof(hdr), " trilog  |  M0+ RP2040  264KB SRAM  |  5 LEDs mapped");
+    ili9341_draw_row(0, hdr, ILI_WHITE, ILI_DKBLUE);
 
     /* trilog init */
     g_ctx = (trilog_ctx_t *)ctx_buf;
@@ -197,11 +163,11 @@ int main(void) {
 
     io_hooks_init_default(g_ctx);
     io_hooks_t hooks = {0};
-    hooks.write_str   = rp2040_write_str;
-    hooks.writef      = rp2040_writef;
-    hooks.writef_err  = rp2040_writef;
-    hooks.read_line   = rp2040_read_line;
-    hooks.read_char   = rp2040_read_char;
+    hooks.write_str       = rp2040_write_str;
+    hooks.writef          = rp2040_writef;
+    hooks.writef_err      = rp2040_writef;
+    hooks.read_line       = rp2040_read_line;
+    hooks.read_char       = rp2040_read_char;
     hooks.file_exists     = rp2040_file_exists;
     hooks.file_mtime      = rp2040_file_mtime;
     hooks.clock_monotonic = rp2040_clock;
@@ -216,29 +182,40 @@ int main(void) {
         free(core_str);
     }
 
-    ssd1306_puts(0, 0, "trilog  M0+ 264K");
-    ssd1306_puts(1, 0, "ready.");
-    ssd1306_flush();
+    /* register LED predicates */
+    leds_register_ffi(g_ctx);
+
+    hist_push("ready. type prolog queries below.", ILI_GRAY);
+    hist_push("led(X), led_on(X), sleep_ms(200), led_off(X).", ILI_DKGRAY);
+    disp_redraw_history();
+    disp_update_stats(g_ctx);
 
     char line[256];
     while (1) {
         io_write_str(g_ctx, "?- ");
-        if (!io_read_line(g_ctx, line, sizeof(line)))
-            break;
-        if (strlen(line) == 0) continue;
-        if (strcmp(line, "halt.") == 0) break;
+        if (!io_read_line(g_ctx, line, sizeof(line))) break;
+        if (!strlen(line)) continue;
+        if (!strcmp(line, "halt.")) break;
 
-        truncate_copy(disp_query, line, DISP_COLS - 2);
-        g_outpos = 0;
-        g_outbuf[0] = '\0';
+        /* show query in history */
+        char qline[GRID_COLS + 1];
+        snprintf(qline, sizeof(qline), "?- %s", line);
+        hist_push(qline, ILI_CYAN);
+        disp_redraw_history();
 
+        /* run query */
+        g_out_pos = 0; g_out[0] = '\0';
         exec_query_interactive(g_ctx, line);
 
-        disp_update();
+        /* push output into history */
+        if (g_out_pos > 0)
+            hist_push_output(g_out, ILI_GREEN);
+
+        disp_redraw_history();
+        disp_update_stats(g_ctx);
     }
 
-    ssd1306_clear();
-    ssd1306_puts(3, 3, "halted.");
-    ssd1306_flush();
+    ili9341_fill(ILI_BLACK);
+    ili9341_draw_row(13, "  halted.", ILI_RED, ILI_BLACK);
     return 0;
 }

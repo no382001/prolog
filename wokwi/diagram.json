@@ -3,25 +3,33 @@
   "author": "trilog",
   "editor": "wokwi",
   "parts": [
-    {
-      "type": "wokwi-pi-pico",
-      "id": "pico",
-      "top": 0,
-      "left": 0,
-      "attrs": {}
-    },
-    {
-      "type": "wokwi-ssd1306",
-      "id": "oled",
-      "top": 0,
-      "left": 220,
-      "attrs": { "i2cAddress": "0x3c" }
-    }
+    { "type": "wokwi-pi-pico", "id": "pico", "top": 0,   "left": 0,   "attrs": {} },
+    { "type": "wokwi-ili9341", "id": "ili",  "top": 0,   "left": 220, "attrs": {} },
+    { "type": "wokwi-led",     "id": "led0", "top": 300, "left": 0,   "attrs": {"color": "red"}    },
+    { "type": "wokwi-led",     "id": "led1", "top": 300, "left": 50,  "attrs": {"color": "green"}  },
+    { "type": "wokwi-led",     "id": "led2", "top": 300, "left": 100, "attrs": {"color": "blue"}   },
+    { "type": "wokwi-led",     "id": "led3", "top": 300, "left": 150, "attrs": {"color": "yellow"} },
+    { "type": "wokwi-led",     "id": "led4", "top": 300, "left": 200, "attrs": {"color": "white"}  }
   ],
   "connections": [
-    ["oled:VCC", "pico:3V3(OUT)", "red",    []],
-    ["oled:GND", "pico:GND.1",   "black",   []],
-    ["oled:SDA", "pico:GP4",     "blue",    []],
-    ["oled:SCL", "pico:GP5",     "yellow",  []]
+    ["ili:VCC",   "pico:3V3(OUT)", "red",    []],
+    ["ili:GND",   "pico:GND.1",   "black",  []],
+    ["ili:CS",    "pico:GP17",    "purple", []],
+    ["ili:RST",   "pico:GP21",    "orange", []],
+    ["ili:DC",    "pico:GP20",    "yellow", []],
+    ["ili:MOSI",  "pico:GP19",    "blue",   []],
+    ["ili:SCK",   "pico:GP18",    "green",  []],
+    ["ili:LED",   "pico:3V3(OUT)","red",    []],
+
+    ["pico:GP6",  "led0:A",       "red",    []],
+    ["led0:K",    "pico:GND.2",   "black",  []],
+    ["pico:GP7",  "led1:A",       "green",  []],
+    ["led1:K",    "pico:GND.2",   "black",  []],
+    ["pico:GP8",  "led2:A",       "blue",   []],
+    ["led2:K",    "pico:GND.2",   "black",  []],
+    ["pico:GP9",  "led3:A",       "yellow", []],
+    ["led3:K",    "pico:GND.2",   "black",  []],
+    ["pico:GP10", "led4:A",       "white",  []],
+    ["led4:K",    "pico:GND.2",   "black",  []]
   ]
 }
