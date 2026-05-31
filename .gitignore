@@ -1,4 +1,5 @@
 _build/*
+wokwi/build/
 *.o
 *.a
 *.so

@@ -38,7 +38,7 @@ $(BUILD_DIR):
 
 .PHONY: clean
 clean:
-	rm -rf $(BUILD_DIR) $(TARGET) $(WEB_DIR)/trilog.js $(WEB_DIR)/trilog.wasm
+	rm -rf $(BUILD_DIR) $(TARGET) $(WEB_DIR)/trilog.js $(WEB_DIR)/trilog.wasm wokwi/build
 
 .PHONY: examples
 examples: $(EXAMPLE_BINS)
@@ -157,4 +157,11 @@ serve-web:
 	$(MAKE) -B web
 	-kill $$(ss -tlnp 'sport = :8080' 2>/dev/null | grep -oP 'pid=\K[0-9]+') 2>/dev/null; sleep 0.2
 	php -S localhost:8080 -t $(WEB_DIR)
+
+.PHONY: pico
+pico:
+	mkdir -p wokwi/build
+	cd wokwi/build && cmake .. -Wno-dev > /dev/null
+	$(MAKE) -C wokwi/build -j$$(nproc)
+	@echo "built: wokwi/build/trilog.elf  wokwi/build/trilog.uf2"
 

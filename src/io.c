@@ -94,9 +94,13 @@ static long long default_file_mtime(trilog_ctx_t *ctx, const char *path,
 static double default_clock_monotonic(trilog_ctx_t *ctx, void *userdata) {
   (void)ctx;
   (void)userdata;
+#ifdef PICO_BUILD
+  return 0.0;
+#else
   struct timespec ts;
   clock_gettime(CLOCK_MONOTONIC, &ts);
   return (double)ts.tv_sec + (double)ts.tv_nsec / 1e9;
+#endif
 }
 
 //****

@@ -1,0 +1,27 @@
+{
+  "version": 1,
+  "author": "trilog",
+  "editor": "wokwi",
+  "parts": [
+    {
+      "type": "wokwi-pi-pico",
+      "id": "pico",
+      "top": 0,
+      "left": 0,
+      "attrs": {}
+    },
+    {
+      "type": "wokwi-ssd1306",
+      "id": "oled",
+      "top": 0,
+      "left": 220,
+      "attrs": { "i2cAddress": "0x3c" }
+    }
+  ],
+  "connections": [
+    ["oled:VCC", "pico:3V3(OUT)", "red",    []],
+    ["oled:GND", "pico:GND.1",   "black",   []],
+    ["oled:SDA", "pico:GP4",     "blue",    []],
+    ["oled:SCL", "pico:GP5",     "yellow",  []]
+  ]
+}

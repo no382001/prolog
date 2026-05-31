@@ -1,0 +1,3 @@
+[submodule "wokwi/pico-sdk"]
+	path = wokwi/pico-sdk
+	url = https://github.com/raspberrypi/pico-sdk
