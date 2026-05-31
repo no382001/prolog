@@ -163,5 +163,6 @@ pico:
 	mkdir -p wokwi/build
 	cd wokwi/build && cmake .. -Wno-dev > /dev/null
 	$(MAKE) -C wokwi/build -j$$(nproc)
-	@echo "built: wokwi/build/trilog.elf  wokwi/build/trilog.uf2"
+	@echo "sim:   wokwi/build/trilog/trilog.elf"
+	@echo "flash: wokwi/build/trilog.uf2"
 

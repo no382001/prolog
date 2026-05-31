@@ -1,11 +1,12 @@
 #include "leds.h"
+#include "rp2040_embed.h"
 #include "pico/stdlib.h"
 #include "hardware/gpio.h"
 #include <stdlib.h>
 #include <string.h>
 
 /* GP6-GP10: clear of SPI pins (GP17-GP21) and UART (GP0-GP1) */
-const uint8_t led_pins[LED_COUNT] = {6, 7, 8, 9, 10};
+const uint8_t led_pins[LED_COUNT] = {13, 14, 15, 16, 17};
 
 void leds_init(void) {
     for (int i = 0; i < LED_COUNT; i++) {
@@ -53,15 +54,16 @@ static builtin_result_t b_sleep_ms(trilog_ctx_t *ctx, term_t *goal, env_t *env) 
     return BUILTIN_OK;
 }
 
-/* led(+X): succeeds if X is a valid LED id (0-4).
-   Enumerate: between(0, 4, X), led(X)  */
-static builtin_result_t b_led(trilog_ctx_t *ctx, term_t *goal, env_t *env) {
-    int n = led_id(ctx, goal, env);
-    return n >= 0 ? BUILTIN_OK : BUILTIN_FAIL;
-}
-
 void leds_register_ffi(trilog_ctx_t *ctx) {
-    ffi_register_builtin(ctx, "led",        1, b_led,        NULL);
+    /* led/1 facts live in rp2040.pl — loaded here so findall/member work */
+    char *src = malloc(rp2040_pl_len + 1);
+    if (src) {
+        memcpy(src, rp2040_pl, rp2040_pl_len);
+        src[rp2040_pl_len] = '\0';
+        trilog_load_string(ctx, src);
+        free(src);
+    }
+
     ffi_register_builtin(ctx, "led_on",     1, b_led_on,     NULL);
     ffi_register_builtin(ctx, "led_off",    1, b_led_off,    NULL);
     ffi_register_builtin(ctx, "led_toggle", 1, b_led_toggle, NULL);

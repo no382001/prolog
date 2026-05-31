@@ -1,6 +1,7 @@
 _build/*
 wokwi/build/
 wokwi/core_embed.h
+wokwi/rp2040_embed.h
 *.o
 *.a
 *.so

@@ -34,3 +34,5 @@ papers to look into:
     - Tarau & Dahl, "Logic Programming and Logic Grammars with First-Order Continuations"
     - Lindholm, "Unification and the Efficient Execution of Prolog"
     - Zhou, "Parameter Passing and Control Stack Management in Prolog Implementation Revisited" (1996)
+
+non-determinism support?
