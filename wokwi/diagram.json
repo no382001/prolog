@@ -27,14 +27,14 @@
     [ "pico:GP7",   "lcd:D7",  "gray",   [ "v-36", "*", "h0", "v20" ] ],
 
     [ "pico:GP13",  "led0:A",  "red",    [] ],
-    [ "led0:K",     "pico:GND.2", "black", [] ],
+    [ "led0:C",     "pico:GND.1", "black", [] ],
     [ "pico:GP14",  "led1:A",  "green",  [] ],
-    [ "led1:K",     "pico:GND.2", "black", [] ],
+    [ "led1:C",     "pico:GND.1", "black", [] ],
     [ "pico:GP15",  "led2:A",  "blue",   [] ],
-    [ "led2:K",     "pico:GND.2", "black", [] ],
+    [ "led2:C",     "pico:GND.1", "black", [] ],
     [ "pico:GP16",  "led3:A",  "yellow", [] ],
-    [ "led3:K",     "pico:GND.2", "black", [] ],
+    [ "led3:C",     "pico:GND.1", "black", [] ],
     [ "pico:GP17",  "led4:A",  "white",  [] ],
-    [ "led4:K",     "pico:GND.2", "black", [] ]
+    [ "led4:C",     "pico:GND.1", "black", [] ]
   ]
 }

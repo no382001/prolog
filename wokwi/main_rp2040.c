@@ -12,22 +12,24 @@
 static uint8_t ctx_buf[TRILOG_CTX_SIZE(TERM_POOL_BYTES)];
 static trilog_ctx_t *g_ctx;
 
-static char g_out[512];
-static int  g_out_pos;
+/* --- LCD FFI ---
+   lcd_clear            : clear display
+   lcd_row(+Row, +Text) : write string to row 0 or 1  */
 
-/* --- display helpers --- */
-
-static void disp_update(const char *row0, const char *row1) {
-    hd44780_puts(0, row0);
-    hd44780_puts(1, row1);
+static builtin_result_t b_lcd_clear(trilog_ctx_t *ctx, term_t *goal, env_t *env) {
+    (void)ctx; (void)goal; (void)env;
+    hd44780_clear();
+    return BUILTIN_OK;
 }
 
-static void disp_stats(const char *label) {
-    trilog_usage_t u = trilog_get_usage(g_ctx);
-    int hp = u.term_pool_total ? u.term_pool_used * 100 / u.term_pool_total : 0;
-    char row1[LCD_COLS + 1];
-    snprintf(row1, sizeof(row1), "%-9.9s H:%3d%%", label, hp);
-    hd44780_puts(1, row1);
+static builtin_result_t b_lcd_row(trilog_ctx_t *ctx, term_t *goal, env_t *env) {
+    (void)ctx;
+    term_t *r = deref(env, goal->args[0]);
+    term_t *t = deref(env, goal->args[1]);
+    long row = strtol(r->name, NULL, 10);
+    if (row < 0 || row >= LCD_ROWS) return BUILTIN_FAIL;
+    hd44780_puts((uint8_t)row, t->name);
+    return BUILTIN_OK;
 }
 
 /* --- I/O hooks --- */
@@ -36,18 +38,12 @@ static void rp2040_write_str(trilog_ctx_t *ctx, const char *s, void *ud) {
     (void)ctx; (void)ud;
     printf("%s", s);
     stdio_flush();
-    int len = (int)strlen(s);
-    int rem = (int)sizeof(g_out) - 1 - g_out_pos;
-    if (len > rem) len = rem;
-    memcpy(g_out + g_out_pos, s, (size_t)len);
-    g_out_pos += len;
-    g_out[g_out_pos] = '\0';
 }
 
 static void rp2040_writef(trilog_ctx_t *ctx, const char *fmt, va_list ap, void *ud) {
-    char tmp[256];
-    vsnprintf(tmp, sizeof(tmp), fmt, ap);
-    rp2040_write_str(ctx, tmp, ud);
+    (void)ctx; (void)ud;
+    vprintf(fmt, ap);
+    stdio_flush();
 }
 
 static char *rp2040_read_line(trilog_ctx_t *ctx, char *buf, int size, void *ud) {
@@ -64,21 +60,21 @@ static char *rp2040_read_line(trilog_ctx_t *ctx, char *buf, int size, void *ud) 
         buf[i++] = (char)c; putchar(c); stdio_flush();
     }
     buf[i] = '\0';
-    putchar('\n'); stdio_flush();
+    //putchar('\n');
+    stdio_flush();
     return (i == 0 && c == EOF) ? NULL : buf;
 }
 
-static int      rp2040_read_char(trilog_ctx_t *ctx, void *ud)              { (void)ctx;(void)ud; return getchar(); }
-static bool     rp2040_file_exists(trilog_ctx_t *ctx, const char *p, void *ud) { (void)ctx;(void)p;(void)ud; return false; }
+static int       rp2040_read_char(trilog_ctx_t *ctx, void *ud)                  { (void)ctx;(void)ud; return getchar(); }
+static bool      rp2040_file_exists(trilog_ctx_t *ctx, const char *p, void *ud) { (void)ctx;(void)p;(void)ud; return false; }
 static long long rp2040_file_mtime(trilog_ctx_t *ctx, const char *p, void *ud)  { (void)ctx;(void)p;(void)ud; return -1; }
-static double   rp2040_clock(trilog_ctx_t *ctx, void *ud)                  { (void)ctx;(void)ud; return (double)time_us_64()/1e6; }
+static double    rp2040_clock(trilog_ctx_t *ctx, void *ud)                      { (void)ctx;(void)ud; return (double)time_us_64()/1e6; }
 
 int main(void) {
     stdio_init_all();
     leds_init();
     hd44780_init();
-
-    disp_update("trilog", "M0+ RP2040 264K");
+    hd44780_puts(0, "trilog");
 
     g_ctx = (trilog_ctx_t *)ctx_buf;
     trilog_ctx_init(g_ctx, TERM_POOL_BYTES);
@@ -105,38 +101,19 @@ int main(void) {
     }
 
     leds_register_ffi(g_ctx);
-
-    disp_update("trilog ready", "");
+    ffi_register_builtin(g_ctx, "lcd_clear", 0, b_lcd_clear, NULL);
+    ffi_register_builtin(g_ctx, "lcd_row",   2, b_lcd_row,   NULL);
 
     char line[256];
     while (1) {
         io_write_str(g_ctx, "?- ");
-        disp_stats("ready");
         if (!io_read_line(g_ctx, line, sizeof(line))) break;
         if (!strlen(line)) continue;
         if (!strcmp(line, "halt.")) break;
-
-        /* show truncated query on row 0 */
-        char row0[LCD_COLS + 1];
-        snprintf(row0, sizeof(row0), "?-%.14s", line);
-        hd44780_puts(0, row0);
-        hd44780_puts(1, "running...      ");
-
-        g_out_pos = 0; g_out[0] = '\0';
         exec_query_interactive(g_ctx, line);
-
-        /* show first line of output on row 1 */
-        char result[LCD_COLS + 1] = "done";
-        if (g_out_pos > 0) {
-            const char *nl = strchr(g_out, '\n');
-            int len = nl ? (int)(nl - g_out) : g_out_pos;
-            if (len >= LCD_COLS) len = LCD_COLS - 1;
-            memcpy(result, g_out, (size_t)len);
-            result[len] = '\0';
-        }
-        disp_stats(result);
     }
 
-    disp_update("halted.", "");
+    hd44780_puts(0, "halted.");
+    hd44780_puts(1, "");
     return 0;
 }
