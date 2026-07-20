@@ -1942,29 +1942,24 @@ static builtin_result_t builtin_prolog_flag_value(trilog_ctx_t *ctx,
   if (!must_be_atom(ctx, flag, "current_prolog_flag/2"))
     return BUILTIN_ERROR;
   const char *fname = term_atom_str(flag);
-  char buf[32];
-  const char *val = NULL;
+  term_t *val = NULL;
   if (strcmp(fname, "bounded") == 0)
-    val = "true";
-  else if (strcmp(fname, "max_integer") == 0) {
-    snprintf(buf, sizeof(buf), "%d", 2147483647);
-    val = buf;
-  } else if (strcmp(fname, "min_integer") == 0) {
-    snprintf(buf, sizeof(buf), "%d", (int)-2147483647 - 1);
-    val = buf;
-  } else if (strcmp(fname, "integer_rounding_function") == 0)
-    val = "toward_zero";
-  else if (strcmp(fname, "max_arity") == 0) {
-    snprintf(buf, sizeof(buf), "%d", MAX_ARGS);
-    val = buf;
-  } else if (strcmp(fname, "double_quotes") == 0)
-    val = "chars";
+    val = make_const(ctx, "true");
+  else if (strcmp(fname, "max_integer") == 0)
+    val = make_int(ctx, 2147483647);
+  else if (strcmp(fname, "min_integer") == 0)
+    val = make_int(ctx, (int)-2147483647 - 1);
+  else if (strcmp(fname, "integer_rounding_function") == 0)
+    val = make_const(ctx, "toward_zero");
+  else if (strcmp(fname, "max_arity") == 0)
+    val = make_int(ctx, MAX_ARGS);
+  else if (strcmp(fname, "double_quotes") == 0)
+    val = make_const(ctx, "chars");
   else {
     throw_domain_error(ctx, "prolog_flag", flag, "current_prolog_flag/2");
     return BUILTIN_ERROR;
   }
-  return unify(ctx, goal->args[1], make_const(ctx, val), env) ? BUILTIN_OK
-                                                              : BUILTIN_FAIL;
+  return unify(ctx, goal->args[1], val, env) ? BUILTIN_OK : BUILTIN_FAIL;
 }
 
 //****
