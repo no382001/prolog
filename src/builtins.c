@@ -747,15 +747,9 @@ static builtin_result_t builtin_string(trilog_ctx_t *ctx, term_t *goal,
 static builtin_result_t builtin_atom_length(trilog_ctx_t *ctx, term_t *goal,
                                             env_t *env) {
   term_t *a = deref(env, goal->args[0]);
-  if (a->type == VAR) {
-    throw_instantiation_error(ctx, "atom_length/2");
+  if (!must_be_atom(ctx, a, "atom_length/2"))
     return BUILTIN_ERROR;
-  }
   const char *s = term_atom_str(a);
-  if (!s) {
-    throw_type_error(ctx, "atom", a, "atom_length/2");
-    return BUILTIN_ERROR;
-  }
   return unify(ctx, goal->args[1], make_int(ctx, (int)strlen(s)), env)
              ? BUILTIN_OK
              : BUILTIN_FAIL;
@@ -807,15 +801,9 @@ static builtin_result_t builtin_atom_concat(trilog_ctx_t *ctx, term_t *goal,
 static builtin_result_t builtin_sub_atom(trilog_ctx_t *ctx, term_t *goal,
                                          env_t *env) {
   term_t *atom_t = deref(env, goal->args[0]);
-  if (atom_t->type == VAR) {
-    throw_instantiation_error(ctx, "sub_atom/5");
+  if (!must_be_atom(ctx, atom_t, "sub_atom/5"))
     return BUILTIN_ERROR;
-  }
   const char *s = term_atom_str(atom_t);
-  if (!s) {
-    throw_type_error(ctx, "atom", atom_t, "sub_atom/5");
-    return BUILTIN_ERROR;
-  }
   int len = (int)strlen(s);
 
   // try every (before, sub_len) combination — use choice point via solve_all
@@ -959,11 +947,9 @@ static builtin_result_t builtin_atom_chars(trilog_ctx_t *ctx, term_t *goal,
   term_t *atom = deref(env, goal->args[0]);
   term_t *list = deref(env, goal->args[1]);
   if (atom->type != VAR) {
-    const char *s = term_atom_str(atom);
-    if (!s) {
-      throw_type_error(ctx, "atom", atom, "atom_chars/2");
+    if (!must_be_atom(ctx, atom, "atom_chars/2"))
       return BUILTIN_ERROR;
-    }
+    const char *s = term_atom_str(atom);
     return unify(ctx, goal->args[1], str_to_char_list(ctx, s), env)
                ? BUILTIN_OK
                : BUILTIN_FAIL;
@@ -984,11 +970,9 @@ static builtin_result_t builtin_atom_codes(trilog_ctx_t *ctx, term_t *goal,
   term_t *atom = deref(env, goal->args[0]);
   term_t *list = deref(env, goal->args[1]);
   if (atom->type != VAR) {
-    const char *s = term_atom_str(atom);
-    if (!s) {
-      throw_type_error(ctx, "atom", atom, "atom_codes/2");
+    if (!must_be_atom(ctx, atom, "atom_codes/2"))
       return BUILTIN_ERROR;
-    }
+    const char *s = term_atom_str(atom);
     return unify(ctx, goal->args[1], str_to_code_list(ctx, s), env)
                ? BUILTIN_OK
                : BUILTIN_FAIL;
@@ -1013,20 +997,17 @@ static builtin_result_t builtin_char_code(trilog_ctx_t *ctx, term_t *goal,
     return BUILTIN_ERROR;
   }
   if (ch->type != VAR) {
-    const char *s = term_atom_str(ch);
-    if (!s || s[1] != '\0') {
-      throw_type_error(ctx, "character", ch, "char_code/2");
+    if (!must_be_character(ctx, ch, "char_code/2"))
       return BUILTIN_ERROR;
-    }
+    const char *s = term_atom_str(ch);
     return unify(ctx, goal->args[1], make_int(ctx, (unsigned char)s[0]), env)
                ? BUILTIN_OK
                : BUILTIN_FAIL;
   }
-  int c;
-  if (!term_as_int(code, &c)) {
-    throw_type_error(ctx, "integer", code, "char_code/2");
+  if (!must_be_integer(ctx, code, "char_code/2"))
     return BUILTIN_ERROR;
-  }
+  int c;
+  term_as_int(code, &c);
   if (c < 0 || c > 255)
     return BUILTIN_FAIL;
   char buf[2] = {(char)c, '\0'};
@@ -1070,10 +1051,8 @@ static builtin_result_t builtin_number_codes(trilog_ctx_t *ctx, term_t *goal,
   term_t *num = deref(env, goal->args[0]);
   term_t *list = deref(env, goal->args[1]);
   if (num->type != VAR) {
-    if (num->type != INT) {
-      throw_type_error(ctx, "number", num, "number_codes/2");
+    if (!must_be_number(ctx, num, "number_codes/2"))
       return BUILTIN_ERROR;
-    }
     return unify(ctx, goal->args[1], str_to_code_list(ctx, num->name), env)
                ? BUILTIN_OK
                : BUILTIN_FAIL;
@@ -1105,10 +1084,8 @@ static builtin_result_t builtin_number_chars(trilog_ctx_t *ctx, term_t *goal,
   term_t *num = deref(env, goal->args[0]);
   term_t *list = deref(env, goal->args[1]);
   if (num->type != VAR) {
-    if (num->type != INT) {
-      throw_type_error(ctx, "number", num, "number_chars/2");
+    if (!must_be_number(ctx, num, "number_chars/2"))
       return BUILTIN_ERROR;
-    }
     return unify(ctx, goal->args[1], str_to_char_list(ctx, num->name), env)
                ? BUILTIN_OK
                : BUILTIN_FAIL;
@@ -1176,10 +1153,9 @@ static builtin_result_t builtin_functor(trilog_ctx_t *ctx, term_t *goal,
     return BUILTIN_ERROR;
   }
   int ar;
-  if (!term_as_int(a, &ar)) {
-    throw_type_error(ctx, "integer", a, "functor/3");
+  if (!must_be_integer(ctx, a, "functor/3"))
     return BUILTIN_ERROR;
-  }
+  term_as_int(a, &ar);
   if (ar < 0 || ar > MAX_ARGS) {
     throw_type_error(ctx, "integer", a, "functor/3");
     return BUILTIN_ERROR;
@@ -1189,10 +1165,8 @@ static builtin_result_t builtin_functor(trilog_ctx_t *ctx, term_t *goal,
     throw_type_error(ctx, "atom", n, "functor/3");
     return BUILTIN_ERROR;
   }
-  if (n->type != CONST && n->type != INT) {
-    throw_type_error(ctx, "atomic", n, "functor/3");
+  if (!must_be_atomic(ctx, n, "functor/3"))
     return BUILTIN_ERROR;
-  }
   const char *fname = n->name;
   if (!fname)
     return BUILTIN_FAIL;
@@ -1221,15 +1195,12 @@ static builtin_result_t builtin_arg(trilog_ctx_t *ctx, term_t *goal,
     throw_instantiation_error(ctx, "arg/3");
     return BUILTIN_ERROR;
   }
-  if (term->type != FUNC) {
-    throw_type_error(ctx, "compound", term, "arg/3");
+  if (!must_be_compound(ctx, term, "arg/3"))
     return BUILTIN_ERROR;
-  }
+  if (!must_be_integer(ctx, n, "arg/3"))
+    return BUILTIN_ERROR;
   int idx;
-  if (!term_as_int(n, &idx)) {
-    throw_type_error(ctx, "integer", n, "arg/3");
-    return BUILTIN_ERROR;
-  }
+  term_as_int(n, &idx);
   if (idx < 1 || idx > term->arity)
     return BUILTIN_FAIL;
   return unify(ctx, goal->args[2], term->args[idx - 1], env) ? BUILTIN_OK
@@ -1275,10 +1246,8 @@ static builtin_result_t builtin_univ(trilog_ctx_t *ctx, term_t *goal,
   }
   cur = deref(env, list_tail(ctx, cur));
   // head must be atom when list has args; must be atomic when arity 0
-  if (is_cons(cur) && head->type != CONST) {
-    throw_type_error(ctx, "atom", head, "=../2");
+  if (is_cons(cur) && !must_be_atom(ctx, head, "=../2"))
     return BUILTIN_ERROR;
-  }
   if (!is_cons(cur) && !is_nil(cur)) {
     throw_type_error(ctx, "list", list, "=../2");
     return BUILTIN_ERROR;
@@ -1731,15 +1700,9 @@ static builtin_result_t builtin_consulted(trilog_ctx_t *ctx, term_t *goal,
 static builtin_result_t builtin_unconsult(trilog_ctx_t *ctx, term_t *goal,
                                           env_t *env) {
   term_t *arg = deref(env, goal->args[0]);
-  if (arg->type == VAR) {
-    throw_instantiation_error(ctx, "forget_file/1");
+  if (!must_be_atom(ctx, arg, "unconsult/1"))
     return BUILTIN_ERROR;
-  }
   const char *path = term_atom_str(arg);
-  if (!path) {
-    throw_type_error(ctx, "atom", arg, "unconsult/1");
-    return BUILTIN_ERROR;
-  }
   int file_idx = -1;
   for (int i = 0; i < ctx->make_file_count; i++) {
     if (strcmp(ctx->make_files[i].path, path) == 0) {
@@ -1881,11 +1844,9 @@ static builtin_result_t builtin_op(trilog_ctx_t *ctx, term_t *goal,
     throw_type_error(ctx, "integer", prio_t, "op/3");
     return BUILTIN_ERROR;
   }
-  const char *type_s = term_atom_str(type_t);
-  if (!type_s) {
-    throw_type_error(ctx, "atom", type_t, "op/3");
+  if (!must_be_atom(ctx, type_t, "op/3"))
     return BUILTIN_ERROR;
-  }
+  const char *type_s = term_atom_str(type_t);
   op_assoc_t assoc = op_assoc_from_atom(type_s);
   if (assoc == OP_NONE) {
     term_t *dargs[2] = {make_const(ctx, "operator_specifier"), type_t};
@@ -1984,15 +1945,9 @@ static builtin_result_t builtin_current_op_count(trilog_ctx_t *ctx,
 static builtin_result_t builtin_prolog_flag_value(trilog_ctx_t *ctx,
                                                   term_t *goal, env_t *env) {
   term_t *flag = deref(env, goal->args[0]);
-  if (flag->type == VAR) {
-    throw_instantiation_error(ctx, "current_prolog_flag/2");
+  if (!must_be_atom(ctx, flag, "current_prolog_flag/2"))
     return BUILTIN_ERROR;
-  }
   const char *fname = term_atom_str(flag);
-  if (!fname) {
-    throw_type_error(ctx, "atom", flag, "current_prolog_flag/2");
-    return BUILTIN_ERROR;
-  }
   char buf[32];
   const char *val = NULL;
   if (strcmp(fname, "bounded") == 0)

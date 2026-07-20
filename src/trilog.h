@@ -512,6 +512,16 @@ void throw_permission_error(trilog_ctx_t *ctx, const char *operation,
 void throw_existence_error(trilog_ctx_t *ctx, const char *object_type,
                            term_t *object, const char *context);
 
+// must_be_*: combined instantiation_error/type_error check, iso library(error)
+// style. t must already be dereferenced. returns true if t satisfies the
+// type; otherwise throws the appropriate error and returns false.
+bool must_be_atom(trilog_ctx_t *ctx, term_t *t, const char *context);
+bool must_be_integer(trilog_ctx_t *ctx, term_t *t, const char *context);
+bool must_be_number(trilog_ctx_t *ctx, term_t *t, const char *context);
+bool must_be_atomic(trilog_ctx_t *ctx, term_t *t, const char *context);
+bool must_be_compound(trilog_ctx_t *ctx, term_t *t, const char *context);
+bool must_be_character(trilog_ctx_t *ctx, term_t *t, const char *context);
+
 // arithmetic (arith.c)
 bool eval_arith(trilog_ctx_t *ctx, term_t *t, env_t *env, int *result,
                 const char *pred);
