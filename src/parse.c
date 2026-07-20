@@ -973,6 +973,8 @@ bool trilog_exec_query(trilog_ctx_t *ctx, char *query) {
       io_write_str(ctx, "   ");
       io_write_term_quoted(ctx, ball, &err_env);
       io_write_str(ctx, ".\n");
+    } else if (ctx->runtime_error[0]) {
+      io_writef_err(ctx, "error: %s\n", ctx->runtime_error);
     }
     ctx->has_runtime_error = false;
     ok = false;
@@ -1020,6 +1022,9 @@ bool trilog_exec_query_multi(trilog_ctx_t *ctx, char *query,
       io_write_str(ctx, "   ");
       io_write_term_quoted(ctx, ball, &err_env);
       io_write_str(ctx, ".\n");
+    } else if (ctx->runtime_error[0]) {
+      // (e.g. "term pool exhausted") error with no thrown ball
+      io_writef_err(ctx, "error: %s\n", ctx->runtime_error);
     }
     // leave has_runtime_error set so the caller can suppress "false"
     found = false;

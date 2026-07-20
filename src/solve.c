@@ -88,9 +88,19 @@ bool son(trilog_ctx_t *ctx, goal_stmt_t *cn, int *clause_idx, env_t *env,
     }
   }
 
+  term_t *goal_deref = deref(env, selected_goal);
+  const char *goal_name = goal_deref->name;
+  int goal_arity = (goal_deref->type == FUNC) ? goal_deref->arity : 0;
+
   for (int i = *clause_idx; i < ctx->db_count; i++) {
     clause_t *c = &ctx->database[i];
     assert(c->head != NULL && "Clause head is NULL");
+
+    // pre-check on interned name pointers + arity, before paying for
+    // a full rename_vars_mapped on a clause that can't possibly unify.
+    int head_arity = (c->head->type == FUNC) ? c->head->arity : 0;
+    if (c->head->name != goal_name || head_arity != goal_arity)
+      continue;
 
     env->count = ctx->bind_count = env_mark;
 
