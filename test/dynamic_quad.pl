@@ -156,3 +156,15 @@ loop_n(N) :-
 
 ?- member(2, [1, 2, 3]).
    true.
+
+% regression: assertz-ing a rule whose body contains an integer literal,
+% then leaving it live in the database past the end of the query, used to
+% corrupt the perm pool on the next compaction (substitute/3 didn't copy
+% INT terms into the perm pool, so the literal stayed pointing into the
+% temp pool and became a dangling pointer once things were compacted)
+
+?- assertz((dyn_gt2(X) :- X > 2)), dyn_gt2(3).
+   true.
+
+?- dyn_gt2(5).
+   true.

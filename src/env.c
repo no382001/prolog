@@ -114,7 +114,7 @@ term_t *substitute(trilog_ctx_t *ctx, env_t *env, term_t *t) {
   if (!t)
     return NULL;
 
-  if (t->type == CONST || t->type == VAR || t->type == STR) {
+  if (t->type == CONST || t->type == VAR || t->type == STR || t->type == INT) {
     if (ctx->alloc_permanent && term_is_temp(ctx, t))
       return copy_to_perm(ctx, t);
     return t;

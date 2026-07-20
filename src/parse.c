@@ -835,7 +835,13 @@ void strip_line_comment(char *line) {
       else if (*p == '\'')
         in_sq = false;
     } else {
-      if (*p == '"')
+      if (*p == '0' && *(p + 1) == '\'' && *(p + 2)) {
+        // 0'c character code notation: the "'" here doesn't open a quoted
+        // atom, it's followed by exactly one (possibly escaped) char.
+        p += 2;
+        if (*p == '\\' && *(p + 1))
+          p++;
+      } else if (*p == '"')
         in_dq = true;
       else if (*p == '\'')
         in_sq = true;
@@ -864,7 +870,14 @@ bool has_complete_clause(const char *buf) {
       else if (*p == '\'')
         in_sq = false;
     } else {
-      if (*p == '"') {
+      if (*p == '0' && *(p + 1) == '\'' && *(p + 2)) {
+        // 0'c character code notation: the "'" here doesn't open a quoted
+        // atom, it's followed by exactly one (possibly escaped) char, which
+        // may itself be '.', '(', etc. without being clause structure.
+        p += 2;
+        if (*p == '\\' && *(p + 1))
+          p++;
+      } else if (*p == '"') {
         in_dq = true;
       } else if (*p == '\'') {
         in_sq = true;

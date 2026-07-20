@@ -885,9 +885,7 @@ static term_t *str_to_char_list(trilog_ctx_t *ctx, const char *s) {
 static term_t *str_to_code_list(trilog_ctx_t *ctx, const char *s) {
   term_t *list = make_const(ctx, "[]");
   for (int i = (int)strlen(s) - 1; i >= 0; i--) {
-    char code[8];
-    snprintf(code, sizeof(code), "%d", (unsigned char)s[i]);
-    term_t *args[2] = {make_const(ctx, code), list};
+    term_t *args[2] = {make_int(ctx, (unsigned char)s[i]), list};
     list = make_func(ctx, ".", args, 2);
   }
   return list;
@@ -1435,11 +1433,10 @@ static builtin_result_t builtin_retract(trilog_ctx_t *ctx, term_t *goal,
       ctx->db_count--;
       ctx->db_dirty = true;
       ctx->stats.retracts++;
-// TODO: ugly
-#if COMPACT_AFTER_RETRACTS > 0
-      if (ctx->stats.retracts % COMPACT_AFTER_RETRACTS == 0)
-        compact_perm_pool(ctx);
-#endif
+      // perm pool compaction is deferred to end-of-query (toplevel_query):
+      // compact_perm_pool only rebases ctx->database pointers, not this
+      // query's own env bindings or solve stack, so running it mid-query
+      // can leave those pointing at memory that just moved.
       return BUILTIN_OK;
     }
     env->count = ctx->bind_count = env_mark;
@@ -1479,9 +1476,7 @@ static builtin_result_t builtin_retractall(trilog_ctx_t *ctx, term_t *goal,
   }
   if (removed > 0) {
     ctx->stats.retracts += removed;
-#if COMPACT_AFTER_RETRACTS > 0
-    compact_perm_pool(ctx);
-#endif
+    // see builtin_retract: compaction is deferred to end-of-query.
   }
   return BUILTIN_OK;
 }
@@ -1722,9 +1717,7 @@ static builtin_result_t builtin_unconsult(trilog_ctx_t *ctx, term_t *goal,
   int removed = old_count - dst;
   if (removed > 0) {
     ctx->stats.retracts += removed;
-#if COMPACT_AFTER_RETRACTS > 0
-    compact_perm_pool(ctx);
-#endif
+    // see builtin_retract: compaction is deferred to end-of-query.
   }
   return BUILTIN_OK;
 }
