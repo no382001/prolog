@@ -294,6 +294,8 @@ struct trilog_ctx {
   int term_pool_perm;   // perm: grows down from term_pool_size
   int term_pool_floor;  // backtrack cannot reclaim below this
   int bind_floor;       // lco cannot reclaim bindings below this
+  int nest_depth;       // active nested solve() calls (->/catch/;) — bind_floor
+                  // alone can't tell that apart from top level (both can be 0)
   bool alloc_permanent; // when true, allocate from perm end
   bool db_dirty;        // set when assert/retract modifies the database
   bool ops_dirty;       // set when op_table is modified (prevents string pool

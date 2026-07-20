@@ -236,6 +236,9 @@ bool solve_all(trilog_ctx_t *ctx, goal_stmt_t *initial_goals, env_t *env,
 
   int clause_idx;
   int env_mark;
+  // unlike env_mark (reset before every goal), reclaim_mark stays frozen
+  // across builtins so the next clause-match reclaim sweeps them up too.
+  int reclaim_mark = env->count;
   // stack[0] is a sentinel frame the backtrack label (C) never actually
   // resumes into (sp<=0 there means "exhausted"), so 1 is the lowest cut
   // target that leaves it intact. a cut firing before any real choice point
@@ -362,8 +365,13 @@ A:
     int bfloor_save = ctx->bind_floor;
     if (emark > ctx->bind_floor)
       ctx->bind_floor = emark;
+    ctx->nest_depth++;
     bool sub_ok = solve(ctx, &sub_goals, env);
+    ctx->nest_depth--;
     ctx->bind_floor = bfloor_save;
+    // the nested solve() may leave un-reclaimed bindings this reclaim_mark
+    // knows nothing about, so don't treat that span as spannable debt.
+    reclaim_mark = ctx->bind_count;
 
     if (sub_ok) {
       // goal succeeded — continue with remaining goals
@@ -428,8 +436,11 @@ A:
       int bfloor_save = ctx->bind_floor;
       if (emark > ctx->bind_floor)
         ctx->bind_floor = emark;
+      ctx->nest_depth++;
       bool cond_ok = solve(ctx, &cond_goals, env);
+      ctx->nest_depth--;
       ctx->bind_floor = bfloor_save;
+      reclaim_mark = ctx->bind_count;
 
       if (cond_ok) {
         // cond succeeded — commit to then branch
@@ -476,6 +487,7 @@ A:
       sp++;
       if (sp > ctx->stats.stack_peak)
         ctx->stats.stack_peak = sp;
+      reclaim_mark = env->count;
 
       goal_stmt_t new_cn = goals_alloc(ctx, cn.count);
       if (!new_cn.goals)
@@ -503,8 +515,11 @@ A:
     int bfloor_save = ctx->bind_floor;
     if (emark > ctx->bind_floor)
       ctx->bind_floor = emark;
+    ctx->nest_depth++;
     bool cond_ok = solve(ctx, &cond_goals, env);
+    ctx->nest_depth--;
     ctx->bind_floor = bfloor_save;
+    reclaim_mark = ctx->bind_count;
 
     if (cond_ok) {
       goal_stmt_t new_cn = goals_alloc(ctx, cn.count);
@@ -536,6 +551,10 @@ B:
       assert(sp < MAX_STACK && "Stack overflow");
       debug(ctx, "*** SON succeeded, pushing frame, sp=%d ***\n", sp);
 
+      // reclaim can only reach bind_floor exactly at true top level — a
+      // nested call's caller may still hold a reference bound deep inside it.
+      bool reclaim_floor_ok =
+          reclaim_mark > ctx->bind_floor || ctx->nest_depth == 0;
       if (has_more_alternatives(ctx, cn.goals[0], env, clause_idx, env_mark)) {
         assert(sp < MAX_STACK && "Stack overflow");
         stack[sp].goals = cn;
@@ -547,28 +566,39 @@ B:
         if (sp > ctx->stats.stack_peak)
           ctx->stats.stack_peak = sp;
         cut_point = sp - 1;
-      } else if (clause_idx >= 0 && ctx->bind_count > env_mark &&
-                 resolvent.count > 0 && env_mark > ctx->bind_floor &&
+        reclaim_mark = env_mark;
+      } else if (clause_idx >= 0 && ctx->bind_count > reclaim_mark &&
+                 resolvent.count > 0 && reclaim_floor_ok &&
+                 !lco_safe(env, reclaim_mark, ctx->bind_count) &&
                  lco_safe(env, env_mark, ctx->bind_count)) {
-        // lco: no more alternatives — substitute bindings into resolvent
-        // and reclaim binding slots from this deterministic clause.
-        // also patch existing binding values that reference vars in the
-        // reclaimed range, so the binding chain doesn't break.
+        // a named var blocks reclaiming back to reclaim_mark, but this
+        // clause's own [env_mark, bind_count) is clear — give up on the rest.
+        reclaim_mark = env_mark;
+      } else if (clause_idx >= 0 && ctx->bind_count > reclaim_mark &&
+                 resolvent.count > 0 && reclaim_floor_ok &&
+                 lco_safe(env, reclaim_mark, ctx->bind_count)) {
+        // lco: substitute into resolvent and reclaim back to reclaim_mark
+        // (may reach past env_mark), patching older refs into the range.
         for (int j = 0; j < resolvent.count; j++)
           resolvent.goals[j] = substitute(ctx, env, resolvent.goals[j]);
         // patched binding values must survive backtracking.  record the
         // offset before patching so we can ratchet the enclosing choice
         // point's term_mark only if new terms were actually allocated.
         int pre_patch = ctx->term_pool_offset;
-        for (int j = 0; j < env_mark; j++) {
-          if (!term_refs_range(env, env->bindings[j].value, env_mark,
+        for (int j = 0; j < reclaim_mark; j++) {
+          if (!term_refs_range(env, env->bindings[j].value, reclaim_mark,
                                ctx->bind_count))
             continue;
           env->bindings[j].value = substitute(ctx, env, env->bindings[j].value);
         }
         if (ctx->term_pool_offset > pre_patch && sp > 1)
           stack[sp - 1].term_mark = ctx->term_pool_offset;
-        env->count = ctx->bind_count = env_mark;
+        env->count = ctx->bind_count = reclaim_mark;
+      } else if (clause_idx >= 0 && ctx->bind_count > reclaim_mark &&
+                 resolvent.count > 0 && reclaim_floor_ok) {
+        // even env_mark's own range is unsafe (a named var bound right
+        // here) — nothing to reclaim, so just give up tracking this span.
+        reclaim_mark = ctx->bind_count;
       } else if (clause_idx >= 0 && ctx->bind_count == env_mark &&
                  resolvent.count > 0 && sp <= 1 && cn.count == 1) {
         // deterministic tail call with no new bindings, no choice points.
@@ -583,6 +613,7 @@ B:
         if (base_env < ctx->bind_floor)
           base_env = ctx->bind_floor;
         env->count = ctx->bind_count = base_env;
+        reclaim_mark = base_env;
         ctx->term_pool_offset = base_term;
         var_id_map_t map = {0};
         resolvent = goals_alloc(ctx, c->body_count);
@@ -630,6 +661,7 @@ C:
   assert(env_mark >= 0 && env_mark <= env->count &&
          "Invalid env_mark from stack");
   env->count = ctx->bind_count = env_mark;
+  reclaim_mark = env_mark;
 
   debug(ctx, "*** Restored: clause_idx=%d, env_mark=%d, cut_point=%d ***\n",
         clause_idx, env_mark, cut_point);

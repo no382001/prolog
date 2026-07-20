@@ -286,8 +286,10 @@ static int collect_solutions(trilog_ctx_t *ctx, term_t *goal, env_t *env,
   int floor_save = ctx->term_pool_floor;
   int bfloor_save = ctx->bind_floor;
   ctx->bind_floor = MAX_BINDINGS; // disable lco inside findall
+  ctx->nest_depth++; // this solve_all is nested from the caller's view
   env_t query_env = {.bindings = ctx->bindings, .count = ctx->bind_count};
   solve_all(ctx, &goals, &query_env, findall_callback, &state);
+  ctx->nest_depth--;
   ctx->bind_count = bind_save;
   ctx->term_pool_floor = floor_save;
   ctx->bind_floor = bfloor_save;
@@ -349,8 +351,10 @@ static builtin_result_t builtin_setof(trilog_ctx_t *ctx, term_t *goal,
   int floor_save = ctx->term_pool_floor;
   int bfloor_save = ctx->bind_floor;
   ctx->bind_floor = MAX_BINDINGS; // disable lco inside setof
+  ctx->nest_depth++;
   env_t query_env = {.bindings = ctx->bindings, .count = ctx->bind_count};
   solve_all(ctx, &goals, &query_env, findall_callback, &state);
+  ctx->nest_depth--;
   ctx->bind_count = bind_save;
   ctx->term_pool_floor = floor_save;
   ctx->bind_floor = bfloor_save;
@@ -473,7 +477,10 @@ static builtin_result_t builtin_once(trilog_ctx_t *ctx, term_t *goal,
     return BUILTIN_ERROR;
   goal_stmt_t goals = goals_alloc(ctx, 1);
   goals.goals[goals.count++] = inner;
-  if (solve(ctx, &goals, env))
+  ctx->nest_depth++;
+  bool ok = solve(ctx, &goals, env);
+  ctx->nest_depth--;
+  if (ok)
     return BUILTIN_OK;
   return ctx->has_runtime_error ? BUILTIN_ERROR : BUILTIN_FAIL;
 }
@@ -487,7 +494,9 @@ static builtin_result_t builtin_not(trilog_ctx_t *ctx, term_t *goal,
   goals.goals[goals.count++] = inner;
   int env_mark = env->count;
   bool found = false;
+  ctx->nest_depth++;
   solve_all(ctx, &goals, env, not_found_callback, &found);
+  ctx->nest_depth--;
   env->count = ctx->bind_count = env_mark;
   if (ctx->has_runtime_error)
     return BUILTIN_ERROR;
