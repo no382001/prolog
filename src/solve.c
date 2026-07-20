@@ -48,6 +48,8 @@ bool son(trilog_ctx_t *ctx, goal_stmt_t *cn, int *clause_idx, env_t *env,
         debug(ctx, ">>> BUILTIN succeeded!\n");
         int n = cn->count - 1;
         *resolvent = goals_alloc(ctx, n > 0 ? n : 0);
+        if (n > 0 && !resolvent->goals)
+          return false;
         for (int j = 1; j < cn->count; j++)
           resolvent->goals[resolvent->count++] = cn->goals[j];
         *clause_idx = -1; // builtin match — skip lco, no backtrack
@@ -272,6 +274,8 @@ A:
     sp = cut_point;
     int ncut = cn.count - 1;
     goal_stmt_t new_cn = goals_alloc(ctx, ncut > 0 ? ncut : 0);
+    if (ncut > 0 && !new_cn.goals)
+      return false;
     for (int i = 1; i < cn.count; i++)
       new_cn.goals[new_cn.count++] = cn.goals[i];
     cn = new_cn;
@@ -307,6 +311,8 @@ A:
         return false;
     }
     goal_stmt_t new_cn = goals_alloc(ctx, cn.count);
+    if (!new_cn.goals)
+      return false;
     new_cn.goals[new_cn.count++] = new_goal;
     for (int i = 1; i < cn.count; i++)
       new_cn.goals[new_cn.count++] = cn.goals[i];
@@ -320,6 +326,8 @@ A:
     term_t *left = deref(env, first_goal->args[0]);
     term_t *right = deref(env, first_goal->args[1]);
     goal_stmt_t new_cn = goals_alloc(ctx, cn.count + 1);
+    if (!new_cn.goals)
+      return false;
     new_cn.goals[new_cn.count++] = left;
     new_cn.goals[new_cn.count++] = right;
     for (int i = 1; i < cn.count; i++)
@@ -337,6 +345,8 @@ A:
     int emark = env->count;
 
     goal_stmt_t sub_goals = goals_alloc(ctx, 1);
+    if (!sub_goals.goals)
+      return false;
     sub_goals.goals[sub_goals.count++] = sub_goal;
 
     int bfloor_save = ctx->bind_floor;
@@ -349,6 +359,8 @@ A:
       // goal succeeded — continue with remaining goals
       int nrem = cn.count - 1;
       goal_stmt_t new_cn = goals_alloc(ctx, nrem > 0 ? nrem : 0);
+      if (nrem > 0 && !new_cn.goals)
+        return false;
       for (int i = 1; i < cn.count; i++)
         new_cn.goals[new_cn.count++] = cn.goals[i];
       cn = new_cn;
@@ -365,6 +377,8 @@ A:
       if (unify(ctx, catcher, ball, env)) {
         // caught - execute recovery
         goal_stmt_t new_cn = goals_alloc(ctx, cn.count);
+        if (!new_cn.goals)
+          return false;
         new_cn.goals[new_cn.count++] = recovery;
         for (int i = 1; i < cn.count; i++)
           new_cn.goals[new_cn.count++] = cn.goals[i];
@@ -397,6 +411,8 @@ A:
       int emark = env->count;
 
       goal_stmt_t cond_goals = goals_alloc(ctx, 1);
+      if (!cond_goals.goals)
+        return false;
       cond_goals.goals[cond_goals.count++] = cond;
 
       int bfloor_save = ctx->bind_floor;
@@ -408,6 +424,8 @@ A:
       if (cond_ok) {
         // cond succeeded — commit to then branch
         goal_stmt_t new_cn = goals_alloc(ctx, cn.count);
+        if (!new_cn.goals)
+          return false;
         new_cn.goals[new_cn.count++] = then_branch;
         for (int i = 1; i < cn.count; i++)
           new_cn.goals[new_cn.count++] = cn.goals[i];
@@ -419,6 +437,8 @@ A:
         // cond failed — take else branch
         env->count = ctx->bind_count = emark;
         goal_stmt_t new_cn = goals_alloc(ctx, cn.count);
+        if (!new_cn.goals)
+          return false;
         new_cn.goals[new_cn.count++] = right;
         for (int i = 1; i < cn.count; i++)
           new_cn.goals[new_cn.count++] = cn.goals[i];
@@ -431,6 +451,8 @@ A:
     // push choice point for b, then try a
     {
       goal_stmt_t alt_cn = goals_alloc(ctx, cn.count);
+      if (!alt_cn.goals)
+        return false;
       alt_cn.goals[alt_cn.count++] = right;
       for (int i = 1; i < cn.count; i++)
         alt_cn.goals[alt_cn.count++] = cn.goals[i];
@@ -446,6 +468,8 @@ A:
         ctx->stats.stack_peak = sp;
 
       goal_stmt_t new_cn = goals_alloc(ctx, cn.count);
+      if (!new_cn.goals)
+        return false;
       new_cn.goals[new_cn.count++] = left;
       for (int i = 1; i < cn.count; i++)
         new_cn.goals[new_cn.count++] = cn.goals[i];
@@ -462,6 +486,8 @@ A:
     int emark = env->count;
 
     goal_stmt_t cond_goals = goals_alloc(ctx, 1);
+    if (!cond_goals.goals)
+      return false;
     cond_goals.goals[cond_goals.count++] = cond;
 
     int bfloor_save = ctx->bind_floor;
@@ -472,6 +498,8 @@ A:
 
     if (cond_ok) {
       goal_stmt_t new_cn = goals_alloc(ctx, cn.count);
+      if (!new_cn.goals)
+        return false;
       new_cn.goals[new_cn.count++] = then_branch;
       for (int i = 1; i < cn.count; i++)
         new_cn.goals[new_cn.count++] = cn.goals[i];
@@ -548,6 +576,8 @@ B:
         ctx->term_pool_offset = base_term;
         var_id_map_t map = {0};
         resolvent = goals_alloc(ctx, c->body_count);
+        if (c->body_count > 0 && !resolvent.goals)
+          return false;
         for (int j = 0; j < c->body_count; j++)
           resolvent.goals[resolvent.count++] =
               rename_vars_mapped(ctx, c->body[j], &map);
