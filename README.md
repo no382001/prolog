@@ -29,10 +29,13 @@ make
 
 ```sh
 ./trilog                  # interactive REPL
-./trilog -f file.pl       # load file
+./trilog file.pl          # load file
+./trilog -f file.pl       # load file, skip ~/.trilog (fast startup)
 ./trilog -e "goal."       # evaluate and exit
 ./trilog -q tests.pl      # run quad tests
 ```
+
+On startup, trilog loads `~/.trilog` if it exists, unless `-f` (fast startup) is given.
 
 ## Language
 

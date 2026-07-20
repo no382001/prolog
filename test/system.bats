@@ -25,17 +25,34 @@ TRILOG="./trilog"
   [[ "$output" == *"boom"* ]]
 }
 
-# --- file loading (-f) ---
+# --- file loading (positional arg) ---
 
-@test "-f loads clauses and -e can query them" {
-  run "$TRILOG" -f test/family.pl -e "parent(tom,X), write(X)."
+@test "positional file arg loads clauses and -e can query them" {
+  run "$TRILOG" test/family.pl -e "parent(tom,X), write(X)."
   [ "$status" -eq 0 ]
   [[ "$output" == *"bob"* ]]
 }
 
-@test "-f with nonexistent file exits nonzero" {
-  run "$TRILOG" -f nonexistent_file.pl -e "true."
+@test "positional file arg with nonexistent file exits nonzero" {
+  run "$TRILOG" nonexistent_file.pl -e "true."
   [ "$status" -ne 0 ]
+}
+
+@test "init file (~/.trilog) is loaded by default" {
+  fake_home="$(mktemp -d)"
+  echo "init_marker(loaded)." > "$fake_home/.trilog"
+  run env HOME="$fake_home" "$TRILOG" -e "init_marker(X), write(X)."
+  rm -rf "$fake_home"
+  [ "$status" -eq 0 ]
+  [[ "$output" == *"loaded"* ]]
+}
+
+@test "-f skips loading the init file" {
+  fake_home="$(mktemp -d)"
+  echo "init_marker(loaded)." > "$fake_home/.trilog"
+  run env HOME="$fake_home" "$TRILOG" -f -e "init_marker(X), write(X)."
+  rm -rf "$fake_home"
+  [[ "$output" == *"existence_error"* ]]
 }
 
 # --- pipe (non-interactive) mode ---

@@ -35,6 +35,19 @@ static void try_load_core(trilog_ctx_t *ctx, const char *argv0) {
     trilog_load_file(ctx, path);
 }
 
+// user init file, loaded after core.pl unless -f (fast startup) is given.
+static void try_load_init_file(trilog_ctx_t *ctx) {
+  const char *home = getenv("HOME");
+  if (!home)
+    return;
+
+  char path[CORE_PATH_MAX];
+  snprintf(path, sizeof(path), "%s/.trilog", home);
+
+  if (io_file_exists(ctx, path))
+    trilog_load_file(ctx, path);
+}
+
 //****
 //* terminal and usage
 //****
@@ -57,12 +70,13 @@ static int read_key_hook(trilog_ctx_t *ctx, void *ud) {
 
 static void print_usage(trilog_ctx_t *ctx, const char *prog) {
   io_writef_err(ctx,
-                "Usage: %s [-d] [-s] [-f <file>] [-e <expression>] [-q <file>] "
-                "[-j <dir>]\n",
+                "Usage: %s [-d] [-s] [-f] [-e <expression>] [-q <file>] "
+                "[-j <dir>] [file.pl]\n",
                 prog);
+  io_writef_err(ctx, "  file.pl       Load clauses from file\n");
   io_writef_err(ctx, "  -d            Enable debug mode\n");
   io_writef_err(ctx, "  -s            Print stats to stderr on exit\n");
-  io_writef_err(ctx, "  -f <file>     Load clauses from file\n");
+  io_writef_err(ctx, "  -f            Fast startup: do not load ~/.trilog\n");
   io_writef_err(ctx, "  -e <expr>     Execute expression and exit\n");
   io_writef_err(ctx, "  -q <file>     Run quad tests from file\n");
   io_writef_err(ctx, "  -j <dir>      Write JUnit XML reports to directory\n");
@@ -131,16 +145,15 @@ int main(int argc, char *argv[]) {
   hooks.read_char = read_key_hook;
   io_hooks_set(ctx, &hooks);
 
-  try_load_core(ctx, argv[0]);
-
   const char *input_file = NULL;
   const char *expression = NULL;
   const char *quad_file = NULL;
   const char *junit_dir = NULL;
   bool exit_stats = false;
+  bool fast_startup = false;
   int opt;
 
-  while ((opt = getopt(argc, argv, "dsf:e:q:j:h")) != -1) {
+  while ((opt = getopt(argc, argv, "dsfe:q:j:h")) != -1) {
     switch (opt) {
     case 'd':
       ctx->debug_enabled = true;
@@ -150,7 +163,7 @@ int main(int argc, char *argv[]) {
       exit_stats = true;
       break;
     case 'f':
-      input_file = optarg;
+      fast_startup = true;
       break;
     case 'e':
       expression = optarg;
@@ -169,6 +182,13 @@ int main(int argc, char *argv[]) {
       return 1;
     }
   }
+
+  if (optind < argc)
+    input_file = argv[optind];
+
+  try_load_core(ctx, argv[0]);
+  if (!fast_startup)
+    try_load_init_file(ctx);
 
   if (input_file) {
     if (!load_file(ctx, input_file)) {
