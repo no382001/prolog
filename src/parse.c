@@ -336,6 +336,33 @@ static term_t *parse_primary(trilog_ctx_t *ctx) {
     return make_const(ctx, "{}");
   }
 
+  // '{Term}' parses as the compound term '{}'(Term) (ISO 6.3.3), used by
+  // DCGs to embed a plain goal in a grammar rule body.
+  if (*ctx->input_ptr == '{') {
+    ctx->input_ptr++;
+    skip_ws(ctx);
+    term_t *inner = parse_term(ctx);
+    if (!inner) {
+      if (*ctx->input_ptr == '\0' && !parse_has_error(ctx))
+        parse_error_eof(ctx);
+      else if (!parse_has_error(ctx))
+        parse_error(ctx, "expected expression inside '{...}'");
+      return NULL;
+    }
+    skip_ws(ctx);
+    if (*ctx->input_ptr != '}') {
+      if (*ctx->input_ptr == '\0')
+        parse_error_eof(ctx);
+      else
+        parse_error(ctx, "expected '}' after expression, got '%c'",
+                    *ctx->input_ptr);
+      return NULL;
+    }
+    ctx->input_ptr++;
+    term_t *args[1] = {inner};
+    return make_func(ctx, "{}", args, 1);
+  }
+
   if (*ctx->input_ptr == '\'') {
     ctx->input_ptr++; // skip opening quote
     int avail = MAX_STRING_POOL - ctx->string_pool_offset - 1;
@@ -846,8 +873,11 @@ bool has_complete_clause(const char *buf) {
       } else if (*p == ')' || *p == ']') {
         depth--;
       } else if (*p == '.' && depth == 0) {
+        // a '.' immediately preceded by another '.' is part of a multi-dot
+        // operator token (e.g. "=.." for univ), not a clause terminator.
+        char prev = (p == buf) ? '\0' : *(p - 1);
         char next = *(p + 1);
-        if (next == '\0' || isspace((unsigned char)next))
+        if (prev != '.' && (next == '\0' || isspace((unsigned char)next)))
           return true;
       }
     }

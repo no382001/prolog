@@ -148,20 +148,42 @@ bool son(trilog_ctx_t *ctx, goal_stmt_t *cn, int *clause_idx, env_t *env,
 //* solver main loop
 //****
 
+// deref, but only following bindings created before env index `limit`.
+// used to see a goal argument's value as it was *before* the clause match
+// we're now checking alternatives for — that match may have just bound the
+// same variable (e.g. unifying p(X) with p(a) binds X=a), and that binding
+// must not make later, still-viable clauses look excluded by indexing.
+static term_t *deref_before(env_t *env, term_t *t, int limit) {
+  while (t && t->type == VAR) {
+    term_t *val = NULL;
+    for (int i = limit - 1; i >= 0; i--) {
+      if (env->bindings[i].var_id == t->arity) {
+        val = env->bindings[i].value;
+        break;
+      }
+    }
+    if (!val)
+      break;
+    t = val;
+  }
+  return t;
+}
+
 static bool has_more_alternatives(trilog_ctx_t *ctx, term_t *goal, env_t *env,
-                                  int from_clause) {
+                                  int from_clause, int env_mark) {
   if (from_clause < 0)
     return false; // builtin match
-  goal = deref(env, goal);
+  goal = deref_before(env, goal, env_mark);
   int goal_arity = (goal->type == FUNC) ? goal->arity : 0;
-  // first-argument indexing: if the goal's first arg is ground (not a var
-  // and not bound by the current unification), skip clauses whose first arg
-  // is a different ground term.  check WITHOUT deref to see the pre-unify
-  // structure — a renamed var arg would still be VAR type (only bindings
-  // make it resolve to something else).
+  // first-argument indexing: if the goal's first arg was already ground
+  // before this clause match (a literal, or a variable bound earlier in the
+  // query), skip clauses whose first arg is a different ground term.
   term_t *goal_a0 = NULL;
-  if (goal_arity > 0 && goal->args[0]->type != VAR)
-    goal_a0 = goal->args[0];
+  if (goal_arity > 0) {
+    term_t *a0 = deref_before(env, goal->args[0], env_mark);
+    if (a0->type != VAR)
+      goal_a0 = a0;
+  }
   for (int i = from_clause; i < ctx->db_count; i++) {
     clause_t *c = &ctx->database[i];
     int head_arity = (c->head->type == FUNC) ? c->head->arity : 0;
@@ -194,7 +216,7 @@ bool solve_all(trilog_ctx_t *ctx, goal_stmt_t *initial_goals, env_t *env,
   stack[sp].goals = cn;
   stack[sp].clause_index = 0;
   stack[sp].env_mark = env->count;
-  stack[sp].cut_point = 0;
+  stack[sp].cut_point = 1;
   stack[sp].term_mark = ctx->term_pool_offset;
   sp++;
   if (sp > ctx->stats.stack_peak)
@@ -202,7 +224,11 @@ bool solve_all(trilog_ctx_t *ctx, goal_stmt_t *initial_goals, env_t *env,
 
   int clause_idx;
   int env_mark;
-  int cut_point = 0;
+  // stack[0] is a sentinel frame the backtrack label (C) never actually
+  // resumes into (sp<=0 there means "exhausted"), so 1 is the lowest cut
+  // target that leaves it intact. a cut firing before any real choice point
+  // has been pushed must not prune sp below the sentinel.
+  int cut_point = 1;
   bool found_any = false;
 
 A:
@@ -472,7 +498,7 @@ B:
       assert(sp < MAX_STACK && "Stack overflow");
       debug(ctx, "*** SON succeeded, pushing frame, sp=%d ***\n", sp);
 
-      if (has_more_alternatives(ctx, cn.goals[0], env, clause_idx)) {
+      if (has_more_alternatives(ctx, cn.goals[0], env, clause_idx, env_mark)) {
         assert(sp < MAX_STACK && "Stack overflow");
         stack[sp].goals = cn;
         stack[sp].clause_index = clause_idx;
