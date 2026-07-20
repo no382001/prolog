@@ -6,16 +6,67 @@ append([H|T], L, [H|R]) :- append(T, L, R).
 member(X, [X|_]).
 member(X, [_|T]) :- member(X, T).
 
+must_be(Type, Term) :-
+    (  var(Type)
+    -> throw(error(instantiation_error, must_be/2))
+    ;  must_be_(Type, Term)
+    ).
+
+must_be_(var, Term) :-
+    (  var(Term)
+    -> true
+    ;  throw(error(uninstantiation_error(Term), must_be/2))
+    ).
+must_be_(atom, Term)               :- must_be_type(atom, Term).
+must_be_(integer, Term)            :- must_be_type(integer, Term).
+must_be_(number, Term)             :- must_be_type(number, Term).
+must_be_(atomic, Term)             :- must_be_type(atomic, Term).
+must_be_(callable, Term)           :- must_be_type(callable, Term).
+must_be_(compound, Term)           :- must_be_type(compound, Term).
+must_be_(boolean, Term)            :- must_be_type(boolean, Term).
+must_be_(character, Term)          :- must_be_type(character, Term).
+must_be_(list, Term)               :- must_be_list(Term).
+must_be_(not_less_than_zero, Term) :-
+    must_be_type(integer, Term),
+    (  Term >= 0
+    -> true
+    ;  throw(error(domain_error(not_less_than_zero, Term), must_be/2))
+    ).
+
+must_be_type(Type, Term) :-
+    (  var(Term)
+    -> throw(error(instantiation_error, must_be/2))
+    ;  call(Type, Term)
+    -> true
+    ;  throw(error(type_error(Type, Term), must_be/2))
+    ).
+
+must_be_list([]) :- !.
+must_be_list([_|T]) :- !, must_be_list(T).
+must_be_list(Term) :-
+    (  var(Term)
+    -> throw(error(instantiation_error, must_be/2))
+    ;  throw(error(type_error(list, Term), must_be/2))
+    ).
+
+boolean(true).
+boolean(false).
+
+character(C) :- atom(C), atom_length(C, 1).
+
+can_be(Type, Term) :-
+    (  var(Type)
+    -> throw(error(instantiation_error, can_be/2))
+    ;  var(Term)
+    -> true
+    ;  must_be(Type, Term)
+    ).
+
 length(Xs, N) :-
     (  var(N)
     -> length_acc(Xs, 0, N)
-    ;  (  integer(N), N >= 0
-       -> length_create(N, Xs)
-       ;  (  integer(N)
-          -> throw(error(domain_error(not_less_than_zero, N), length/2))
-          ;  throw(error(type_error(integer, N), length/2))
-          )
-       )
+    ;  must_be(not_less_than_zero, N),
+       length_create(N, Xs)
     ).
 
 length_acc([], N, N).
@@ -149,3 +200,121 @@ current_op(Priority, Type, Name) :-
     N1 is N - 1,
     between(0, N1, I),
     current_op_entry(I, Priority, Type, Name).
+
+compare(Order, A, B) :-
+    (  A == B
+    -> Order = (=)
+    ;  A @< B
+    -> Order = (<)
+    ;  Order = (>)
+    ).
+
+memberchk(X, L) :- member(X, L), !.
+
+delete([], _, []).
+delete([X|Xs], Y, Zs) :-
+    \+ X \= Y,
+    !,
+    delete(Xs, Y, Zs).
+delete([X|Xs], Y, [X|Zs]) :-
+    delete(Xs, Y, Zs).
+
+include(_, [], []).
+include(P_1, [X|Xs], Included) :-
+    (  call(P_1, X)
+    -> Included = [X|Included1]
+    ;  Included = Included1
+    ),
+    include(P_1, Xs, Included1).
+
+exclude(_, [], []).
+exclude(P_1, [X|Xs], Excluded) :-
+    (  call(P_1, X)
+    -> Excluded = Excluded1
+    ;  Excluded = [X|Excluded1]
+    ),
+    exclude(P_1, Xs, Excluded1).
+
+partition(_, [], [], []).
+partition(P_1, [X|Xs], Included, Excluded) :-
+    (  call(P_1, X)
+    -> Included = [X|Included1], Excluded = Excluded1
+    ;  Included = Included1, Excluded = [X|Excluded1]
+    ),
+    partition(P_1, Xs, Included1, Excluded1).
+
+subtract([], _, []).
+subtract([X|Xs], Ys, Zs) :-
+    (  memberchk(X, Ys)
+    -> subtract(Xs, Ys, Zs)
+    ;  Zs = [X|Zs1], subtract(Xs, Ys, Zs1)
+    ).
+
+intersection([], _, []).
+intersection([X|Xs], Ys, Zs) :-
+    (  memberchk(X, Ys)
+    -> Zs = [X|Zs1]
+    ;  Zs = Zs1
+    ),
+    intersection(Xs, Ys, Zs1).
+
+union([], L, L).
+union([X|Xs], Ys, Zs) :-
+    (  memberchk(X, Ys)
+    -> union(Xs, Ys, Zs)
+    ;  Zs = [X|Zs1], union(Xs, Ys, Zs1)
+    ).
+
+sum_list(L, Sum) :- sum_list_(L, 0, Sum).
+sum_list_([], S, S).
+sum_list_([X|Xs], S0, S) :- S1 is S0 + X, sum_list_(Xs, S1, S).
+
+max_list([X|Xs], Max) :- max_list_(Xs, X, Max).
+max_list_([], M, M).
+max_list_([X|Xs], M0, M) :-
+    (  X > M0 -> M1 = X ; M1 = M0 ),
+    max_list_(Xs, M1, M).
+
+min_list([X|Xs], Min) :- min_list_(Xs, X, Min).
+min_list_([], M, M).
+min_list_([X|Xs], M0, M) :-
+    (  X < M0 -> M1 = X ; M1 = M0 ),
+    min_list_(Xs, M1, M).
+
+max_member(Max, [X|Xs]) :- foldl(max_member_, Xs, X, Max).
+max_member_(X, M0, M) :- ( X @> M0 -> M = X ; M = M0 ).
+
+min_member(Min, [X|Xs]) :- foldl(min_member_, Xs, X, Min).
+min_member_(X, M0, M) :- ( X @< M0 -> M = X ; M = M0 ).
+
+numlist(Low, High, []) :- Low > High, !.
+numlist(Low, High, [Low|Rest]) :-
+    Low =< High,
+    Low1 is Low + 1,
+    numlist(Low1, High, Rest).
+
+flatten(List, FlatList) :-
+    flatten_(List, [], FlatList0),
+    FlatList = FlatList0.
+
+flatten_(Var, Tl, [Var|Tl]) :- var(Var), !.
+flatten_([], Tl, Tl) :- !.
+flatten_([Hd|Tl], Tail, List) :-
+    !,
+    flatten_(Hd, FlatHeadTail, List),
+    flatten_(Tl, Tail, FlatHeadTail).
+flatten_(NonList, Tl, [NonList|Tl]).
+
+list_to_set(List, Set) :- list_to_set_(List, [], Set).
+list_to_set_([], _, []).
+list_to_set_([X|Xs], Seen, Set) :-
+    (  memberchk(X, Seen)
+    -> list_to_set_(Xs, Seen, Set)
+    ;  Set = [X|Set1],
+       list_to_set_(Xs, [X|Seen], Set1)
+    ).
+
+permutation([], []).
+permutation(List, [X|Perm]) :-
+    select(X, List, Rest),
+    permutation(Rest, Perm).

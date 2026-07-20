@@ -163,14 +163,6 @@ static int term_order(term_t *a, term_t *b, env_t *env) {
   return 0;
 }
 
-static builtin_result_t builtin_compare(trilog_ctx_t *ctx, term_t *goal,
-                                        env_t *env) {
-  int cmp = term_order(goal->args[1], goal->args[2], env);
-  const char *ord = cmp < 0 ? "<" : (cmp > 0 ? ">" : "=");
-  return unify(ctx, goal->args[0], make_const(ctx, ord), env) ? BUILTIN_OK
-                                                              : BUILTIN_FAIL;
-}
-
 static builtin_result_t builtin_term_lt(trilog_ctx_t *ctx, term_t *goal,
                                         env_t *env) {
   (void)ctx;
@@ -2023,7 +2015,6 @@ static const builtin_t builtins[] = {
     {"findall", 3, builtin_findall},
     {"bagof", 3, builtin_bagof},
     {"setof", 3, builtin_setof},
-    {"compare", 3, builtin_compare},
     {"compound", 1, builtin_compound},
     {"callable", 1, builtin_callable},
     {"number", 1, builtin_number},

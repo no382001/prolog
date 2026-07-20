@@ -208,3 +208,97 @@ foldl6_add(X, Y, Z, A, B) :- B is A + X + Y + Z.
 
 ?- countall(fail, N).
    N = 0.
+
+% --- compare/3 ---
+
+?- compare(Order, a, b).
+   Order = <.
+
+?- compare(Order, b, a).
+   Order = >.
+
+?- compare(Order, a, a).
+   Order = =.
+
+% --- memberchk/2 ---
+
+?- memberchk(b, [a,b,c]).
+   true.
+
+?- memberchk(z, [a,b,c]).
+   false.
+
+% --- delete/3 ---
+
+?- delete([1,2,1,3,1], 1, L).
+   L = [2, 3].
+
+?- delete([aa,bb,cc], z, L).
+   L = [aa, bb, cc].
+
+% --- include/3, exclude/3, partition/4 ---
+
+gt2(X) :- X > 2.
+
+?- include(gt2, [1,2,3,4], L).
+   L = [3, 4].
+
+?- exclude(gt2, [1,2,3,4], L).
+   L = [1, 2].
+
+?- partition(gt2, [1,2,3,4], In, Out).
+   In = [3, 4], Out = [1, 2].
+
+% --- subtract/3, intersection/3, union/3 ---
+
+?- subtract([1,2,3], [2], L).
+   L = [1, 3].
+
+?- intersection([1,2,3], [2,3,4], L).
+   L = [2, 3].
+
+?- union([1,2], [2,3], L).
+   L = [1, 2, 3].
+
+% --- sum_list/2, max_list/2, min_list/2, max_member/2, min_member/2 ---
+
+?- sum_list([1,2,3], S).
+   S = 6.
+
+?- max_list([3,1,4,1,5], M).
+   M = 5.
+
+?- min_list([3,1,4,1,5], M).
+   M = 1.
+
+?- max_member(M, [3,1,4,1,5]).
+   M = 5.
+
+?- min_member(M, [3,1,4,1,5]).
+   M = 1.
+
+% --- numlist/3 ---
+
+?- numlist(1, 5, L).
+   L = [1, 2, 3, 4, 5].
+
+?- numlist(3, 1, L).
+   L = [].
+
+% --- flatten/2 ---
+
+?- flatten([1,[2,[3,4],5],6], L).
+   L = [1, 2, 3, 4, 5, 6].
+
+?- flatten([], L).
+   L = [].
+
+% --- list_to_set/2 ---
+
+?- list_to_set([1,2,1,3,2], L).
+   L = [1, 2, 3].
+
+% --- permutation/2 ---
+
+?- findall(P, permutation([1,2,3], P), L), length(L, N).
+   L = [[1, 2, 3], [1, 3, 2], [2, 1, 3], [2, 3, 1], [3, 1, 2], [3, 2, 1]], N = 6.
