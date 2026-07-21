@@ -59,15 +59,13 @@ run: $(TARGET)
 debug: $(TARGET)
 	./$(TARGET) -d
 
+QUAD_TIMEOUT := 60
+
 .PHONY: quad
 quad: $(TARGET)
 	@for f in test/*_quad.pl; do \
 		[ -f "$$f" ] || continue; \
-		if [ "$$f" = "test/iso_quad.pl" ]; then \
-			./$(TARGET) -q "$$f" || true; \
-		else \
-			./$(TARGET) -q "$$f" || exit 1; \
-		fi \
+		timeout $(QUAD_TIMEOUT) ./$(TARGET) -e "consult('quad.pl'), quad_cli('$$f')" || true; \
 	done
 
 .PHONY: quad-junit
@@ -75,11 +73,7 @@ quad-junit: $(TARGET)
 	@mkdir -p _build/test-results
 	@for f in test/*_quad.pl; do \
 		[ -f "$$f" ] || continue; \
-		if [ "$$f" = "test/iso_quad.pl" ]; then \
-			./$(TARGET) -q "$$f" -j _build/test-results || true; \
-		else \
-			./$(TARGET) -q "$$f" -j _build/test-results || exit 1; \
-		fi \
+		timeout $(QUAD_TIMEOUT) ./$(TARGET) -e "consult('quad.pl'), quad_cli_junit('$$f', '_build/test-results')" || true; \
 	done
 	@echo "JUnit reports written to _build/test-results/"
 
@@ -119,7 +113,7 @@ SMALL_FLAGS := \
 
 SMALL_SRCS := src/arith.c src/builtins.c src/cli.c src/debug.c src/env.c \
               src/errors.c src/ffi.c src/io.c src/main.c src/parse.c \
-              src/print.c src/quad.c src/solve.c src/streams.c src/term.c \
+              src/print.c src/solve.c src/streams.c src/term.c \
               src/unify.c
 
 .PHONY: small

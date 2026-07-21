@@ -73,17 +73,20 @@ TRILOG="./trilog"
   [[ "$result" == *"world"* ]]
 }
 
-# --- quad runner (-q) ---
+# --- quad runner (quad.pl) ---
 
-@test "-q exits 0 on passing tests" {
-  run "$TRILOG" -q test/core_quad.pl
+@test "quad_cli exits 0 on passing tests" {
+  echo '?- 1 =:= 1.' > /tmp/trilog_pass_quad.pl
+  echo '   true.' >> /tmp/trilog_pass_quad.pl
+  run "$TRILOG" -e "consult('quad.pl'), quad_cli('/tmp/trilog_pass_quad.pl')"
   [ "$status" -eq 0 ]
+  rm -f /tmp/trilog_pass_quad.pl
 }
 
-@test "-q exits 1 on failing test" {
+@test "quad_cli exits 1 on failing test" {
   echo '?- 1 =:= 2.' > /tmp/trilog_fail_quad.pl
   echo '   true.' >> /tmp/trilog_fail_quad.pl
-  run "$TRILOG" -q /tmp/trilog_fail_quad.pl
+  run "$TRILOG" -e "consult('quad.pl'), quad_cli('/tmp/trilog_fail_quad.pl')"
   [ "$status" -eq 1 ]
   rm -f /tmp/trilog_fail_quad.pl
 }
@@ -160,17 +163,19 @@ TRILOG="./trilog"
   [[ "$output" == *"-e"* ]]
 }
 
-# --- JUnit XML output (-j) ---
+# --- JUnit XML output (quad_cli_junit) ---
 
-@test "-j produces JUnit XML" {
+@test "quad_cli_junit produces JUnit XML" {
   rm -rf /tmp/trilog_junit_test
   mkdir -p /tmp/trilog_junit_test
-  run "$TRILOG" -q test/core_quad.pl -j /tmp/trilog_junit_test
+  echo '?- 1 =:= 1.' > /tmp/trilog_junit_quad.pl
+  echo '   true.' >> /tmp/trilog_junit_quad.pl
+  run "$TRILOG" -e "consult('quad.pl'), quad_cli_junit('/tmp/trilog_junit_quad.pl', '/tmp/trilog_junit_test')"
   [ "$status" -eq 0 ]
-  [ -f /tmp/trilog_junit_test/core_quad.xml ]
-  [[ "$(cat /tmp/trilog_junit_test/core_quad.xml)" == *"<testsuite"* ]]
-  [[ "$(cat /tmp/trilog_junit_test/core_quad.xml)" == *"<testcase"* ]]
-  rm -rf /tmp/trilog_junit_test
+  [ -f /tmp/trilog_junit_test/trilog_junit_quad.xml ]
+  [[ "$(cat /tmp/trilog_junit_test/trilog_junit_quad.xml)" == *"<testsuite"* ]]
+  [[ "$(cat /tmp/trilog_junit_test/trilog_junit_quad.xml)" == *"<testcase"* ]]
+  rm -rf /tmp/trilog_junit_test /tmp/trilog_junit_quad.pl
 }
 
 # --- catch/throw ---

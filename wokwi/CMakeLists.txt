@@ -37,7 +37,6 @@ set(SRCS
   ../src/io.c
   ../src/parse.c
   ../src/print.c
-  ../src/quad.c
   ../src/solve.c
   ../src/streams.c
   ../src/term.c

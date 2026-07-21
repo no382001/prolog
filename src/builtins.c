@@ -30,6 +30,24 @@ static builtin_result_t builtin_fail(trilog_ctx_t *ctx, term_t *goal,
   return BUILTIN_FAIL;
 }
 
+static builtin_result_t builtin_halt0(trilog_ctx_t *ctx, term_t *goal,
+                                      env_t *env) {
+  (void)ctx;
+  (void)goal;
+  (void)env;
+  exit(0);
+}
+
+static builtin_result_t builtin_halt1(trilog_ctx_t *ctx, term_t *goal,
+                                      env_t *env) {
+  term_t *code_t = deref(env, goal->args[0]);
+  if (!must_be_integer(ctx, code_t, "halt/1"))
+    return BUILTIN_ERROR;
+  int code = 0;
+  term_as_int(code_t, &code);
+  exit(code);
+}
+
 static builtin_result_t builtin_unify(trilog_ctx_t *ctx, term_t *goal,
                                       env_t *env) {
   return unify(ctx, goal->args[0], goal->args[1], env) ? BUILTIN_OK
@@ -2002,6 +2020,8 @@ static builtin_result_t builtin_prolog_flag_value(trilog_ctx_t *ctx,
 static const builtin_t builtins[] = {
     {"true", 0, builtin_true},
     {"fail", 0, builtin_fail},
+    {"halt", 0, builtin_halt0},
+    {"halt", 1, builtin_halt1},
     {"!", 0, builtin_cut},
     {"stats", 0, builtin_stats},
     {"make", 0, builtin_make},

@@ -55,7 +55,7 @@ typedef __builtin_va_list va_list;
 #define MAX_CLAUSES 1024
 #endif
 #ifndef MAX_BINDINGS
-#define MAX_BINDINGS 4096
+#define MAX_BINDINGS 2097152
 #endif
 #ifndef MAX_GOALS
 #define MAX_GOALS 128
@@ -70,7 +70,7 @@ typedef __builtin_va_list va_list;
 #define MAX_CUSTOM_BUILTINS 64
 #endif
 #ifndef MAX_STRING_POOL
-#define MAX_STRING_POOL 65536
+#define MAX_STRING_POOL (2 * 1024 * 1024)
 #endif
 #ifndef MAX_FILE_PATH
 #define MAX_FILE_PATH 512
@@ -94,7 +94,7 @@ typedef __builtin_va_list va_list;
 #define MAX_OPS 128
 #endif
 #ifndef TERM_POOL_BYTES
-#define TERM_POOL_BYTES (4 * 1024 * 1024)
+#define TERM_POOL_BYTES (32 * 1024 * 1024)
 #endif
 #define TRILOG_CTX_SIZE(pool_bytes) (sizeof(trilog_ctx_t) + (pool_bytes))
 
@@ -635,16 +635,3 @@ bool ffi_register_builtin(trilog_ctx_t *ctx, const char *name, int arity,
                           builtin_handler_t handler, void *userdata);
 void ffi_clear_builtins(trilog_ctx_t *ctx);
 custom_builtin_t *ffi_get_builtin_userdata(trilog_ctx_t *ctx, term_t *goal);
-
-// quad tests
-typedef struct {
-  int total;
-  int passed;
-  int failed;
-  double total_time;
-} quad_results_t;
-
-quad_results_t trilog_run_quad_file(trilog_ctx_t *ctx, const char *filename);
-quad_results_t trilog_run_quad_file_junit(trilog_ctx_t *ctx,
-                                          const char *filename,
-                                          const char *junit_dir);

@@ -69,17 +69,13 @@ static int read_key_hook(trilog_ctx_t *ctx, void *ud) {
 }
 
 static void print_usage(trilog_ctx_t *ctx, const char *prog) {
-  io_writef_err(ctx,
-                "Usage: %s [-d] [-s] [-f] [-e <expression>] [-q <file>] "
-                "[-j <dir>] [file.pl]\n",
+  io_writef_err(ctx, "Usage: %s [-d] [-s] [-f] [-e <expression>] [file.pl]\n",
                 prog);
   io_writef_err(ctx, "  file.pl       Load clauses from file\n");
   io_writef_err(ctx, "  -d            Enable debug mode\n");
   io_writef_err(ctx, "  -s            Print stats to stderr on exit\n");
   io_writef_err(ctx, "  -f            Fast startup: do not load ~/.trilog\n");
   io_writef_err(ctx, "  -e <expr>     Execute expression and exit\n");
-  io_writef_err(ctx, "  -q <file>     Run quad tests from file\n");
-  io_writef_err(ctx, "  -j <dir>      Write JUnit XML reports to directory\n");
   io_writef_err(ctx, "  -h            Show this help\n");
   io_writef_err(ctx, "\nInteractive commands:\n");
   io_writef_err(ctx, "  debug.        Toggle debug mode\n");
@@ -147,13 +143,11 @@ int main(int argc, char *argv[]) {
 
   const char *input_file = NULL;
   const char *expression = NULL;
-  const char *quad_file = NULL;
-  const char *junit_dir = NULL;
   bool exit_stats = false;
   bool fast_startup = false;
   int opt;
 
-  while ((opt = getopt(argc, argv, "dsfe:q:j:h")) != -1) {
+  while ((opt = getopt(argc, argv, "dsfe:h")) != -1) {
     switch (opt) {
     case 'd':
       ctx->debug_enabled = true;
@@ -167,12 +161,6 @@ int main(int argc, char *argv[]) {
       break;
     case 'e':
       expression = optarg;
-      break;
-    case 'q':
-      quad_file = optarg;
-      break;
-    case 'j':
-      junit_dir = optarg;
       break;
     case 'h':
       print_usage(ctx, argv[0]);
@@ -206,17 +194,6 @@ int main(int argc, char *argv[]) {
       print_exit_stats(ctx);
     free(ctx);
     return rc;
-  }
-
-  if (quad_file) {
-    quad_results_t res;
-    if (junit_dir)
-      res = trilog_run_quad_file_junit(ctx, quad_file, junit_dir);
-    else
-      res = trilog_run_quad_file(ctx, quad_file);
-
-    free(ctx);
-    return res.failed > 0 ? 1 : 0;
   }
 
   char line[1024];

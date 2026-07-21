@@ -1,3 +1,5 @@
+:- consult('dcg_load.pl').
+
 %****
 %* line splitting
 %****
@@ -173,22 +175,37 @@ strip_query_prefix(Raw, Query) :-
     ),
     trim_leading(Rest, Query).
 
-run_one_test(QueryRaw, AnswerRaw, TestNum, Pass) :-
+% stat/record bookkeeping happens here, right where Pass is freshly bound,
+% not back in the caller after the once/1 boundary (saw stale bindings there).
+run_one_test(QueryRaw, AnswerRaw, Pass) :-
     strip_query_prefix(QueryRaw, Query0),
     strip_terminating_dot(Query0, Query),
     parse_expected(AnswerRaw, Expected),
     quad_display(Query, Display),
-    atom_to_term(Query, QueryTerm, NameVars),
-    ( catch(
-          ( collect_solutions(QueryTerm, NameVars, 64, Got), Error = none ),
-          error(ErrType, _),
-          ( Got = [], Error = ErrType )
-      )
-    -> true
-    ;  Got = [], Error = none
+    ( atom_to_term(Query, QueryTerm, NameVars)
+    -> ( catch(
+             ( collect_solutions(QueryTerm, NameVars, 64, Got), Error = none ),
+             Ball,
+             ( Got = [], quad_error_type(Ball, Error) )
+         )
+       -> true
+       ;  Got = [], Error = none
+       )
+    ;  Got = [], Error = quad_unparseable
     ),
     quad_judge(Expected, Got, Error, Pass, Reason),
-    quad_report(TestNum, Display, Pass, Reason).
+    retract(quad_stat(TN0, P0, F0)),
+    TestNum is TN0 + 1,
+    ( Pass == true -> P1 is P0 + 1, F1 = F0 ; P1 = P0, F1 is F0 + 1 ),
+    assertz(quad_stat(TestNum, P1, F1)),
+    assertz(quad_record(TestNum, Display, Pass, Reason)),
+    quad_report(TestNum, Display, Pass, Reason),
+    !.
+
+% error(Type, _) balls reduce to Type; any other thrown term (e.g. a bare
+% atom from a non-matching catcher) is used as-is instead of crashing the run.
+quad_error_type(error(Type, _), Type) :- !.
+quad_error_type(Ball, Ball).
 
 quad_judge(Expected, Got, Error, Pass, Reason) :-
     ( Expected = [false]
@@ -222,12 +239,12 @@ matches_error(Error, ExpType) :-
 format_atom(Fmt, Args, Atom) :- with_output_to(atom(Atom), format_write(Fmt, Args)).
 
 format_write(Fmt, Args) :-
-    atom_codes(Fmt, Cs),
+    atom_chars(Fmt, Cs),
     fw_codes(Cs, Args).
 
 fw_codes([], []).
-fw_codes([0'~, 0'w|Cs], [A|As]) :- !, write(A), fw_codes(Cs, As).
-fw_codes([0'~, 0'n|Cs], As) :- !, nl, fw_codes(Cs, As).
+fw_codes(['~', w|Cs], [A|As]) :- !, write(A), fw_codes(Cs, As).
+fw_codes(['~', n|Cs], As) :- !, nl, fw_codes(Cs, As).
 fw_codes([C|Cs], As) :- put_chars([C]), fw_codes(Cs, As).
 
 quad_report(TestNum, Display, true, _) :-
@@ -246,10 +263,12 @@ write_reason_lines(Reason) :-
 %****
 
 :- dynamic(quad_stat/3).
+:- dynamic(quad_record/4).
 
 run_quad_file(File) :-
     retractall(quad_stat(_, _, _)),
     assertz(quad_stat(0, 0, 0)),
+    retractall(quad_record(_, _, _, _)),
     open(File, read, S),
     qf_loop(S, '', '', query),
     close(S),
@@ -276,11 +295,7 @@ qf_answer_step(S, QueryBuf, AnswerBuf0, Line, Trimmed) :-
        ;  atom_concat(AnswerBuf0, '\n', AB1), atom_concat(AB1, Line, AnswerBuf1)
        ),
        ( has_complete_clause(AnswerBuf1)
-       -> retract(quad_stat(TN0, P0, F0)),
-          TN1 is TN0 + 1,
-          run_one_test(QueryBuf, AnswerBuf1, TN1, Pass),
-          ( Pass == true -> P1 is P0 + 1, F1 = F0 ; P1 = P0, F1 is F0 + 1 ),
-          assertz(quad_stat(TN1, P1, F1)),
+       -> once(run_one_test(QueryBuf, AnswerBuf1, _Pass)),
           qf_loop(S, '', '', query)
        ;  qf_loop(S, QueryBuf, AnswerBuf1, answer)
        )
@@ -303,3 +318,93 @@ qf_clause_step(S, ClauseBuf0, Line, Trimmed) :-
        )
     ;  qf_loop(S, ClauseBuf1, '', query)
     ).
+
+%****
+%* junit xml output
+%****
+
+% text after the final '/' (or all of Path): the first left-to-right split
+% whose suffix has no further '/' is necessarily the last one.
+last_path_segment(Path, Seg) :-
+    atom_codes(Path, Cs),
+    ( append(_, [0'/|SegCs], Cs), \+ member(0'/, SegCs)
+    -> true
+    ;  SegCs = Cs
+    ),
+    atom_codes(Seg, SegCs).
+
+% strip_ext(+Atom, -Base): text before the final '.', same last-match logic.
+strip_ext(Atom, Base) :-
+    atom_codes(Atom, Cs),
+    ( append(BaseCs, [0'.|Rest], Cs), \+ member(0'., Rest)
+    -> true
+    ;  BaseCs = Cs
+    ),
+    atom_codes(Base, BaseCs).
+
+quad_suite_name(File, Suite) :-
+    last_path_segment(File, Seg),
+    strip_ext(Seg, Suite).
+
+xml_escape(Atom, Escaped) :-
+    atom_codes(Atom, Cs),
+    xesc_codes(Cs, Out),
+    atom_codes(Escaped, Out).
+
+xesc_codes([], []).
+xesc_codes([0'&|Cs], [0'&, 0'a, 0'm, 0'p, 0';|Out]) :- !, xesc_codes(Cs, Out).
+xesc_codes([0'<|Cs], [0'&, 0'l, 0't, 0';|Out]) :- !, xesc_codes(Cs, Out).
+xesc_codes([0'>|Cs], [0'&, 0'g, 0't, 0';|Out]) :- !, xesc_codes(Cs, Out).
+xesc_codes([0'"|Cs], [0'&, 0'q, 0'u, 0'o, 0't, 0';|Out]) :-
+    !, xesc_codes(Cs, Out).
+xesc_codes([C|Cs], [C|Out]) :- xesc_codes(Cs, Out).
+
+write_testcase(Strm, Suite, Name, true, _) :-
+    !,
+    xml_escape(Name, EscName),
+    format_atom('  <testcase name="~w" classname="~w" time="0.000"/>',
+                [EscName, Suite], Line),
+    write(Strm, Line), nl(Strm).
+write_testcase(Strm, Suite, Name, false, Reason) :-
+    xml_escape(Name, EscName),
+    xml_escape(Reason, EscReason),
+    format_atom('  <testcase name="~w" classname="~w" time="0.000">',
+                [EscName, Suite], Open),
+    write(Strm, Open), nl(Strm),
+    format_atom('    <failure message="~w"/>', [EscReason], FailLine),
+    write(Strm, FailLine), nl(Strm),
+    write(Strm, '  </testcase>'), nl(Strm).
+
+write_junit_xml(Path, Suite, Total, Failed) :-
+    open(Path, write, Strm),
+    write(Strm, '<?xml version="1.0" encoding="UTF-8"?>'), nl(Strm),
+    format_atom('<testsuite name="~w" tests="~w" failures="~w" errors="0" time="0.000">',
+                [Suite, Total, Failed], Header),
+    write(Strm, Header), nl(Strm),
+    forall(quad_record(_, Name, Pass, Reason),
+          write_testcase(Strm, Suite, Name, Pass, Reason)),
+    write(Strm, '</testsuite>'), nl(Strm),
+    close(Strm).
+
+run_quad_file_junit(File, Dir) :-
+    run_quad_file(File),
+    quad_stat(Total, _, Failed),
+    quad_suite_name(File, Suite),
+    atom_concat(Dir, '/', D1),
+    atom_concat(D1, Suite, D2),
+    atom_concat(D2, '.xml', XmlPath),
+    write_junit_xml(XmlPath, Suite, Total, Failed).
+
+%****
+%* CLI entry points: set the process exit code (0 all pass, 1 any failure)
+%****
+
+quad_cli(File) :-
+    once(run_quad_file(File)),
+    quad_stat(_, _, Failed),
+    ( Failed > 0 -> halt(1) ; halt(0) ).
+
+quad_cli_junit(File, Dir) :-
+    once(run_quad_file_junit(File, Dir)),
+    quad_stat(_, _, Failed),
+    ( Failed > 0 -> halt(1) ; halt(0) ).
