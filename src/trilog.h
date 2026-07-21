@@ -488,8 +488,16 @@ bool unify(trilog_ctx_t *ctx, term_t *a, term_t *b, env_t *env);
 
 // rename_vars_mapped: rename all vars in t, mapping old var_ids to fresh ones.
 // the map is shared across multiple calls for the same clause instance so that
-// the same variable in head and body gets the same renamed id.
+// the same variable in head and body gets the same renamed id. renamed vars
+// are always anonymous (name=NULL) — fine for clause-internal variables,
+// which were never meant to be individually observable from outside.
 term_t *rename_vars_mapped(trilog_ctx_t *ctx, term_t *t, var_id_map_t *map);
+// same, but keeps each var's original name when preserve_names is true —
+// needed when the renamed copy must stay independently displayable/printable
+// (findall/setof renaming a goal that still carries the outer query's named
+// variables; see collect_solutions/builtin_setof in builtins.c).
+term_t *rename_vars_mapped_named(trilog_ctx_t *ctx, term_t *t,
+                                 var_id_map_t *map, bool preserve_names);
 // convenience wrapper: creates a fresh map for single-term rename.
 term_t *rename_vars(trilog_ctx_t *ctx, term_t *t);
 

@@ -108,38 +108,6 @@ pe_join([L|Ls], Joined) :-
     atom_concat(L1, Rest, Joined).
 
 %****
-%* binding formatting: "Name = Value, ..." per solution, matching
-%* print_bindings (src/print.c) — skips vars whose name starts with '_',
-%* joined by ", ", "true" if nothing to show.
-%****
-
-format_bindings(NameVars, Str) :-
-    include(shown_binding, NameVars, Shown),
-    ( Shown == []
-    -> Str = true
-    ;  maplist(format_one_binding, Shown, Parts),
-       join_atoms(Parts, ', ', Str)
-    ).
-
-% print_bindings (src/print.c) only shows variables that actually got
-% bound during solving — e.g. findall(R, Goal, L)'s R never touches the
-% outer environment — and skips names starting with '_'.
-shown_binding(Name = Val) :-
-    \+ sub_atom(Name, 0, 1, _, '_'),
-    nonvar(Val).
-
-format_one_binding(Name = Val, Part) :-
-    term_to_atom(Val, ValAtom),
-    atom_concat(Name, ' = ', P0),
-    atom_concat(P0, ValAtom, Part).
-
-join_atoms([A], _, A) :- !.
-join_atoms([A|As], Sep, Out) :-
-    join_atoms(As, Sep, Rest),
-    atom_concat(A, Sep, A1),
-    atom_concat(A1, Rest, Out).
-
-%****
 %* solution collection, capped like MAX_QUAD_ANSWERS in quad.c
 %****
 

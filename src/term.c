@@ -166,29 +166,35 @@ term_t *make_term(trilog_ctx_t *ctx, term_type type, const char *name,
 //* variable renaming
 //****
 
-term_t *rename_vars_mapped(trilog_ctx_t *ctx, term_t *t, var_id_map_t *map) {
+term_t *rename_vars_mapped_named(trilog_ctx_t *ctx, term_t *t,
+                                 var_id_map_t *map, bool preserve_names) {
   if (!t)
     return NULL;
   if (t->type == CONST || t->type == INT || t->type == STR)
     return t;
   if (t->type == VAR) {
+    const char *name = preserve_names ? t->name : NULL;
     int old_id = t->arity;
     for (int i = 0; i < map->count; i++) {
       if (map->entries[i].old_id == old_id)
-        return make_var(ctx, NULL, map->entries[i].new_id);
+        return make_var(ctx, name, map->entries[i].new_id);
     }
     int new_id = ctx->var_counter++;
     assert(map->count < MAX_CLAUSE_VARS && "Too many variables in clause");
     map->entries[map->count].old_id = old_id;
     map->entries[map->count].new_id = new_id;
     map->count++;
-    return make_var(ctx, NULL, new_id);
+    return make_var(ctx, name, new_id);
   }
   assert(t->type == FUNC && "Invalid term type in rename_vars_mapped");
   term_t *args[MAX_ARGS];
   for (int i = 0; i < t->arity; i++)
-    args[i] = rename_vars_mapped(ctx, t->args[i], map);
+    args[i] = rename_vars_mapped_named(ctx, t->args[i], map, preserve_names);
   return make_func(ctx, t->name, args, t->arity);
+}
+
+term_t *rename_vars_mapped(trilog_ctx_t *ctx, term_t *t, var_id_map_t *map) {
+  return rename_vars_mapped_named(ctx, t, map, false);
 }
 
 term_t *rename_vars(trilog_ctx_t *ctx, term_t *t) {

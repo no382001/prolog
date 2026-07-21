@@ -289,8 +289,13 @@ static int collect_solutions(trilog_ctx_t *ctx, term_t *goal, env_t *env,
   }
 
   var_id_map_t _map = {0};
-  template = rename_vars_mapped(ctx, substitute(ctx, env, template), &_map);
-  query = rename_vars_mapped(ctx, substitute(ctx, env, query), &_map);
+  // preserve names: format_bindings (quad.pl's answer formatter) needs the
+  // renamed copy to stay independently printable as the original query's
+  // named variables, not just correctly bound underneath.
+  template = rename_vars_mapped_named(ctx, substitute(ctx, env, template),
+                                      &_map, true);
+  query =
+      rename_vars_mapped_named(ctx, substitute(ctx, env, query), &_map, true);
 
   goal_stmt_t goals = goals_alloc(ctx, 1);
   goals.goals[goals.count++] = query;
@@ -374,8 +379,13 @@ static builtin_result_t builtin_setof(trilog_ctx_t *ctx, term_t *goal,
   }
 
   var_id_map_t _map = {0};
-  template = rename_vars_mapped(ctx, substitute(ctx, env, template), &_map);
-  query = rename_vars_mapped(ctx, substitute(ctx, env, query), &_map);
+  // preserve names: format_bindings (quad.pl's answer formatter) needs the
+  // renamed copy to stay independently printable as the original query's
+  // named variables, not just correctly bound underneath.
+  template = rename_vars_mapped_named(ctx, substitute(ctx, env, template),
+                                      &_map, true);
+  query =
+      rename_vars_mapped_named(ctx, substitute(ctx, env, query), &_map, true);
 
   goal_stmt_t goals = goals_alloc(ctx, 1);
   goals.goals[goals.count++] = query;
@@ -586,6 +596,84 @@ static builtin_result_t builtin_nonvar(trilog_ctx_t *ctx, term_t *goal,
                                        env_t *env) {
   (void)ctx;
   return deref(env, goal->args[0])->type != VAR ? BUILTIN_OK : BUILTIN_FAIL;
+}
+
+// small io_hooks-redirect capture buffer, local to this builtin — mirrors
+// streams.c's bcap_t, which is file-static there and not worth exposing
+// just for this one use.
+#define FMTB_BUF_SIZE 4096
+typedef struct {
+  io_hooks_t saved;
+  char buf[FMTB_BUF_SIZE];
+  int pos;
+} fmtb_cap_t;
+
+static void fmtb_write_str(trilog_ctx_t *ctx, const char *str, void *ud) {
+  (void)ctx;
+  fmtb_cap_t *c = ud;
+  int len = (int)strlen(str);
+  int rem = FMTB_BUF_SIZE - c->pos - 1;
+  if (len > rem)
+    len = rem;
+  if (len > 0) {
+    memcpy(c->buf + c->pos, str, len);
+    c->pos += len;
+    c->buf[c->pos] = '\0';
+  }
+}
+
+static void fmtb_start(trilog_ctx_t *ctx, fmtb_cap_t *c) {
+  c->saved = ctx->io_hooks;
+  c->pos = 0;
+  c->buf[0] = '\0';
+  ctx->io_hooks.write_str = fmtb_write_str;
+  ctx->io_hooks.userdata = c;
+}
+
+static void fmtb_end(trilog_ctx_t *ctx, fmtb_cap_t *c) {
+  ctx->io_hooks = c->saved;
+}
+
+static builtin_result_t builtin_format_bindings(trilog_ctx_t *ctx, term_t *goal,
+                                                env_t *env) {
+  term_t *pairs[MAX_LIST_LIT];
+  int n = list_to_array(ctx, env, goal->args[0], pairs, MAX_LIST_LIT);
+  if (n < 0)
+    return BUILTIN_FAIL;
+
+  fmtb_cap_t cap;
+  fmtb_start(ctx, &cap);
+  bool first = true;
+  for (int i = 0; i < n; i++) {
+    term_t *pair = pairs[i];
+    if (pair->type != FUNC || strcmp(pair->name, "=") != 0 || pair->arity != 2)
+      continue;
+    term_t *name = deref(env, pair->args[0]);
+    term_t *val = pair->args[1]; // not deref'd: need val's own identity
+    if (name->type == CONST && name->name[0] == '_')
+      continue;
+    // val may have already been substituted to a concrete value by LCO's
+    // resolvent-patching (see comment above) — that's still the strongest
+    // possible evidence of "bound", so show it regardless.
+    if (val->type == VAR) {
+      int slot = env->var_index ? env->var_index[val->arity] - 1 : -1;
+      if (slot < 0 || slot >= env->count ||
+          env->bindings[slot].var_id != val->arity)
+        continue; // genuinely never bound
+    }
+    if (!first)
+      io_write_str(ctx, ", ");
+    io_write_str(ctx, name->name);
+    io_write_str(ctx, " = ");
+    print_term(ctx, val, env, true);
+    first = false;
+  }
+  if (first)
+    io_write_str(ctx, "true");
+  term_t *result = make_const(ctx, cap.buf);
+  fmtb_end(ctx, &cap);
+
+  return unify(ctx, goal->args[1], result, env) ? BUILTIN_OK : BUILTIN_FAIL;
 }
 
 static builtin_result_t builtin_atom(trilog_ctx_t *ctx, term_t *goal,
@@ -2087,6 +2175,7 @@ static const builtin_t builtins[] = {
     {"\\+", 1, builtin_not},
     {"var", 1, builtin_var},
     {"nonvar", 1, builtin_nonvar},
+    {"format_bindings", 2, builtin_format_bindings},
     {"atom", 1, builtin_atom},
     {"integer", 1, builtin_integer},
     {"is_list", 1, builtin_is_list},
