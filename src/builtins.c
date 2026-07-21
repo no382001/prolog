@@ -1406,7 +1406,15 @@ static builtin_result_t builtin_assertz(trilog_ctx_t *ctx, term_t *goal,
        clause_raw->arity == 2)
           ? deref(env, clause_raw->args[0])
           : clause_raw;
-  if (head_raw->type != VAR) {
+  if (head_raw->type == VAR) {
+    throw_instantiation_error(ctx, "assertz/1");
+    return BUILTIN_ERROR;
+  }
+  if (head_raw->type != CONST && head_raw->type != FUNC) {
+    throw_type_error(ctx, "callable", head_raw, "assertz/1");
+    return BUILTIN_ERROR;
+  }
+  {
     int pa = (head_raw->type == FUNC) ? head_raw->arity : 0;
     if (is_static_procedure(ctx, head_raw->name, pa)) {
       throw_static_proc_error(ctx, head_raw->name, pa, "assertz/1");
@@ -1442,7 +1450,15 @@ static builtin_result_t builtin_asserta(trilog_ctx_t *ctx, term_t *goal,
        clause_raw->arity == 2)
           ? deref(env, clause_raw->args[0])
           : clause_raw;
-  if (head_raw->type != VAR) {
+  if (head_raw->type == VAR) {
+    throw_instantiation_error(ctx, "asserta/1");
+    return BUILTIN_ERROR;
+  }
+  if (head_raw->type != CONST && head_raw->type != FUNC) {
+    throw_type_error(ctx, "callable", head_raw, "asserta/1");
+    return BUILTIN_ERROR;
+  }
+  {
     int pa = (head_raw->type == FUNC) ? head_raw->arity : 0;
     if (is_static_procedure(ctx, head_raw->name, pa)) {
       throw_static_proc_error(ctx, head_raw->name, pa, "asserta/1");
