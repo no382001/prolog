@@ -4,14 +4,49 @@
 //* last-call optimization
 //****
 
+// does t's chain of bindings pass through any slot in [from, to)? unlike a
+// plain deref (which only reports where the chain currently ends), this
+// checks every hop: reclaiming an intermediate link breaks the chain just
+// as much as reclaiming its final value would. also recurses into FUNC
+// args (not just the top-level chain) since a template like permutation/2's
+// [H|T] embeds a tail var T whose *own* chain needs the same treatment —
+// term_refs_range only checks T's own slot, not what T is bound to.
+static bool chain_hits_window(env_t *env, term_t *t, int from, int to) {
+  while (t && t->type == VAR) {
+    term_t *next = NULL;
+    for (int i = env->count - 1; i >= 0; i--) {
+      if (env->bindings[i].var_id == t->arity) {
+        if (i >= from && i < to)
+          return true;
+        next = env->bindings[i].value;
+        break;
+      }
+    }
+    if (!next)
+      return false; // genuinely unbound: chain ends here, safely
+    t = next;
+  }
+  if (!t || t->type != FUNC)
+    return false;
+  for (int i = 0; i < t->arity; i++) {
+    if (chain_hits_window(env, t->args[i], from, to))
+      return true;
+  }
+  return false;
+}
+
 // check if lco can safely reclaim bindings in [from, to).
-// unsafe when any named (query) var is in the range — reclaiming would
-// lose assignments needed by print_bindings at solution time.
-static bool lco_safe(env_t *env, int from, int to) {
+// unsafe when any named (query) var is in the range (reclaiming would lose
+// assignments print_bindings needs) or an active findall/setof's template
+// chain passes through it (its callback observes that value after solving).
+static bool lco_safe(trilog_ctx_t *ctx, env_t *env, int from, int to) {
   for (int i = from; i < to; i++) {
     if (env->bindings[i].name)
-      return false; // named query var: must keep for print_bindings
+      return false;
   }
+  if (ctx->protect_template && ctx->protect_template_touched &&
+      chain_hits_window(env, ctx->protect_template, from, to))
+    return false;
   return true;
 }
 
@@ -569,14 +604,14 @@ B:
         reclaim_mark = env_mark;
       } else if (clause_idx >= 0 && ctx->bind_count > reclaim_mark &&
                  resolvent.count > 0 && reclaim_floor_ok &&
-                 !lco_safe(env, reclaim_mark, ctx->bind_count) &&
-                 lco_safe(env, env_mark, ctx->bind_count)) {
+                 !lco_safe(ctx, env, reclaim_mark, ctx->bind_count) &&
+                 lco_safe(ctx, env, env_mark, ctx->bind_count)) {
         // a named var blocks reclaiming back to reclaim_mark, but this
         // clause's own [env_mark, bind_count) is clear — give up on the rest.
         reclaim_mark = env_mark;
       } else if (clause_idx >= 0 && ctx->bind_count > reclaim_mark &&
                  resolvent.count > 0 && reclaim_floor_ok &&
-                 lco_safe(env, reclaim_mark, ctx->bind_count)) {
+                 lco_safe(ctx, env, reclaim_mark, ctx->bind_count)) {
         // lco: substitute into resolvent and reclaim back to reclaim_mark
         // (may reach past env_mark), patching older refs into the range.
         for (int j = 0; j < resolvent.count; j++)
@@ -611,7 +646,12 @@ B:
         // here) — nothing to reclaim, so just give up tracking this span.
         reclaim_mark = ctx->bind_count;
       } else if (clause_idx >= 0 && ctx->bind_count == env_mark &&
-                 resolvent.count > 0 && sp <= 1 && cn.count == 1) {
+                 resolvent.count > 0 && sp <= 1 && cn.count == 1 &&
+                 lco_safe(ctx, env,
+                          stack[0].env_mark > ctx->bind_floor
+                              ? stack[0].env_mark
+                              : ctx->bind_floor,
+                          ctx->bind_count)) {
         // deterministic tail call with no new bindings, no choice points.
         // the matched goal was the sole remaining goal (tail position).
         // reset temp pool to the initial level and rebuild the resolvent

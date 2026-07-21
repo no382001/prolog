@@ -299,6 +299,15 @@ struct trilog_ctx {
   int bind_floor;       // lco cannot reclaim bindings below this
   int nest_depth;       // active nested solve() calls (->/catch/;) — bind_floor
                   // alone can't tell that apart from top level (both can be 0)
+  // findall/setof set this around their nested solve so LCO won't reclaim
+  // any binding the template's chain passes through — reclaiming it would
+  // corrupt the value the collector callback observes after solving.
+  term_t *protect_template;
+  int protect_template_id; // protect_template's own var_id, cached
+  // set the instant bind() touches protect_template_id — until then the
+  // chain-walk in lco_safe is skipped outright: the template can't be
+  // anywhere in a reclaim window if nothing has bound it yet.
+  bool protect_template_touched;
   bool alloc_permanent; // when true, allocate from perm end
   bool db_dirty;        // set when assert/retract modifies the database
   bool ops_dirty;       // set when op_table is modified (prevents string pool

@@ -35,6 +35,9 @@ void bind(trilog_ctx_t *ctx, env_t *env, term_t *var, term_t *value) {
       .var_ceiling = ctx->var_counter,
   };
   env->count = ctx->bind_count;
+
+  if (ctx->protect_template && var->arity == ctx->protect_template_id)
+    ctx->protect_template_touched = true;
 }
 
 term_t *deref(env_t *env, term_t *t) {

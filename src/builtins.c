@@ -302,14 +302,24 @@ static int collect_solutions(trilog_ctx_t *ctx, term_t *goal, env_t *env,
 
   int bind_save = ctx->bind_count;
   int floor_save = ctx->term_pool_floor;
-  int bfloor_save = ctx->bind_floor;
-  ctx->bind_floor = MAX_BINDINGS; // disable lco inside findall
+  term_t *template_save = ctx->protect_template;
+  int template_id_save = ctx->protect_template_id;
+  bool template_touched_save = ctx->protect_template_touched;
+  // protect the template's binding chain for the whole nested solve: each
+  // backtrack into the goal renames its clauses afresh, and those new
+  // variables are what the template ends up chained to by the time a
+  // solution is found — findall_callback needs them alive.
+  ctx->protect_template = template;
+  ctx->protect_template_id = template->type == VAR ? template->arity : -1;
+  ctx->protect_template_touched = template->type != VAR;
   ctx->nest_depth++; // this solve_all is nested from the caller's view
   env_t query_env = {.bindings = ctx->bindings, .count = ctx->bind_count};
   solve_all(ctx, &goals, &query_env, findall_callback, &state);
   ctx->nest_depth--;
   ctx->term_pool_floor = floor_save;
-  ctx->bind_floor = bfloor_save;
+  ctx->protect_template = template_save;
+  ctx->protect_template_id = template_id_save;
+  ctx->protect_template_touched = template_touched_save;
 
   // exceptions must propagate out of findall (ISO 7.8.4), not be swallowed:
   // leave bindings alone and sync env->count so the ball stays valid.
@@ -375,14 +385,22 @@ static builtin_result_t builtin_setof(trilog_ctx_t *ctx, term_t *goal,
 
   int bind_save = ctx->bind_count;
   int floor_save = ctx->term_pool_floor;
-  int bfloor_save = ctx->bind_floor;
-  ctx->bind_floor = MAX_BINDINGS; // disable lco inside setof
+  term_t *template_save = ctx->protect_template;
+  int template_id_save = ctx->protect_template_id;
+  bool template_touched_save = ctx->protect_template_touched;
+  // see collect_solutions above: protect the template's binding chain for
+  // the whole nested solve.
+  ctx->protect_template = template;
+  ctx->protect_template_id = template->type == VAR ? template->arity : -1;
+  ctx->protect_template_touched = template->type != VAR;
   ctx->nest_depth++;
   env_t query_env = {.bindings = ctx->bindings, .count = ctx->bind_count};
   solve_all(ctx, &goals, &query_env, findall_callback, &state);
   ctx->nest_depth--;
   ctx->term_pool_floor = floor_save;
-  ctx->bind_floor = bfloor_save;
+  ctx->protect_template = template_save;
+  ctx->protect_template_id = template_id_save;
+  ctx->protect_template_touched = template_touched_save;
 
   // see collect_solutions above: leave bindings alone and sync env->count
   // so a propagated exception's ball stays valid.

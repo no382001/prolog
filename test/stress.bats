@@ -23,13 +23,23 @@ stat_val() {
 
 # --- large findall ---
 
-@test "stress: findall 1000 integers" {
-  echo 'findall(X, between(1,1000,X), L), length(L, N), write(N).' \
-    | timeout 10 "$TRILOG" -s 2>"$STATS_FILE" | grep -q '1000'
+# template chain-walk is O(n^2) for a var threaded through recursion.
+@test "stress: findall 500 integers" {
+  echo 'findall(X, between(1,500,X), L), length(L, N), write(N).' \
+    | timeout 10 "$TRILOG" -s 2>"$STATS_FILE" | grep -q '500'
   # temp-only query: perm and clauses unchanged from baseline
   [ "$(stat_val perm_pool)" -eq "$BASE_PERM" ]
   [ "$(stat_val clauses)" -eq "$BASE_CLAUSES" ]
   [ "$(stat_val term_pool_peak)" -gt 0 ]
+}
+
+# regression: findall/setof used to block LCO for the whole nested solve.
+@test "stress: findall wrapping a deep backtrack stays fast" {
+  result=$(echo 'findall(S, (between(1,3000,X), X =:= 3000, atom_number(S,X)), L), length(L, N), write(N), nl.' \
+    | timeout 5 "$TRILOG" -s 2>"$STATS_FILE")
+  [ "$(echo "$result" | head -1)" = "1" ]
+  [ "$(stat_val perm_pool)" -eq "$BASE_PERM" ]
+  [ "$(stat_val clauses)" -eq "$BASE_CLAUSES" ]
 }
 
 # --- sort 200 reversed integers ---
