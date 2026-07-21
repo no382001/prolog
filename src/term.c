@@ -93,6 +93,7 @@ term_t *make_int(trilog_ctx_t *ctx, int n) {
 }
 
 term_t *make_var(trilog_ctx_t *ctx, const char *name, int var_id) {
+  assert(var_id < MAX_VARS && "Variable table full");
   term_t *t = term_alloc(ctx, sizeof(term_t)); // no args
   if (!t)
     return NULL;

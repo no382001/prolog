@@ -313,7 +313,9 @@ static int collect_solutions(trilog_ctx_t *ctx, term_t *goal, env_t *env,
   ctx->protect_template_id = template->type == VAR ? template->arity : -1;
   ctx->protect_template_touched = template->type != VAR;
   ctx->nest_depth++; // this solve_all is nested from the caller's view
-  env_t query_env = {.bindings = ctx->bindings, .count = ctx->bind_count};
+  env_t query_env = {.bindings = ctx->bindings,
+                     .count = ctx->bind_count,
+                     .var_index = ctx->var_bind_index};
   solve_all(ctx, &goals, &query_env, findall_callback, &state);
   ctx->nest_depth--;
   ctx->term_pool_floor = floor_save;
@@ -394,7 +396,9 @@ static builtin_result_t builtin_setof(trilog_ctx_t *ctx, term_t *goal,
   ctx->protect_template_id = template->type == VAR ? template->arity : -1;
   ctx->protect_template_touched = template->type != VAR;
   ctx->nest_depth++;
-  env_t query_env = {.bindings = ctx->bindings, .count = ctx->bind_count};
+  env_t query_env = {.bindings = ctx->bindings,
+                     .count = ctx->bind_count,
+                     .var_index = ctx->var_bind_index};
   solve_all(ctx, &goals, &query_env, findall_callback, &state);
   ctx->nest_depth--;
   ctx->term_pool_floor = floor_save;

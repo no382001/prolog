@@ -88,6 +88,8 @@ static void print_exit_stats(trilog_ctx_t *ctx) {
   fprintf(stderr, "string_pool=%d\n", ctx->string_pool_offset);
   fprintf(stderr, "clauses=%d\n", ctx->db_count);
   fprintf(stderr, "term_pool_peak=%d\n", ctx->term_pool_peak);
+  fprintf(stderr, "var_counter=%d\n", ctx->var_counter);
+  fprintf(stderr, "bind_count=%d\n", ctx->bind_count);
 }
 
 static void process_line(trilog_ctx_t *ctx, char *line, bool *should_exit,

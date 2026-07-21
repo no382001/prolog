@@ -14,12 +14,22 @@
 static bool chain_hits_window(env_t *env, term_t *t, int from, int to) {
   while (t && t->type == VAR) {
     term_t *next = NULL;
-    for (int i = env->count - 1; i >= 0; i--) {
-      if (env->bindings[i].var_id == t->arity) {
-        if (i >= from && i < to)
+    if (env->var_index) {
+      int slot = env->var_index[t->arity] - 1;
+      if (slot >= 0 && slot < env->count &&
+          env->bindings[slot].var_id == t->arity) {
+        if (slot >= from && slot < to)
           return true;
-        next = env->bindings[i].value;
-        break;
+        next = env->bindings[slot].value;
+      }
+    } else {
+      for (int i = env->count - 1; i >= 0; i--) {
+        if (env->bindings[i].var_id == t->arity) {
+          if (i >= from && i < to)
+            return true;
+          next = env->bindings[i].value;
+          break;
+        }
       }
     }
     if (!next)

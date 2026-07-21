@@ -57,6 +57,9 @@ typedef __builtin_va_list va_list;
 #ifndef MAX_BINDINGS
 #define MAX_BINDINGS 2097152
 #endif
+#ifndef MAX_VARS
+#define MAX_VARS 4194304
+#endif
 #ifndef MAX_GOALS
 #define MAX_GOALS 128
 #endif
@@ -246,6 +249,10 @@ typedef struct {
 struct env {
   binding_t *bindings; // points into ctx->bindings
   int count;
+  // points into ctx->var_bind_index: var_index[var_id] is (binding slot)+1
+  // where var_id was last bound, or 0 if never bound — O(1) lookup instead
+  // of scanning ctx->bindings backward.
+  int *var_index;
 };
 
 typedef struct {
@@ -286,6 +293,11 @@ struct trilog_ctx {
   binding_t bindings[MAX_BINDINGS]; // centralized trail
   int bind_count;
   int var_counter;
+  // var_id -> (binding slot in `bindings`)+1, or 0 if that var_id was never
+  // bound. 0-init (via memset in trilog_ctx_init) is already the correct
+  // "never bound" state, so no separate init pass is needed. See bind()
+  // and lookup() in env.c.
+  int var_bind_index[MAX_VARS];
   char *input_ptr;
   char *input_start;
   int input_line;

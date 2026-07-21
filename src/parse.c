@@ -960,12 +960,15 @@ bool trilog_exec_query(trilog_ctx_t *ctx, char *query) {
     return false;
 
   ctx->bind_count = 0;
-  env_t env = {.bindings = ctx->bindings, .count = 0};
+  env_t env = {
+      .bindings = ctx->bindings, .count = 0, .var_index = ctx->var_bind_index};
   bool ok = solve(ctx, &goals, &env);
 
   if (ctx->has_runtime_error) {
     if (ctx->thrown_ball) {
-      env_t err_env = {.bindings = ctx->bindings, .count = 0};
+      env_t err_env = {.bindings = ctx->bindings,
+                       .count = 0,
+                       .var_index = ctx->var_bind_index};
       term_t *ball = ctx->thrown_ball;
       if (ball->type == FUNC && ball->arity == 2 &&
           strcmp(ball->name, "error") == 0)
@@ -1009,12 +1012,15 @@ bool trilog_exec_query_multi(trilog_ctx_t *ctx, char *query,
     return false;
 
   ctx->bind_count = 0;
-  env_t env = {.bindings = ctx->bindings, .count = 0};
+  env_t env = {
+      .bindings = ctx->bindings, .count = 0, .var_index = ctx->var_bind_index};
   bool found = solve_all(ctx, &goals, &env, cb, ud);
 
   if (ctx->has_runtime_error) {
     if (ctx->thrown_ball) {
-      env_t err_env = {.bindings = ctx->bindings, .count = 0};
+      env_t err_env = {.bindings = ctx->bindings,
+                       .count = 0,
+                       .var_index = ctx->var_bind_index};
       term_t *ball = ctx->thrown_ball;
       if (ball->type == FUNC && ball->arity == 2 &&
           strcmp(ball->name, "error") == 0)
