@@ -48,9 +48,9 @@ set(SRCS
 
 add_custom_command(
   OUTPUT  ${CMAKE_CURRENT_BINARY_DIR}/core_embed.h
-  COMMAND xxd -i -n core_pl ${CMAKE_CURRENT_SOURCE_DIR}/../core.pl
+  COMMAND xxd -i -n core_pl ${CMAKE_CURRENT_SOURCE_DIR}/../lib/core.pl
           > ${CMAKE_CURRENT_BINARY_DIR}/core_embed.h
-  DEPENDS ${CMAKE_CURRENT_SOURCE_DIR}/../core.pl
+  DEPENDS ${CMAKE_CURRENT_SOURCE_DIR}/../lib/core.pl
 )
 add_custom_command(
   OUTPUT  ${CMAKE_CURRENT_BINARY_DIR}/rp2040_embed.h

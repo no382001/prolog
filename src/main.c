@@ -27,9 +27,9 @@ static void try_load_core(trilog_ctx_t *ctx, const char *argv0) {
   dirname(dir);
 
   char path[CORE_PATH_MAX];
-  strncpy(path, dir, sizeof(path) - 9);
-  path[sizeof(path) - 9] = '\0';
-  strcat(path, "/core.pl");
+  strncpy(path, dir, sizeof(path) - 13);
+  path[sizeof(path) - 13] = '\0';
+  strcat(path, "/lib/core.pl");
 
   if (io_file_exists(ctx, path))
     trilog_load_file(ctx, path);

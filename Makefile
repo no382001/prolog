@@ -65,7 +65,7 @@ QUAD_TIMEOUT := 60
 quad: $(TARGET)
 	@for f in test/*_quad.pl; do \
 		[ -f "$$f" ] || continue; \
-		timeout $(QUAD_TIMEOUT) ./$(TARGET) -e "consult('quad.pl'), quad_cli('$$f')" || true; \
+		timeout $(QUAD_TIMEOUT) ./$(TARGET) -e "consult('lib/quad.pl'), quad_cli('$$f')" || true; \
 	done
 
 .PHONY: quad-junit
@@ -73,7 +73,7 @@ quad-junit: $(TARGET)
 	@mkdir -p _build/test-results
 	@for f in test/*_quad.pl; do \
 		[ -f "$$f" ] || continue; \
-		timeout $(QUAD_TIMEOUT) ./$(TARGET) -e "consult('quad.pl'), quad_cli_junit('$$f', '_build/test-results')" || true; \
+		timeout $(QUAD_TIMEOUT) ./$(TARGET) -e "consult('lib/quad.pl'), quad_cli_junit('$$f', '_build/test-results')" || true; \
 	done
 	@echo "JUnit reports written to _build/test-results/"
 
@@ -133,7 +133,7 @@ WEB_M0_FLAGS := $(SMALL_FLAGS)
 .PHONY: web
 web: $(WEB_DIR)/trilog.js
 
-$(WEB_DIR)/trilog.js: $(WEB_LIB_SRCS) $(WEB_ENTRY) $(HDRS) core.pl ledit.pl
+$(WEB_DIR)/trilog.js: $(WEB_LIB_SRCS) $(WEB_ENTRY) $(HDRS) lib/core.pl lib/ledit.pl
 	emcc $(WEB_LIB_SRCS) $(WEB_ENTRY) \
 	    -o $@ \
 	    -O2 \
@@ -143,8 +143,8 @@ $(WEB_DIR)/trilog.js: $(WEB_LIB_SRCS) $(WEB_ENTRY) $(HDRS) core.pl ledit.pl
 	    -s ASYNCIFY=1 \
 	    -s EXPORTED_FUNCTIONS='["_trilog_web_init","_trilog_web_eval","_trilog_web_push_line","_trilog_web_is_reading","_trilog_web_is_choosing","_trilog_web_take_output","_trilog_web_set_yield","_trilog_web_get_stats","_trilog_web_get_usage"]' \
 	    -s EXPORTED_RUNTIME_METHODS='["ccall","cwrap","getValue"]' \
-	    --embed-file core.pl@/core.pl \
-	    --embed-file ledit.pl@/ledit.pl
+	    --embed-file lib/core.pl@/core.pl \
+	    --embed-file lib/ledit.pl@/ledit.pl
 
 .PHONY: serve-web
 serve-web:

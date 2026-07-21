@@ -40,7 +40,7 @@
 
 % --- [f1, f2] loads multiple files ---
 
-?- ['test/family.pl', 'core.pl'].
+?- ['test/family.pl', 'lib/core.pl'].
    true.
 
 ?- parent(bob, ann).

@@ -10,7 +10,7 @@
 % like l_reverse will generate spurious extra solutions from the mutated state.
 % So we do state mutations in directives and only query the resulting state.
 
-:- consult('ledit.pl').
+:- consult('lib/ledit.pl').
 
 % ===== Pure utilities =====
 

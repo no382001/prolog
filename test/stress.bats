@@ -93,15 +93,15 @@ print('findall(X, st(X), L3), length(L3, N3), write(N3), write(s), nl.')
 @test "stress: 20 consult/unconsult cycles stable" {
   stats_5=$(python3 -c "
 for i in range(5):
-    print(\"consult('ledit.pl').\")
-    print(\"unconsult('ledit.pl').\")
+    print(\"consult('lib/ledit.pl').\")
+    print(\"unconsult('lib/ledit.pl').\")
 print('true.')
 " | timeout 15 "$TRILOG" -s 2>&1 | grep perm_pool | head -1)
 
   stats_20=$(python3 -c "
 for i in range(20):
-    print(\"consult('ledit.pl').\")
-    print(\"unconsult('ledit.pl').\")
+    print(\"consult('lib/ledit.pl').\")
+    print(\"unconsult('lib/ledit.pl').\")
 print('true.')
 " | timeout 30 "$TRILOG" -s 2>&1 | grep perm_pool | head -1)
 
@@ -113,8 +113,8 @@ print('true.')
 @test "stress: core predicates work after 20 consult/unconsult cycles" {
   result=$(python3 -c "
 for i in range(20):
-    print(\"consult('ledit.pl').\")
-    print(\"unconsult('ledit.pl').\")
+    print(\"consult('lib/ledit.pl').\")
+    print(\"unconsult('lib/ledit.pl').\")
 print('append([1,2],[3],X), write(X).')
 " | timeout 30 "$TRILOG" 2>&1 | tail -1)
   [[ "$result" == *"[1, 2, 3]"* ]]
