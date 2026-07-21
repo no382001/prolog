@@ -585,11 +585,22 @@ B:
         // offset before patching so we can ratchet the enclosing choice
         // point's term_mark only if new terms were actually allocated.
         int pre_patch = ctx->term_pool_offset;
+        // skip a binding outright once its var_ceiling can't reach this
+        // window's lowest var_id: it provably can't reference anything in it.
+        int window_min_var_id = env->bindings[reclaim_mark].var_id;
+        for (int j = reclaim_mark + 1; j < ctx->bind_count; j++)
+          if (env->bindings[j].var_id < window_min_var_id)
+            window_min_var_id = env->bindings[j].var_id;
         for (int j = 0; j < reclaim_mark; j++) {
+          if (env->bindings[j].var_ceiling <= window_min_var_id)
+            continue;
           if (!term_refs_range(env, env->bindings[j].value, reclaim_mark,
                                ctx->bind_count))
             continue;
           env->bindings[j].value = substitute(ctx, env, env->bindings[j].value);
+          // substitute may have chased in a newer reference, staling the old
+          // ceiling: the current allocation count is a safe new bound.
+          env->bindings[j].var_ceiling = ctx->var_counter;
         }
         if (ctx->term_pool_offset > pre_patch && sp > 1)
           stack[sp - 1].term_mark = ctx->term_pool_offset;

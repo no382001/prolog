@@ -94,7 +94,7 @@ typedef __builtin_va_list va_list;
 #define MAX_OPS 128
 #endif
 #ifndef TERM_POOL_BYTES
-#define TERM_POOL_BYTES (32 * 1024 * 1024)
+#define TERM_POOL_BYTES (256 * 1024 * 1024)
 #endif
 #define TRILOG_CTX_SIZE(pool_bytes) (sizeof(trilog_ctx_t) + (pool_bytes))
 
@@ -228,6 +228,9 @@ typedef struct {
   int var_id;       // variable identity (matches term_t.arity for var terms)
   const char *name; // display name only; null for internal renamed vars
   term_t *value;
+  // ctx->var_counter when this binding was made; no VAR embedded in `value`
+  // can have var_id >= var_ceiling, letting LCO skip provably-old bindings.
+  int var_ceiling;
 } binding_t;
 
 typedef struct {

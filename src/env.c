@@ -32,6 +32,7 @@ void bind(trilog_ctx_t *ctx, env_t *env, term_t *var, term_t *value) {
       .var_id = var->arity,
       .name = var->name, // already interned (or null for internal vars)
       .value = value,
+      .var_ceiling = ctx->var_counter,
   };
   env->count = ctx->bind_count;
 }
