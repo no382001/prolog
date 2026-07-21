@@ -43,7 +43,7 @@ typedef __builtin_va_list va_list;
 //****
 
 #ifndef MAX_NAME
-#define MAX_NAME 64
+#define MAX_NAME 16384
 #endif
 #ifndef MAX_ARGS
 #define MAX_ARGS 8

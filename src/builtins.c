@@ -290,9 +290,17 @@ static int collect_solutions(trilog_ctx_t *ctx, term_t *goal, env_t *env,
   env_t query_env = {.bindings = ctx->bindings, .count = ctx->bind_count};
   solve_all(ctx, &goals, &query_env, findall_callback, &state);
   ctx->nest_depth--;
-  ctx->bind_count = bind_save;
   ctx->term_pool_floor = floor_save;
   ctx->bind_floor = bfloor_save;
+
+  // exceptions must propagate out of findall (ISO 7.8.4), not be swallowed:
+  // leave bindings alone and sync env->count so the ball stays valid.
+  if (ctx->has_runtime_error) {
+    env->count = ctx->bind_count;
+    return BUILTIN_ERROR;
+  }
+
+  ctx->bind_count = bind_save;
 
   if (fail_on_empty && state.count == 0)
     return BUILTIN_FAIL;
@@ -355,9 +363,17 @@ static builtin_result_t builtin_setof(trilog_ctx_t *ctx, term_t *goal,
   env_t query_env = {.bindings = ctx->bindings, .count = ctx->bind_count};
   solve_all(ctx, &goals, &query_env, findall_callback, &state);
   ctx->nest_depth--;
-  ctx->bind_count = bind_save;
   ctx->term_pool_floor = floor_save;
   ctx->bind_floor = bfloor_save;
+
+  // see collect_solutions above: leave bindings alone and sync env->count
+  // so a propagated exception's ball stays valid.
+  if (ctx->has_runtime_error) {
+    env->count = ctx->bind_count;
+    return BUILTIN_ERROR;
+  }
+
+  ctx->bind_count = bind_save;
 
   if (state.count == 0)
     return BUILTIN_FAIL;
@@ -435,7 +451,9 @@ static void throw_cap_writef(trilog_ctx_t *ctx, const char *fmt, va_list args,
 
 static builtin_result_t builtin_throw(trilog_ctx_t *ctx, term_t *goal,
                                       env_t *env) {
-  term_t *ball = deref(env, goal->args[0]);
+  // resolve now: catch/3 rolls bindings back before inspecting the ball,
+  // so any variable it still references would otherwise go stale.
+  term_t *ball = substitute(ctx, env, deref(env, goal->args[0]));
   ctx->thrown_ball = ball;
   ctx->has_runtime_error = true;
   // serialize error type to runtime_error string using print_term
@@ -1307,6 +1325,19 @@ static bool is_static_procedure(trilog_ctx_t *ctx, const char *name,
   return false;
 }
 
+// assert/1 on an unknown predicate implicitly makes it dynamic, so a later
+// retractall-to-empty leaves it failing instead of raising existence_error.
+static void ensure_dynamic(trilog_ctx_t *ctx, const char *name, int arity) {
+  if (is_declared_dynamic(ctx, name, arity))
+    return;
+  if (ctx->dynamic_pred_count >= MAX_DYNAMIC_PREDS)
+    return;
+  strncpy(ctx->dynamic_preds[ctx->dynamic_pred_count].name, name, MAX_NAME - 1);
+  ctx->dynamic_preds[ctx->dynamic_pred_count].name[MAX_NAME - 1] = '\0';
+  ctx->dynamic_preds[ctx->dynamic_pred_count].arity = arity;
+  ctx->dynamic_pred_count++;
+}
+
 static void throw_static_proc_error(trilog_ctx_t *ctx, const char *name,
                                     int arity, const char *context) {
   term_t *n = make_const(ctx, name);
@@ -1341,6 +1372,7 @@ static builtin_result_t builtin_assertz(trilog_ctx_t *ctx, term_t *goal,
       throw_static_proc_error(ctx, head_raw->name, pa, "assertz/1");
       return BUILTIN_ERROR;
     }
+    ensure_dynamic(ctx, head_raw->name, pa);
   }
   ctx->alloc_permanent = true;
   term_t *arg = substitute(ctx, env, clause_raw);
@@ -1376,6 +1408,7 @@ static builtin_result_t builtin_asserta(trilog_ctx_t *ctx, term_t *goal,
       throw_static_proc_error(ctx, head_raw->name, pa, "asserta/1");
       return BUILTIN_ERROR;
     }
+    ensure_dynamic(ctx, head_raw->name, pa);
   }
   for (int i = ctx->db_count; i > 0; i--)
     ctx->database[i] = ctx->database[i - 1];

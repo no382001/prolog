@@ -39,6 +39,12 @@ const char *intern_name(trilog_ctx_t *ctx, const char *name) {
   assert(ctx != NULL && "Context is NULL");
   assert(name != NULL && "Name is NULL");
 
+  // fast path: name is already a canonical pointer into this pool (e.g. a
+  // clause functor name copied during renaming) — no need to rescan.
+  if (name >= ctx->string_pool &&
+      name < ctx->string_pool + ctx->string_pool_offset)
+    return name;
+
   int len = strlen(name);
 
   // search for existing copy in string pool
