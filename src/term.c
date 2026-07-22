@@ -92,6 +92,34 @@ term_t *make_int(trilog_ctx_t *ctx, int n) {
   return t;
 }
 
+// canonical float formatting: try increasing precision until the string
+// round-trips to the exact same double, so equal doubles always intern to
+// the same string (unify.c compares FLOATs by interned-string equality).
+// ISO requires a decimal point in the printed form, so "7" becomes "7.0".
+term_t *make_float(trilog_ctx_t *ctx, double d) {
+  char buf[64];
+  for (int prec = 15; prec <= 17; prec++) {
+    snprintf(buf, sizeof(buf), "%.*g", prec, d);
+    if (strtod(buf, NULL) == d)
+      break;
+  }
+  if (!strchr(buf, '.') && !strchr(buf, 'e') && !strchr(buf, 'E'))
+    strcat(buf, ".0");
+  term_t *t = term_alloc(ctx, sizeof(term_t));
+  if (!t)
+    return NULL;
+  t->type = FLOAT;
+  t->name = intern_name(ctx, buf);
+  return t;
+}
+
+bool term_as_float(const term_t *t, double *out) {
+  if (!t || t->type != FLOAT)
+    return false;
+  *out = strtod(t->name, NULL);
+  return true;
+}
+
 term_t *make_var(trilog_ctx_t *ctx, const char *name, int var_id) {
   assert(var_id < MAX_VARS && "Variable table full");
   term_t *t = term_alloc(ctx, sizeof(term_t)); // no args
@@ -170,7 +198,7 @@ term_t *rename_vars_mapped_named(trilog_ctx_t *ctx, term_t *t,
                                  var_id_map_t *map, bool preserve_names) {
   if (!t)
     return NULL;
-  if (t->type == CONST || t->type == INT || t->type == STR)
+  if (t->type == CONST || t->type == INT || t->type == STR || t->type == FLOAT)
     return t;
   if (t->type == VAR) {
     const char *name = preserve_names ? t->name : NULL;
@@ -216,6 +244,11 @@ static term_t *copy_term_into_pool(trilog_ctx_t *ctx, term_t *t) {
     int v = 0;
     term_as_int(t, &v);
     return make_int(ctx, v);
+  }
+  case FLOAT: {
+    double v = 0;
+    term_as_float(t, &v);
+    return make_float(ctx, v);
   }
   case VAR:
     return make_var(ctx, t->name, t->arity);

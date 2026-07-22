@@ -98,22 +98,36 @@ static builtin_result_t builtin_struct_neq(trilog_ctx_t *ctx, term_t *goal,
 // iso standard order: var < number < atom < compound
 // within same type: var by id, number by value, atom lexicographic,
 // compound by arity then functor then args left-to-right
+// combined int/float reader for standard-order numeric comparison.
+static bool term_as_number(const term_t *t, arith_val_t *out) {
+  if (term_as_int(t, &out->i)) {
+    out->is_float = false;
+    return true;
+  }
+  if (term_as_float(t, &out->f)) {
+    out->is_float = true;
+    return true;
+  }
+  return false;
+}
+
 static int term_order(term_t *a, term_t *b, env_t *env) {
   a = deref(env, a);
   b = deref(env, b);
   if (a == b)
     return 0;
 
-  // type ordering ranks: VAR < INT < CONST(atom) < FUNC
+  // type ordering ranks: VAR < Number(INT/FLOAT) < CONST(atom) < FUNC
   int ra, rb;
-  int ia, ib;
-  bool a_num = term_as_int(a, &ia);
-  bool b_num = term_as_int(b, &ib);
+  arith_val_t na, nb;
+  bool a_num = term_as_number(a, &na);
+  bool b_num = term_as_number(b, &nb);
   switch (a->type) {
   case VAR:
     ra = 0;
     break;
   case INT:
+  case FLOAT:
     ra = 1;
     break;
   case CONST:
@@ -128,6 +142,7 @@ static int term_order(term_t *a, term_t *b, env_t *env) {
     rb = 0;
     break;
   case INT:
+  case FLOAT:
     rb = 1;
     break;
   case CONST:
@@ -151,10 +166,18 @@ static int term_order(term_t *a, term_t *b, env_t *env) {
   if (a->type == VAR)
     return a->arity < b->arity ? -1 : (a->arity > b->arity ? 1 : 0);
 
-  if (a_num && b_num)
-    return ia < ib ? -1 : (ia > ib ? 1 : 0);
+  if (a_num && b_num) {
+    double da = na.is_float ? na.f : (double)na.i;
+    double db = nb.is_float ? nb.f : (double)nb.i;
+    if (da != db)
+      return da < db ? -1 : 1;
+    // iso tie-break on equal value: Float sorts before Int
+    if (na.is_float != nb.is_float)
+      return na.is_float ? -1 : 1;
+    return 0;
+  }
 
-  if (a->type == CONST || a->type == INT)
+  if (a->type == CONST)
     return a->name == b->name ? 0 : strcmp(a->name, b->name);
 
   // compound: arity first, then functor, then args
@@ -523,7 +546,7 @@ static bool check_callable(trilog_ctx_t *ctx, term_t *t, const char *pred) {
     throw_instantiation_error(ctx, pred);
     return false;
   }
-  if (t->type == INT) {
+  if (t->type == INT || t->type == FLOAT) {
     throw_type_error(ctx, "callable", t, pred);
     return false;
   }
@@ -572,6 +595,31 @@ static bool is_integer_str(const char *s) {
     if (!isdigit((unsigned char)*s++))
       return false;
   return true;
+}
+
+// any string strtod can fully consume as a float (also accepts exponent
+// notation, e.g. "3.3E+0" - ISO number_chars/2 relies on that for free).
+static bool is_number_str(const char *s) {
+  char *end;
+  strtod(s, &end);
+  return end != s && *end == '\0';
+}
+
+// parse a string already known to satisfy is_integer_str or is_number_str
+// into the matching INT or FLOAT term.
+static term_t *str_to_number_term(trilog_ctx_t *ctx, const char *s) {
+  if (is_integer_str(s)) {
+    int v = 0, sign = 1;
+    const char *p = s;
+    if (*p == '-') {
+      sign = -1;
+      p++;
+    }
+    while (*p)
+      v = v * 10 + (*p++ - '0');
+    return make_int(ctx, sign * v);
+  }
+  return make_float(ctx, strtod(s, NULL));
 }
 
 //****
@@ -680,6 +728,13 @@ static builtin_result_t builtin_integer(trilog_ctx_t *ctx, term_t *goal,
   (void)ctx;
   term_t *t = deref(env, goal->args[0]);
   return (t->type == INT) ? BUILTIN_OK : BUILTIN_FAIL;
+}
+
+static builtin_result_t builtin_float(trilog_ctx_t *ctx, term_t *goal,
+                                      env_t *env) {
+  (void)ctx;
+  term_t *t = deref(env, goal->args[0]);
+  return (t->type == FLOAT) ? BUILTIN_OK : BUILTIN_FAIL;
 }
 
 static builtin_result_t builtin_is_list(trilog_ctx_t *ctx, term_t *goal,
@@ -856,20 +911,24 @@ static builtin_result_t builtin_callable(trilog_ctx_t *ctx, term_t *goal,
                                          env_t *env) {
   (void)ctx;
   term_t *t = deref(env, goal->args[0]);
-  return (t->type == CONST || t->type == INT || t->type == FUNC) ? BUILTIN_OK
-                                                                 : BUILTIN_FAIL;
+  return (t->type == CONST || t->type == INT || t->type == FLOAT ||
+          t->type == FUNC)
+             ? BUILTIN_OK
+             : BUILTIN_FAIL;
 }
 static builtin_result_t builtin_number(trilog_ctx_t *ctx, term_t *goal,
                                        env_t *env) {
   (void)ctx;
   term_t *t = deref(env, goal->args[0]);
-  return (t->type == INT) ? BUILTIN_OK : BUILTIN_FAIL;
+  return (t->type == INT || t->type == FLOAT) ? BUILTIN_OK : BUILTIN_FAIL;
 }
 static builtin_result_t builtin_atomic(trilog_ctx_t *ctx, term_t *goal,
                                        env_t *env) {
   (void)ctx;
   term_t *t = deref(env, goal->args[0]);
-  return (t->type == CONST || t->type == INT) ? BUILTIN_OK : BUILTIN_FAIL;
+  return (t->type == CONST || t->type == INT || t->type == FLOAT)
+             ? BUILTIN_OK
+             : BUILTIN_FAIL;
 }
 static builtin_result_t builtin_string(trilog_ctx_t *ctx, term_t *goal,
                                        env_t *env) {
@@ -1158,23 +1217,14 @@ static builtin_result_t builtin_atom_number(trilog_ctx_t *ctx, term_t *goal,
   term_t *num = deref(env, goal->args[1]);
   if (atom->type != VAR) {
     const char *s = term_atom_str(atom);
-    if (!s || !is_integer_str(s))
+    if (!s || !is_number_str(s))
       return BUILTIN_FAIL;
-    int v = 0, sign = 1;
-    const char *p = s;
-    if (*p == '-') {
-      sign = -1;
-      p++;
-    }
-    while (*p)
-      v = v * 10 + (*p++ - '0');
-    return unify(ctx, goal->args[1], make_int(ctx, sign * v), env)
+    return unify(ctx, goal->args[1], str_to_number_term(ctx, s), env)
                ? BUILTIN_OK
                : BUILTIN_FAIL;
   }
   if (num->type != VAR) {
-    int iv;
-    if (!term_as_int(num, &iv))
+    if (num->type != INT && num->type != FLOAT)
       return BUILTIN_FAIL;
     return unify(ctx, goal->args[0], make_const(ctx, num->name), env)
                ? BUILTIN_OK
@@ -1199,21 +1249,11 @@ static builtin_result_t builtin_number_codes(trilog_ctx_t *ctx, term_t *goal,
     return BUILTIN_ERROR;
   }
   char buf[MAX_NAME] = {0};
-  if (!code_list_to_str(ctx, env, list, buf, MAX_NAME) || !is_integer_str(buf))
+  if (!code_list_to_str(ctx, env, list, buf, MAX_NAME) || !is_number_str(buf))
     return BUILTIN_FAIL;
-  {
-    int v = 0, sign = 1;
-    const char *p = buf;
-    if (*p == '-') {
-      sign = -1;
-      p++;
-    }
-    while (*p)
-      v = v * 10 + (*p++ - '0');
-    return unify(ctx, goal->args[0], make_int(ctx, sign * v), env)
-               ? BUILTIN_OK
-               : BUILTIN_FAIL;
-  }
+  return unify(ctx, goal->args[0], str_to_number_term(ctx, buf), env)
+             ? BUILTIN_OK
+             : BUILTIN_FAIL;
 }
 
 static builtin_result_t builtin_number_chars(trilog_ctx_t *ctx, term_t *goal,
@@ -1232,21 +1272,11 @@ static builtin_result_t builtin_number_chars(trilog_ctx_t *ctx, term_t *goal,
     return BUILTIN_ERROR;
   }
   char buf[MAX_NAME] = {0};
-  if (!char_list_to_str(ctx, env, list, buf, MAX_NAME) || !is_integer_str(buf))
+  if (!char_list_to_str(ctx, env, list, buf, MAX_NAME) || !is_number_str(buf))
     return BUILTIN_FAIL;
-  {
-    int v = 0, sign = 1;
-    const char *p = buf;
-    if (*p == '-') {
-      sign = -1;
-      p++;
-    }
-    while (*p)
-      v = v * 10 + (*p++ - '0');
-    return unify(ctx, goal->args[0], make_int(ctx, sign * v), env)
-               ? BUILTIN_OK
-               : BUILTIN_FAIL;
-  }
+  return unify(ctx, goal->args[0], str_to_number_term(ctx, buf), env)
+             ? BUILTIN_OK
+             : BUILTIN_FAIL;
 }
 
 //****
@@ -1267,8 +1297,8 @@ static builtin_result_t builtin_functor(trilog_ctx_t *ctx, term_t *goal,
   if (term->type != VAR) {
     term_t *fn;
     int ar;
-    if (term->type == INT) {
-      fn = term; // integer: functor is itself
+    if (term->type == INT || term->type == FLOAT) {
+      fn = term; // number: functor is itself
       ar = 0;
     } else if (term->type == CONST) {
       fn = term;
@@ -1350,7 +1380,7 @@ static builtin_result_t builtin_univ(trilog_ctx_t *ctx, term_t *goal,
   term_t *list = deref(env, goal->args[1]);
   if (term->type != VAR) {
     term_t *result;
-    if (term->type == CONST) {
+    if (term->type == CONST || term->type == INT || term->type == FLOAT) {
       term_t *args[2] = {term, make_const(ctx, "[]")};
       result = make_func(ctx, ".", args, 2);
     } else if (term->type == FUNC) {
@@ -2169,6 +2199,7 @@ static const builtin_t builtins[] = {
     {"format_bindings", 2, builtin_format_bindings},
     {"atom", 1, builtin_atom},
     {"integer", 1, builtin_integer},
+    {"float", 1, builtin_float},
     {"is_list", 1, builtin_is_list},
     {"write", 1, builtin_write},
     {"write", 2, builtin_write2},

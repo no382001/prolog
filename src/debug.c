@@ -30,6 +30,9 @@ void print_term_raw(trilog_ctx_t *ctx, term_t *t) {
   case INT:
     io_writef_err(ctx, "INT(%s)", t->name);
     break;
+  case FLOAT:
+    io_writef_err(ctx, "FLOAT(%s)", t->name);
+    break;
   case FUNC:
     io_writef_err(ctx, "FUNC(%s,%d,[", t->name, t->arity);
     for (int i = 0; i < t->arity; i++) {

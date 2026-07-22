@@ -562,6 +562,22 @@ static term_t *parse_primary(trilog_ctx_t *ctx) {
         }
         name[i++] = *ctx->input_ptr++;
       }
+      // decimal point only counts as part of the number if followed by
+      // another digit — otherwise it's the end-of-clause '.' (or an atom).
+      if (*ctx->input_ptr == '.' && isdigit(ctx->input_ptr[1])) {
+        if (i >= avail) {
+          parse_error(ctx, "number too long");
+          return NULL;
+        }
+        name[i++] = *ctx->input_ptr++;
+        while (isdigit(*ctx->input_ptr)) {
+          if (i >= avail) {
+            parse_error(ctx, "number too long");
+            return NULL;
+          }
+          name[i++] = *ctx->input_ptr++;
+        }
+      }
     }
   } else if (isalpha(*ctx->input_ptr) || *ctx->input_ptr == '_') {
     while (isalnum(*ctx->input_ptr) || *ctx->input_ptr == '_') {
@@ -664,7 +680,8 @@ static term_t *parse_primary(trilog_ctx_t *ctx) {
     return make_var(ctx, iname, vid);
   }
   debug(ctx, "DEBUG parse_primary: constant %s\n", name);
-  // integer literal (digits only, or minus + digits)
+  // integer or float literal (digits, or minus + digits, with an optional
+  // '.' + digits for a float)
   {
     const char *p = name;
     if (*p == '-')
@@ -673,7 +690,13 @@ static term_t *parse_primary(trilog_ctx_t *ctx) {
       const char *q = p;
       while (*q >= '0' && *q <= '9')
         q++;
-      if (*q == '\0') {
+      if (*q == '.' && q[1] >= '0' && q[1] <= '9') {
+        q++;
+        while (*q >= '0' && *q <= '9')
+          q++;
+        if (*q == '\0')
+          return make_float(ctx, strtod(name, NULL));
+      } else if (*q == '\0') {
         int v = 0;
         const char *pp = name;
         int sign = 1;

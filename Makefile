@@ -7,7 +7,7 @@ CFLAGS := \
 	-Werror \
     -g
 CFLAGS += -fsanitize=address -fno-omit-frame-pointer
-LDFLAGS += -fsanitize=address
+LDFLAGS += -fsanitize=address -lm
 
 TARGET := trilog
 BUILD_DIR := _build

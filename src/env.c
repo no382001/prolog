@@ -74,6 +74,11 @@ static term_t *copy_to_perm(trilog_ctx_t *ctx, term_t *t) {
     term_as_int(t, &v);
     return make_int(ctx, v);
   }
+  case FLOAT: {
+    double v = 0;
+    term_as_float(t, &v);
+    return make_float(ctx, v);
+  }
   case VAR:
     return make_var(ctx, t->name, t->arity);
   case STR:
@@ -128,7 +133,8 @@ term_t *substitute(trilog_ctx_t *ctx, env_t *env, term_t *t) {
   if (!t)
     return NULL;
 
-  if (t->type == CONST || t->type == VAR || t->type == STR || t->type == INT) {
+  if (t->type == CONST || t->type == VAR || t->type == STR || t->type == INT ||
+      t->type == FLOAT) {
     if (ctx->alloc_permanent && term_is_temp(ctx, t))
       return copy_to_perm(ctx, t);
     return t;

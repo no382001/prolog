@@ -198,7 +198,7 @@ typedef struct {
 //* term representation
 //****
 
-typedef enum { CONST, VAR, FUNC, INT, STR } term_type;
+typedef enum { CONST, VAR, FUNC, INT, STR, FLOAT } term_type;
 
 // escape sequence table used by both the parser (decode) and printer (encode).
 // each entry maps a raw byte to its two-character escape sequence.
@@ -426,6 +426,10 @@ static inline bool term_as_int(const term_t *t, int *out) {
   return true;
 }
 
+// defined in term.c (needs strtod, which the header's hosted include set
+// doesn't pull in before platform_impl.h needs it).
+bool term_as_float(const term_t *t, double *out);
+
 //****
 //* forward declarations
 //****
@@ -457,6 +461,7 @@ term_t *make_term(trilog_ctx_t *ctx, term_type type, const char *name,
                   term_t **args, int arity);
 term_t *make_const(trilog_ctx_t *ctx, const char *name);
 term_t *make_int(trilog_ctx_t *ctx, int n);
+term_t *make_float(trilog_ctx_t *ctx, double d);
 // for var terms, arity field stores the var_id (unique integer per variable).
 // name may be null for internal renamed variables (not shown in output).
 term_t *make_var(trilog_ctx_t *ctx, const char *name, int var_id);
@@ -553,8 +558,16 @@ bool must_be_atomic(trilog_ctx_t *ctx, term_t *t, const char *context);
 bool must_be_compound(trilog_ctx_t *ctx, term_t *t, const char *context);
 bool must_be_character(trilog_ctx_t *ctx, term_t *t, const char *context);
 
-// arithmetic (arith.c)
-bool eval_arith(trilog_ctx_t *ctx, term_t *t, env_t *env, int *result,
+// arithmetic (arith.c): tagged int/float result of evaluating an expression.
+typedef struct {
+  bool is_float;
+  union {
+    int i;
+    double f;
+  };
+} arith_val_t;
+
+bool eval_arith(trilog_ctx_t *ctx, term_t *t, env_t *env, arith_val_t *result,
                 const char *pred);
 builtin_result_t builtin_is(trilog_ctx_t *ctx, term_t *goal, env_t *env);
 builtin_result_t builtin_lt(trilog_ctx_t *ctx, term_t *goal, env_t *env);

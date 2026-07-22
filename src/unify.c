@@ -63,6 +63,12 @@ bool unify(trilog_ctx_t *ctx, term_t *a, term_t *b, env_t *env) {
     return result;
   }
 
+  // FLOAT unifies only with an identical-valued FLOAT — never with INT or
+  // CONST (ISO requires 1.0 \= 1), unlike the INT/CONST cross-unification
+  // above.
+  if (a->type == FLOAT && b->type == FLOAT)
+    return a->name == b->name;
+
   if (a->type == FUNC && b->type == FUNC) {
     if (a->name != b->name || a->arity != b->arity) {
       debug(ctx, "  -> FAIL (func mismatch: %s/%d vs %s/%d)\n", a->name,

@@ -9,7 +9,7 @@
 static void term_to_buf(const term_t *t, char *buf, int sz) {
   if (!t || sz <= 0)
     return;
-  if (t->type == CONST || t->type == INT) {
+  if (t->type == CONST || t->type == INT || t->type == FLOAT) {
     snprintf(buf, sz, "%s", t->name);
     return;
   }
@@ -140,7 +140,7 @@ bool must_be_number(trilog_ctx_t *ctx, term_t *t, const char *context) {
     throw_instantiation_error(ctx, context);
     return false;
   }
-  if (t->type != INT) {
+  if (t->type != INT && t->type != FLOAT) {
     throw_type_error(ctx, "number", t, context);
     return false;
   }
@@ -152,7 +152,7 @@ bool must_be_atomic(trilog_ctx_t *ctx, term_t *t, const char *context) {
     throw_instantiation_error(ctx, context);
     return false;
   }
-  if (t->type != CONST && t->type != INT) {
+  if (t->type != CONST && t->type != INT && t->type != FLOAT) {
     throw_type_error(ctx, "atomic", t, context);
     return false;
   }

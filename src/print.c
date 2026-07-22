@@ -207,8 +207,8 @@ void print_term(trilog_ctx_t *ctx, term_t *t, env_t *env, bool quoted) {
     return;
   }
 
-  // INT terms always print unquoted (they are integer literals, not atoms)
-  print_atom(ctx, t->name, quoted && t->type != INT);
+  // INT/FLOAT terms always print unquoted (they are number literals, not atoms)
+  print_atom(ctx, t->name, quoted && t->type != INT && t->type != FLOAT);
   if (t->type == FUNC && t->arity > 0) {
     io_write_str(ctx, "(");
     for (int i = 0; i < t->arity; i++) {
