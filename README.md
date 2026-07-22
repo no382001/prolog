@@ -22,7 +22,9 @@ A Prolog interpreter aiming to be embeddable, based on van Emden's ABC algorithm
 ## Build
 
 ```sh
-make
+make        # native build (trilog)
+make small  # size-constrained build (see Embedding)
+make pico   # RP2040 build for the wokwi/ simulator, see wokwi/
 ```
 
 ## Usage
@@ -116,7 +118,7 @@ io_hooks_init_default(ctx);
 free(ctx);
 ```
 
-`TERM_POOL_BYTES` defaults to 256 MB. Override at compile time for constrained targets (e.g. `-DTERM_POOL_BYTES=(128*1024)` for RP2040).
+`TERM_POOL_BYTES` defaults to 256 MB — sized for the `quad.pl` test harness, which runs every test query through `findall/3` inside one long-lived process and needs the headroom. Override at compile time for constrained targets (e.g. `-DTERM_POOL_BYTES=(128*1024)` for RP2040); see `make small` and `wokwi/` for a complete constrained-target build targeting the RP2040 (simulated via [wokwi](https://wokwi.com)).
 
 ### Custom builtins (FFI)
 
