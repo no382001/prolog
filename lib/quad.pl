@@ -42,6 +42,11 @@ strip_terminating_dot(Buf, Stripped) :-
     atom_codes(Stripped, Cs2).
 
 std_codes([], _, _, _, []).
+% 0'c character-code literal: the lone quote is not a quoted-atom opener.
+std_codes([0'0, 0'\', 0'\\, Esc|Cs], out, D, _, [0'0, 0'\', 0'\\, Esc|Out]) :-
+    !, std_codes(Cs, out, D, Esc, Out).
+std_codes([0'0, 0'\', Ch|Cs], out, D, _, [0'0, 0'\', Ch|Out]) :-
+    !, std_codes(Cs, out, D, Ch, Out).
 std_codes([0'\\, E|Cs], dq, D, _, [0'\\, E|Out]) :-
     !, std_codes(Cs, dq, D, 0'\\, Out).
 std_codes([0'\\, E|Cs], sq, D, _, [0'\\, E|Out]) :-

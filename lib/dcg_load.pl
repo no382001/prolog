@@ -7,6 +7,10 @@ strip_line_comment(Line, Stripped) :-
     atom_codes(Stripped, Out).
 
 slc([], _, []) :- !.
+% 0'c character-code literal: the lone quote is not a quoted-atom opener.
+slc([0'0, 0'\', 0'\\, Esc|Cs], out, [0'0, 0'\', 0'\\, Esc|Out]) :-
+    !, slc(Cs, out, Out).
+slc([0'0, 0'\', Ch|Cs], out, [0'0, 0'\', Ch|Out]) :- !, slc(Cs, out, Out).
 slc([0'\\, E|Cs], dq, [0'\\, E|Out]) :- !, slc(Cs, dq, Out).
 slc([0'\\, E|Cs], sq, [0'\\, E|Out]) :- !, slc(Cs, sq, Out).
 slc([0'\', 0'\'|Cs], sq, [0'\', 0'\'|Out]) :- !, slc(Cs, sq, Out).
@@ -25,6 +29,9 @@ has_complete_clause(Buf) :-
     hcc(Cs, out, 0, 32).
 
 hcc([], _, _, _) :- fail.
+% 0'c character-code literal: the lone quote is not a quoted-atom opener.
+hcc([0'0, 0'\', 0'\\, _Esc|Cs], out, D, _) :- !, hcc(Cs, out, D, 0'0).
+hcc([0'0, 0'\', _Ch|Cs], out, D, _) :- !, hcc(Cs, out, D, 0'0).
 hcc([0'\\, _|Cs], dq, D, _) :- !, hcc(Cs, dq, D, 0'\\).
 hcc([0'\\, _|Cs], sq, D, _) :- !, hcc(Cs, sq, D, 0'\\).
 hcc([0'\', 0'\'|Cs], sq, D, _) :- !, hcc(Cs, sq, D, 0'\').

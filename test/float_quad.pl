@@ -97,7 +97,7 @@
 ?- atom_number(X, 3.5).
    X = 3.5.
 
-?- number_codes(33.0, [51|_L]).
+?- number_codes(33.0, [0'3|_L]).
    true.
 
 ?- number_chars(X, ['3', '.', '3']).
