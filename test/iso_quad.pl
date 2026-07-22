@@ -45,8 +45,8 @@ a(2).
    Z = !, X = 1.
 
 ?- (call((Z=!, a(X), Z))).
-   Z = !, X = 1.
-   Z = !, X = 2.
+   Z = !, X = 1
+;  Z = !, X = 2.
 
 ?- call(_X).
    error(instantiation_error).
@@ -86,8 +86,8 @@ a(2).
    X = 1.
 
 ?- ';'(X=1, X=2).
-   X = 1.
-   X = 2.
+   X = 1
+;  X = 2.
 
 % --- (->)/2 ---
 
@@ -107,8 +107,8 @@ a(2).
    X = 1.
 
 ?- '->'(true, ';'(X=1, X=2)).
-   X = 1.
-   X = 2.
+   X = 1
+;  X = 2.
 
 % --- if-then-else ---
 
@@ -131,8 +131,8 @@ a(2).
    X = 2.
 
 ?- ';'('->'(true, ';'(X=1, X=2)), true).
-   X = 1.
-   X = 2.
+   X = 1
+;  X = 2.
 
 ?- ';'('->'(';'(X=1, X=2), true), true).
    X = 1.
@@ -152,8 +152,8 @@ a(2).
    true.
 
 ?- ((X=1;X=2),'\\+'((!,fail))).
-   X = 1.
-   X = 2.
+   X = 1
+;  X = 2.
 
 ?- '\\+'(4 = 5).
    true.
@@ -170,8 +170,8 @@ a(2).
    true.
 
 ?- (once(!), (X=1; X=2)).
-   X = 1.
-   X = 2.
+   X = 1
+;  X = 2.
 
 ?- once(repeat).
    true.
@@ -1020,8 +1020,8 @@ insect(bee).
    error(permission_error(modify,static_procedure, @atom/1)).
 
 ?- (asserta(insct(bee)), insct(X), asserta(insct(ant)),insct(Y)).
-   X = bee, Y = ant.
-   X = bee, Y = bee.
+   X = bee, Y = ant
+;  X = bee, Y = bee.
 
 % --- assertz/1 ---
 
@@ -1135,9 +1135,9 @@ foo(X) :- call(@X) -> call(@X).
    T = bird(X).
 
 ?- retract((legs(X, Y) :- Z)).
-   Y = 4, Z = animal(X).
-   Y = 6, Z = insect(X).
-   X = spider, Y = 8, Z = true.
+   Y = 4, Z = animal(X)
+;  Y = 6, Z = insect(X)
+;  X = spider, Y = 8, Z = true.
 
 ?- retract((legs(_X, _Y) :- _Z)).
    false.
@@ -1180,8 +1180,8 @@ bar(X) :- true.
    true.
 
 ?- (insect(X), abolish(insect/1)).
-   X = ant.
-   X = bee.
+   X = ant
+;  X = bee.
 
 ?- abolish(foo/_).
    error(instantiation_error).
@@ -1242,12 +1242,12 @@ bar(X) :- true.
    false.
 
 ?- atom_concat(T1, T2, 'hello').
-   T1 = '', T2 = 'hello'.
-   T1 = 'h', T2 = 'ello'.
-   T1 = 'he', T2 = 'llo'.
-   T1 = 'hel', T2 = 'lo'.
-   T1 = 'hell', T2 = 'o'.
-   T1 = 'hello', T2 = ''.
+   T1 = '', T2 = 'hello'
+;  T1 = 'h', T2 = 'ello'
+;  T1 = 'he', T2 = 'llo'
+;  T1 = 'hel', T2 = 'lo'
+;  T1 = 'hell', T2 = 'o'
+;  T1 = 'hello', T2 = ''.
 
 ?- atom_concat(small, _V2, _V4).
    error(instantiation_error).
@@ -1277,11 +1277,11 @@ bar(X) :- true.
    N = 'Béla'.
 
 ?- atom_concat(T1, T2, 'Pécs').
-   T1 = '', T2 = 'Pécs'.
-   T1 = 'P', T2 = 'écs'.
-   T1 = 'Pé', T2 = 'cs'.
-   T1 = 'Péc', T2 = 's'.
-   T1 = 'Pécs', T2 = ''.
+   T1 = '', T2 = 'Pécs'
+;  T1 = 'P', T2 = 'écs'
+;  T1 = 'Pé', T2 = 'cs'
+;  T1 = 'Péc', T2 = 's'
+;  T1 = 'Pécs', T2 = ''.
 
 % --- atom_chars/2 ---
 
@@ -1506,8 +1506,8 @@ bar(X) :- true.
    Length = 5, S2 = 'acada'.
 
 ?- sub_atom(abracadabra, Before, 2, After, ab).
-   Before = 0, After = 9.
-   Before = 7, After = 2.
+   Before = 0, After = 9
+;  Before = 7, After = 2.
 
 ?- sub_atom(_Banana, 3, 2, _, _S).
    error(instantiation_error).
@@ -1579,13 +1579,13 @@ bar(X) :- true.
    B = 4, S = 'ók'.
 
 ?- sub_atom('Pécs',B,2,A,S).
-   B = 0, A = 2, S = 'Pé'.
-   B = 1, A = 1, S = 'éc'.
-   B = 2, A = 0, S = 'cs'.
+   B = 0, A = 2, S = 'Pé'
+;  B = 1, A = 1, S = 'éc'
+;  B = 2, A = 0, S = 'cs'.
 
 ?- sub_atom(abracadabra,B,L,A,abra).
-   B = 0, L = 4, A = 7.
-   B = 7, L = 4, A = 0.
+   B = 0, L = 4, A = 7
+;  B = 7, L = 4, A = 0.
 
 ?- sub_atom(a, N, 1, 2, _).
    false.
@@ -1598,20 +1598,13 @@ bar(X) :- true.
 
 % --- catch/3 and throw/1 ---
 
-foo(X) :-
-                Y is X * 2, throw(test(Y)).
-bar(X) :-
-                X = Y, throw(Y).
-coo(X) :-
-                throw(X).
-car(X) :-
-                X = 1, throw(X).
-g :-
-                catch(p, _B, write(h2)),
-                coo(c).
+foo(X) :- Y is X * 2, throw(test(Y)).
+bar(X) :- X = Y, throw(Y).
+coo(X) :- throw(X).
+car(X) :- X = 1, throw(X).
+g :- catch(p, _B, write(h2)), coo(c).
 p.
-p :-
-                throw(b).
+p :- throw(b).
 
 ?- catch(foo(5),test(Y), true).
    Y = 10.

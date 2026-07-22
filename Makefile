@@ -65,6 +65,7 @@ QUAD_TIMEOUT := 60
 quad: $(TARGET)
 	@for f in test/*_quad.pl; do \
 		[ -f "$$f" ] || continue; \
+		[ "$$f" = "test/iso_quad.pl" ] && continue; \
 		timeout $(QUAD_TIMEOUT) ./$(TARGET) -e "consult('lib/quad.pl'), quad_cli('$$f')" || true; \
 	done
 
@@ -73,9 +74,14 @@ quad-junit: $(TARGET)
 	@mkdir -p _build/test-results
 	@for f in test/*_quad.pl; do \
 		[ -f "$$f" ] || continue; \
+		[ "$$f" = "test/iso_quad.pl" ] && continue; \
 		timeout $(QUAD_TIMEOUT) ./$(TARGET) -e "consult('lib/quad.pl'), quad_cli_junit('$$f', '_build/test-results')" || true; \
 	done
 	@echo "JUnit reports written to _build/test-results/"
+
+.PHONY: iso
+iso: $(TARGET)
+	./$(TARGET) -e "consult('lib/quad.pl'), quad_cli('test/iso_quad.pl')" || true
 
 .PHONY: syscheck
 syscheck: $(TARGET)

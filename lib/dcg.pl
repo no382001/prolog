@@ -1,4 +1,4 @@
-% dcg.pl: definite clause grammar support, self-hosted in prolog.
+% dcg.pl: definite clause grammar support
 
 dcg_translate((NonTerminal --> GRBody), (Head :- Body)) :-
     dcg_non_terminal(NonTerminal, S0, S, Head),
