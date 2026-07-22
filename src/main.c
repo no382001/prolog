@@ -28,6 +28,15 @@ static builtin_result_t ffi_get_time_ms(trilog_ctx_t *ctx, term_t *goal,
 //* core library loading
 //****
 
+static void consult_path(trilog_ctx_t *ctx, const char *path) {
+  char query[CORE_PATH_MAX + 16];
+  snprintf(query, sizeof(query), "consult('%s').", path);
+  io_write_str(ctx, "?- ");
+  io_write_str(ctx, query);
+  io_write_str(ctx, "\n");
+  toplevel_query(ctx, query);
+}
+
 static void try_load_core(trilog_ctx_t *ctx, const char *argv0) {
   char exe[CORE_PATH_MAX];
   char dir[CORE_PATH_MAX];
@@ -48,11 +57,9 @@ static void try_load_core(trilog_ctx_t *ctx, const char *argv0) {
   path[sizeof(path) - 13] = '\0';
   strcat(path, "/lib/core.pl");
 
-  if (io_file_exists(ctx, path))
-    trilog_load_file(ctx, path);
+  consult_path(ctx, path);
 }
 
-// user init file, loaded after core.pl unless -f (fast startup) is given.
 static void try_load_init_file(trilog_ctx_t *ctx) {
   const char *home = getenv("HOME");
   if (!home)
@@ -61,8 +68,8 @@ static void try_load_init_file(trilog_ctx_t *ctx) {
   char path[CORE_PATH_MAX];
   snprintf(path, sizeof(path), "%s/.trilog", home);
 
-  if (io_file_exists(ctx, path))
-    trilog_load_file(ctx, path);
+  // if (io_file_exists(ctx, path))
+  consult_path(ctx, path);
 }
 
 //****
