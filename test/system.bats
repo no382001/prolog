@@ -55,6 +55,21 @@ TRILOG="./trilog"
   [[ "$output" == *"existence_error"* ]]
 }
 
+# regression
+@test "missing input file does not leak ctx" {
+  run "$TRILOG" /tmp/trilog_does_not_exist_at_all.pl
+  [ "$status" -eq 1 ]
+  [[ "$output" != *"AddressSanitizer"* ]]
+  [[ "$output" != *"leaked"* ]]
+}
+
+@test "-h does not leak ctx" {
+  run "$TRILOG" -h
+  [ "$status" -eq 0 ]
+  [[ "$output" != *"AddressSanitizer"* ]]
+  [[ "$output" != *"leaked"* ]]
+}
+
 # --- pipe (non-interactive) mode ---
 
 @test "pipe mode: query via stdin" {

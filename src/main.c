@@ -166,9 +166,11 @@ int main(int argc, char *argv[]) {
       break;
     case 'h':
       print_usage(ctx, argv[0]);
+      free(ctx);
       return 0;
     default:
       print_usage(ctx, argv[0]);
+      free(ctx);
       return 1;
     }
   }
@@ -182,6 +184,7 @@ int main(int argc, char *argv[]) {
 
   if (input_file) {
     if (!load_file(ctx, input_file)) {
+      free(ctx);
       return 1;
     }
   }
