@@ -98,6 +98,8 @@ repeat :- repeat.
 
 false :- fail.
 
+halt :- halt(0).
+
 succ(X, S) :-
     (  integer(X)
     -> S is X + 1
