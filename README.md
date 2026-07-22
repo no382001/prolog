@@ -151,7 +151,7 @@ hooks.file_read_line = my_freadline;
 hooks.file_write     = my_fwrite;
 hooks.file_exists    = my_exists;
 hooks.file_mtime     = my_mtime;
-hooks.clock_monotonic = my_clock; // for test timing
+hooks.clock_monotonic = my_clock;
 hooks.userdata = my_state;
 io_hooks_set(ctx, &hooks);
 ```
