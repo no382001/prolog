@@ -13,9 +13,25 @@
 ;  L = [_A, _B, 1|_C]
 ;  ..., ad_infinitum.
 
-?- member(X, [y, z|nonlist]).
-   X = y
-;  X = z.
+?- member(X, [_Y, _Z|nonlist]).
+   X = _A
+;  X = _A.
 
 ?- member(X, nonlist).
    false.
+
+% trilog's unify has no occurs-check at all
+%
+% ?- member(X, X).
+%    sto, % occurs-check
+%    loops
+% |  sto, % rational trees
+%    X = [X|_A]
+% ;  X = [_A,X|_B]
+% ;  X = [_A,_B,X|_C]
+% ;  ..., ad_infinitum
+% |  sto, % literal substitutions
+%    X = [_A|_B]
+% ;  X = [_A,[_A,[_A|_B]|_C]|_C]
+% ;  X = [_A,_B,[_A,_B,[_A,_B|_C]|_D]|_D]
+% ;  ..., ad_infinitum.

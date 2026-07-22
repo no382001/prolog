@@ -28,13 +28,19 @@ static builtin_result_t ffi_get_time_ms(trilog_ctx_t *ctx, term_t *goal,
 //* core library loading
 //****
 
+static bool g_verbose = false;
+
 static void consult_path(trilog_ctx_t *ctx, const char *path) {
   char query[CORE_PATH_MAX + 16];
   snprintf(query, sizeof(query), "consult('%s').", path);
-  io_write_str(ctx, "?- ");
-  io_write_str(ctx, query);
-  io_write_str(ctx, "\n");
-  toplevel_query(ctx, query);
+  if (g_verbose) {
+    io_write_str(ctx, "?- ");
+    io_write_str(ctx, query);
+    io_write_str(ctx, "\n");
+    toplevel_query(ctx, query); // this will print `true`
+    return;
+  }
+  trilog_load_file(ctx, path);
 }
 
 static void try_load_core(trilog_ctx_t *ctx, const char *argv0) {
@@ -67,9 +73,17 @@ static void try_load_init_file(trilog_ctx_t *ctx) {
 
   char path[CORE_PATH_MAX];
   snprintf(path, sizeof(path), "%s/.trilog", home);
-
-  // if (io_file_exists(ctx, path))
-  consult_path(ctx, path);
+  if (g_verbose) {
+    char query[CORE_PATH_MAX + 16];
+    snprintf(query, sizeof(query), "consult('%s').", path);
+    io_write_str(ctx, "?- ");
+    io_write_str(ctx, query);
+    io_write_str(ctx, "\n");
+    toplevel_query(ctx, query); // this will print `true`
+    return;
+  }
+  if (io_file_exists(ctx, path))
+    consult_path(ctx, path);
 }
 
 //****
@@ -93,12 +107,13 @@ static int read_key_hook(trilog_ctx_t *ctx, void *ud) {
 }
 
 static void print_usage(trilog_ctx_t *ctx, const char *prog) {
-  io_writef_err(ctx, "Usage: %s [-d] [-s] [-f] [-e <expression>] [file.pl]\n",
-                prog);
+  io_writef_err(
+      ctx, "Usage: %s [-d] [-s] [-f] [-v] [-e <expression>] [file.pl]\n", prog);
   io_writef_err(ctx, "  file.pl       Load clauses from file\n");
   io_writef_err(ctx, "  -d            Enable debug mode\n");
   io_writef_err(ctx, "  -s            Print stats to stderr on exit\n");
   io_writef_err(ctx, "  -f            Fast startup: do not load ~/.trilog\n");
+  io_writef_err(ctx, "  -v            Echo core.pl/.trilog startup consult\n");
   io_writef_err(ctx, "  -e <expr>     Execute expression and exit\n");
   io_writef_err(ctx, "  -h            Show this help\n");
   io_writef_err(ctx, "\nInteractive commands:\n");
@@ -175,7 +190,7 @@ int main(int argc, char *argv[]) {
   bool fast_startup = false;
   int opt;
 
-  while ((opt = getopt(argc, argv, "dsfe:h")) != -1) {
+  while ((opt = getopt(argc, argv, "dsfve:h")) != -1) {
     switch (opt) {
     case 'd':
       ctx->debug_enabled = true;
@@ -186,6 +201,9 @@ int main(int argc, char *argv[]) {
       break;
     case 'f':
       fast_startup = true;
+      break;
+    case 'v':
+      g_verbose = true;
       break;
     case 'e':
       expression = optarg;

@@ -55,6 +55,45 @@ TRILOG="./trilog"
   [[ "$output" == *"existence_error"* ]]
 }
 
+# --- -v (verbose startup consult) ---
+
+@test "without -v, startup consult is silent" {
+  fake_home="$(mktemp -d)"
+  echo "init_marker(loaded)." > "$fake_home/.trilog"
+  run env HOME="$fake_home" "$TRILOG" -e "init_marker(X), write(X)."
+  rm -rf "$fake_home"
+  [ "$status" -eq 0 ]
+  [[ "$output" != *"?- consult("* ]]
+  [[ "$output" == *"loaded"* ]]
+}
+
+@test "-v echoes the core.pl and init file consult" {
+  fake_home="$(mktemp -d)"
+  echo "init_marker(loaded)." > "$fake_home/.trilog"
+  run env HOME="$fake_home" "$TRILOG" -v -e "init_marker(X), write(X)."
+  rm -rf "$fake_home"
+  [ "$status" -eq 0 ]
+  [[ "$output" == *"?- consult('"*"core.pl')."* ]]
+  [[ "$output" == *"?- consult('"*".trilog')."* ]]
+  [[ "$output" == *"loaded"* ]]
+}
+
+@test "-v shows false for a missing init file" {
+  run env HOME=/tmp/trilog_no_such_home_dir_at_all "$TRILOG" -v -e "true."
+  [ "$status" -eq 0 ]
+  [[ "$output" == *"?- consult("*".trilog')."* ]]
+  [[ "$output" == *"false."* ]]
+}
+
+@test "-f -v: no init file consult attempt at all" {
+  fake_home="$(mktemp -d)"
+  echo "init_marker(loaded)." > "$fake_home/.trilog"
+  run env HOME="$fake_home" "$TRILOG" -f -v -e "true."
+  rm -rf "$fake_home"
+  [ "$status" -eq 0 ]
+  [[ "$output" != *".trilog"* ]]
+}
+
 # regression
 @test "missing input file does not leak ctx" {
   run "$TRILOG" /tmp/trilog_does_not_exist_at_all.pl
