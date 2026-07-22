@@ -3,9 +3,26 @@
 #include <getopt.h>
 #include <libgen.h>
 #include <termios.h>
+#include <time.h>
 #include <unistd.h>
 
 #define CORE_PATH_MAX 8192
+
+static builtin_result_t ffi_get_time_ms(trilog_ctx_t *ctx, term_t *goal,
+                                        env_t *env) {
+  if (goal->arity != 1)
+    return BUILTIN_FAIL;
+
+  static long long epoch_ms = -1;
+  struct timespec ts;
+  clock_gettime(CLOCK_MONOTONIC, &ts);
+  long long now_ms = (long long)ts.tv_sec * 1000 + ts.tv_nsec / 1000000;
+  if (epoch_ms < 0)
+    epoch_ms = now_ms;
+
+  term_t *t = make_int(ctx, (int)(now_ms - epoch_ms));
+  return unify(ctx, goal->args[0], t, env) ? BUILTIN_OK : BUILTIN_FAIL;
+}
 
 //****
 //* core library loading
@@ -137,6 +154,8 @@ int main(int argc, char *argv[]) {
       ctx); // pre-load op table so names are below any query's string_mark
 
   io_hooks_init_default(ctx);
+
+  ffi_register_builtin(ctx, "get_time_ms", 1, ffi_get_time_ms, NULL);
 
   // raw single-keypress for interactive solution prompting
   io_hooks_t hooks = {0};

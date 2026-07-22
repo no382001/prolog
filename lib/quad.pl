@@ -150,6 +150,7 @@ run_one_test(QueryRaw, AnswerRaw, Pass) :-
     strip_terminating_dot(Query0, Query),
     parse_expected(AnswerRaw, Expected),
     quad_display(Query, Display),
+    get_time_ms(T0),
     ( atom_to_term(Query, QueryTerm, NameVars)
     -> ( catch(
              ( collect_solutions(QueryTerm, NameVars, 64, Got), Error = none ),
@@ -161,13 +162,16 @@ run_one_test(QueryRaw, AnswerRaw, Pass) :-
        )
     ;  Got = [], Error = quad_unparseable
     ),
+    get_time_ms(T1),
+    ElapsedMs is T1 - T0,
     quad_judge(Expected, Got, Error, Pass, Reason),
-    retract(quad_stat(TN0, P0, F0)),
+    retract(quad_stat(TN0, P0, F0, TMs0)),
     TestNum is TN0 + 1,
     ( Pass == true -> P1 is P0 + 1, F1 = F0 ; P1 = P0, F1 is F0 + 1 ),
-    assertz(quad_stat(TestNum, P1, F1)),
-    assertz(quad_record(TestNum, Display, Pass, Reason)),
-    quad_report(TestNum, Display, Pass, Reason),
+    TMs1 is TMs0 + ElapsedMs,
+    assertz(quad_stat(TestNum, P1, F1, TMs1)),
+    assertz(quad_record(TestNum, Display, Pass, Reason, ElapsedMs)),
+    quad_report(TestNum, Display, Pass, Reason, ElapsedMs),
     !.
 
 % error(Type, _) balls reduce to Type; any other thrown term (e.g. a bare
@@ -215,11 +219,15 @@ fw_codes(['~', w|Cs], [A|As]) :- !, write(A), fw_codes(Cs, As).
 fw_codes(['~', n|Cs], As) :- !, nl, fw_codes(Cs, As).
 fw_codes([C|Cs], As) :- put_chars([C]), fw_codes(Cs, As).
 
-quad_report(TestNum, Display, true, _) :-
+quad_report(TestNum, Display, true, _, ElapsedMs) :-
     !,
-    write('ok '), write(TestNum), write(' - ?- '), write(Display), nl.
-quad_report(TestNum, Display, false, Reason) :-
-    write('not ok '), write(TestNum), write(' - ?- '), write(Display), nl,
+    ms_to_secs_atom(ElapsedMs, TimeAtom),
+    write('ok '), write(TestNum), write(' - ?- '), write(Display),
+    write(' # time='), write(TimeAtom), write('s'), nl.
+quad_report(TestNum, Display, false, Reason, ElapsedMs) :-
+    ms_to_secs_atom(ElapsedMs, TimeAtom),
+    write('not ok '), write(TestNum), write(' - ?- '), write(Display),
+    write(' # time='), write(TimeAtom), write('s'), nl,
     write_reason_lines(Reason).
 
 write_reason_lines(Reason) :-
@@ -227,22 +235,44 @@ write_reason_lines(Reason) :-
     forall(member(L, Lines), (write('#   '), write(L), nl)).
 
 %****
+%* elapsed-time formatting: get_time_ms/1 (registered as an FFI builtin in
+%* main.c) gives integer milliseconds; format as "S.mmm" for TAP/JUnit.
+%****
+
+pad3(N, Atom) :-
+    atom_number(NAtom, N),
+    ( N < 10 -> atom_concat('00', NAtom, Atom)
+    ; N < 100 -> atom_concat('0', NAtom, Atom)
+    ; Atom = NAtom
+    ).
+
+ms_to_secs_atom(Ms, Atom) :-
+    Secs is Ms // 1000,
+    Frac is Ms mod 1000,
+    pad3(Frac, FracAtom),
+    atom_number(SecsAtom, Secs),
+    atom_concat(SecsAtom, '.', A1),
+    atom_concat(A1, FracAtom, Atom).
+
+%****
 %* quad file parsing and running
 %****
 
-:- dynamic(quad_stat/3).
-:- dynamic(quad_record/4).
+:- dynamic(quad_stat/4).
+:- dynamic(quad_record/5).
 
 run_quad_file(File) :-
-    retractall(quad_stat(_, _, _)),
-    assertz(quad_stat(0, 0, 0)),
-    retractall(quad_record(_, _, _, _)),
+    retractall(quad_stat(_, _, _, _)),
+    assertz(quad_stat(0, 0, 0, 0)),
+    retractall(quad_record(_, _, _, _, _)),
     open(File, read, S),
     qf_loop(S, '', '', query),
     close(S),
-    quad_stat(Total, Passed, Failed),
+    quad_stat(Total, Passed, Failed, TotalMs),
+    ms_to_secs_atom(TotalMs, TotalTimeAtom),
     write('# '), write(File), write(': '), write(Total), write(' tests, '),
-    write(Passed), write(' passed, '), write(Failed), write(' failed'), nl.
+    write(Passed), write(' passed, '), write(Failed), write(' failed, '),
+    write(TotalTimeAtom), write('s total'), nl.
 
 qf_loop(S, ClauseBuf, AnswerBuf, Mode) :-
     read_line_to_atom(S, Line0),
@@ -327,41 +357,44 @@ xesc_codes([0'"|Cs], [0'&, 0'q, 0'u, 0'o, 0't, 0';|Out]) :-
     !, xesc_codes(Cs, Out).
 xesc_codes([C|Cs], [C|Out]) :- xesc_codes(Cs, Out).
 
-write_testcase(Strm, Suite, Name, true, _) :-
+write_testcase(Strm, Suite, Name, true, _, ElapsedMs) :-
     !,
     xml_escape(Name, EscName),
-    format_atom('  <testcase name="~w" classname="~w" time="0.000"/>',
-                [EscName, Suite], Line),
+    ms_to_secs_atom(ElapsedMs, TimeAtom),
+    format_atom('  <testcase name="~w" classname="~w" time="~w"/>',
+                [EscName, Suite, TimeAtom], Line),
     write(Strm, Line), nl(Strm).
-write_testcase(Strm, Suite, Name, false, Reason) :-
+write_testcase(Strm, Suite, Name, false, Reason, ElapsedMs) :-
     xml_escape(Name, EscName),
     xml_escape(Reason, EscReason),
-    format_atom('  <testcase name="~w" classname="~w" time="0.000">',
-                [EscName, Suite], Open),
+    ms_to_secs_atom(ElapsedMs, TimeAtom),
+    format_atom('  <testcase name="~w" classname="~w" time="~w">',
+                [EscName, Suite, TimeAtom], Open),
     write(Strm, Open), nl(Strm),
     format_atom('    <failure message="~w"/>', [EscReason], FailLine),
     write(Strm, FailLine), nl(Strm),
     write(Strm, '  </testcase>'), nl(Strm).
 
-write_junit_xml(Path, Suite, Total, Failed) :-
+write_junit_xml(Path, Suite, Total, Failed, TotalMs) :-
+    ms_to_secs_atom(TotalMs, TotalTimeAtom),
     open(Path, write, Strm),
     write(Strm, '<?xml version="1.0" encoding="UTF-8"?>'), nl(Strm),
-    format_atom('<testsuite name="~w" tests="~w" failures="~w" errors="0" time="0.000">',
-                [Suite, Total, Failed], Header),
+    format_atom('<testsuite name="~w" tests="~w" failures="~w" errors="0" time="~w">',
+                [Suite, Total, Failed, TotalTimeAtom], Header),
     write(Strm, Header), nl(Strm),
-    forall(quad_record(_, Name, Pass, Reason),
-          write_testcase(Strm, Suite, Name, Pass, Reason)),
+    forall(quad_record(_, Name, Pass, Reason, ElapsedMs),
+          write_testcase(Strm, Suite, Name, Pass, Reason, ElapsedMs)),
     write(Strm, '</testsuite>'), nl(Strm),
     close(Strm).
 
 run_quad_file_junit(File, Dir) :-
     run_quad_file(File),
-    quad_stat(Total, _, Failed),
+    quad_stat(Total, _, Failed, TotalMs),
     quad_suite_name(File, Suite),
     atom_concat(Dir, '/', D1),
     atom_concat(D1, Suite, D2),
     atom_concat(D2, '.xml', XmlPath),
-    write_junit_xml(XmlPath, Suite, Total, Failed).
+    write_junit_xml(XmlPath, Suite, Total, Failed, TotalMs).
 
 %****
 %* CLI entry points: set the process exit code (0 all pass, 1 any failure)
@@ -369,10 +402,10 @@ run_quad_file_junit(File, Dir) :-
 
 quad_cli(File) :-
     once(run_quad_file(File)),
-    quad_stat(_, _, Failed),
+    quad_stat(_, _, Failed, _),
     ( Failed > 0 -> halt(1) ; halt(0) ).
 
 quad_cli_junit(File, Dir) :-
     once(run_quad_file_junit(File, Dir)),
-    quad_stat(_, _, Failed),
+    quad_stat(_, _, Failed, _),
     ( Failed > 0 -> halt(1) ; halt(0) ).
