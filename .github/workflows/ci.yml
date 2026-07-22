@@ -67,20 +67,61 @@ jobs:
           name: test-results
           path: _build/test-results/*.xml
 
-      - name: publish quad test results
-        uses: dorny/test-reporter@v1
+      - name: build test summary
         if: always()
-        with:
-          name: Quad Tests
-          path: '_build/test-results/*_quad.xml'
-          reporter: java-junit
-          fail-on-error: false
+        run: |
+          {
+            echo "### Test results"
+            echo ""
+            echo "| Suite | Tests | Passed | Failed |"
+            echo "|---|---|---|---|"
+            total=0; passed=0; failed=0
+            for f in _build/test-results/*_quad.xml; do
+              [ -f "$f" ] || continue
+              name=$(basename "$f" .xml)
+              t=$(grep -oE 'tests="[0-9]+"' "$f" | grep -oE '[0-9]+')
+              fl=$(grep -oE 'failures="[0-9]+"' "$f" | grep -oE '[0-9]+')
+              p=$((t - fl))
+              echo "| $name | $t | $p | $fl |"
+              total=$((total + t)); passed=$((passed + p)); failed=$((failed + fl))
+            done
+            if [ -f _build/test-results/report.xml ]; then
+              st=$(grep -ohE 'tests="[0-9]+"' _build/test-results/report.xml | grep -oE '[0-9]+' | awk '{s+=$1} END{print s+0}')
+              sf=$(grep -ohE 'failures="[0-9]+"' _build/test-results/report.xml | grep -oE '[0-9]+' | awk '{s+=$1} END{print s+0}')
+              sp=$((st - sf))
+              echo "| system (bats) | $st | $sp | $sf |"
+              total=$((total + st)); passed=$((passed + sp)); failed=$((failed + sf))
+            fi
+            echo "| **TOTAL** | **$total** | **$passed** | **$failed** |"
+          } > /tmp/test_summary.md
+          cat /tmp/test_summary.md
 
-      - name: publish system test results
-        uses: dorny/test-reporter@v1
-        if: always()
+      - name: comment test results on PR
+        if: always() && github.event_name == 'pull_request'
+        uses: actions/github-script@v7
         with:
-          name: System Tests
-          path: '_build/test-results/report.xml'
-          reporter: java-junit
-          fail-on-error: false
+          script: |
+            const fs = require('fs');
+            const body = fs.readFileSync('/tmp/test_summary.md', 'utf8');
+            const { data: comments } = await github.rest.issues.listComments({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              issue_number: context.issue.number,
+            });
+            const marker = '### Test results';
+            const existing = comments.find(c => c.body.includes(marker));
+            if (existing) {
+              await github.rest.issues.updateComment({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                comment_id: existing.id,
+                body,
+              });
+            } else {
+              await github.rest.issues.createComment({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                issue_number: context.issue.number,
+                body,
+              });
+            }
