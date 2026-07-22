@@ -100,7 +100,7 @@ typedef __builtin_va_list va_list;
 #define MAX_OPS 128
 #endif
 #ifndef TERM_POOL_BYTES
-#define TERM_POOL_BYTES (256 * 1024 * 1024)
+#define TERM_POOL_BYTES (1024ULL * 1024 * 1024)
 #endif
 #define TRILOG_CTX_SIZE(pool_bytes) (sizeof(trilog_ctx_t) + (pool_bytes))
 

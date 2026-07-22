@@ -73,26 +73,28 @@ jobs:
           {
             echo "### Test results"
             echo ""
-            echo "| Suite | Tests | Passed | Failed |"
-            echo "|---|---|---|---|"
-            total=0; passed=0; failed=0
+            echo "| Suite | Tests | Passed | Failed | Crashed |"
+            echo "|---|---|---|---|---|"
+            total=0; passed=0; failed=0; crashed=0
             for f in _build/test-results/*_quad.xml; do
               [ -f "$f" ] || continue
               name=$(basename "$f" .xml)
               t=$(grep -oE 'tests="[0-9]+"' "$f" | grep -oE '[0-9]+')
               fl=$(grep -oE 'failures="[0-9]+"' "$f" | grep -oE '[0-9]+')
               p=$((t - fl))
-              echo "| $name | $t | $p | $fl |"
+              cr=$(grep -c '(trilog crashed here)' "$f")
+              crashed=$((crashed + cr))
+              echo "| $name | $t | $p | $fl | $cr |"
               total=$((total + t)); passed=$((passed + p)); failed=$((failed + fl))
             done
             if [ -f _build/test-results/report.xml ]; then
               st=$(grep -ohE 'tests="[0-9]+"' _build/test-results/report.xml | grep -oE '[0-9]+' | awk '{s+=$1} END{print s+0}')
               sf=$(grep -ohE 'failures="[0-9]+"' _build/test-results/report.xml | grep -oE '[0-9]+' | awk '{s+=$1} END{print s+0}')
               sp=$((st - sf))
-              echo "| system (bats) | $st | $sp | $sf |"
+              echo "| system (bats) | $st | $sp | $sf | 0 |"
               total=$((total + st)); passed=$((passed + sp)); failed=$((failed + sf))
             fi
-            echo "| **TOTAL** | **$total** | **$passed** | **$failed** |"
+            echo "| **TOTAL** | **$total** | **$passed** | **$failed** | **$crashed** |"
           } > /tmp/test_summary.md
           cat /tmp/test_summary.md
 

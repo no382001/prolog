@@ -158,6 +158,7 @@ run_one_test(QueryRaw, AnswerRaw, Pass) :-
     strip_terminating_dot(Query0, Query),
     parse_expected(AnswerRaw, Expected, Mode),
     quad_display(Query, Display),
+    quad_ckpt_before(Display),
     get_time_ms(T0),
     ( atom_to_term(Query, QueryTerm, NameVars)
     -> ( catch(
@@ -179,8 +180,34 @@ run_one_test(QueryRaw, AnswerRaw, Pass) :-
     TMs1 is TMs0 + ElapsedMs,
     assertz(quad_stat(TestNum, P1, F1, TMs1)),
     assertz(quad_record(TestNum, Display, Pass, Reason, ElapsedMs)),
+    quad_ckpt_after(Display, Pass, Reason, ElapsedMs),
     quad_report(TestNum, Display, Pass, Reason, ElapsedMs),
     !.
+
+% JUnit-mode crash checkpointing: when quad_ckpt_ctx/3 is set, each test
+% durably records itself before/after running so a crash mid-file is
+% recoverable instead of silently dropping the whole suite's report.
+:- dynamic(quad_ckpt_ctx/3).
+
+quad_ckpt_before(Display) :-
+    ( quad_ckpt_ctx(ProgressPath, _, _)
+    -> catch(
+           ( open(ProgressPath, write, S),
+             write(S, Display), nl(S),
+             close(S)
+           ), _, true)
+    ;  true
+    ).
+
+quad_ckpt_after(Display, Pass, Reason, ElapsedMs) :-
+    ( quad_ckpt_ctx(_, PartialPath, Suite)
+    -> catch(
+           ( open(PartialPath, append, S),
+             write_testcase(S, Suite, Display, Pass, Reason, ElapsedMs),
+             close(S)
+           ), _, true)
+    ;  true
+    ).
 
 % error(Type, _) balls reduce to Type; any other thrown term (e.g. a bare
 % atom from a non-matching catcher) is used as-is instead of crashing the run.
@@ -296,12 +323,16 @@ ms_to_secs_atom(Ms, Atom) :-
 :- dynamic(quad_stat/4).
 :- dynamic(quad_record/5).
 
-run_quad_file(File) :-
+run_quad_file(File) :- run_quad_file(File, 0).
+
+% Skip: how many query/answer blocks to re-parse but not re-execute
+% (directives/facts still run either way).
+run_quad_file(File, Skip) :-
     retractall(quad_stat(_, _, _, _)),
     assertz(quad_stat(0, 0, 0, 0)),
     retractall(quad_record(_, _, _, _, _)),
     open(File, read, S),
-    qf_loop(S, '', '', query),
+    qf_loop(S, '', '', query, Skip, 0),
     close(S),
     quad_stat(Total, Passed, Failed, TotalMs),
     ms_to_secs_atom(TotalMs, TotalTimeAtom),
@@ -309,47 +340,51 @@ run_quad_file(File) :-
     write(Passed), write(' passed, '), write(Failed), write(' failed, '),
     write(TotalTimeAtom), write('s total'), nl.
 
-qf_loop(S, ClauseBuf, AnswerBuf, Mode) :-
+qf_loop(S, ClauseBuf, AnswerBuf, Mode, Skip, SeenCount) :-
     read_line_to_atom(S, Line0),
     ( Line0 == end_of_file
     -> true
     ;  strip_line_comment(Line0, Line),
        trim_leading(Line, Trimmed),
        ( Mode == answer
-       -> qf_answer_step(S, ClauseBuf, AnswerBuf, Line, Trimmed)
-       ;  qf_clause_step(S, ClauseBuf, Line, Trimmed)
+       -> qf_answer_step(S, ClauseBuf, AnswerBuf, Line, Trimmed, Skip, SeenCount)
+       ;  qf_clause_step(S, ClauseBuf, Line, Trimmed, Skip, SeenCount)
        )
     ).
 
-qf_answer_step(S, QueryBuf, AnswerBuf0, Line, Trimmed) :-
+qf_answer_step(S, QueryBuf, AnswerBuf0, Line, Trimmed, Skip, SeenCount) :-
     ( AnswerBuf0 == '', Trimmed == ''
-    -> qf_loop(S, QueryBuf, AnswerBuf0, answer)
+    -> qf_loop(S, QueryBuf, AnswerBuf0, answer, Skip, SeenCount)
     ;  ( AnswerBuf0 == '' -> AnswerBuf1 = Line
        ;  atom_concat(AnswerBuf0, '\n', AB1), atom_concat(AB1, Line, AnswerBuf1)
        ),
        ( has_complete_clause(AnswerBuf1)
-       -> once(run_one_test(QueryBuf, AnswerBuf1, _Pass)),
-          qf_loop(S, '', '', query)
-       ;  qf_loop(S, QueryBuf, AnswerBuf1, answer)
+       -> SeenCount1 is SeenCount + 1,
+          ( SeenCount1 =< Skip
+          -> true % already resolved by an earlier attempt; don't re-run it
+          ;  once(run_one_test(QueryBuf, AnswerBuf1, _Pass))
+          ),
+          qf_loop(S, '', '', query, Skip, SeenCount1)
+       ;  qf_loop(S, QueryBuf, AnswerBuf1, answer, Skip, SeenCount)
        )
     ).
 
-qf_clause_step(S, ClauseBuf0, Line, Trimmed) :-
+qf_clause_step(S, ClauseBuf0, Line, Trimmed, Skip, SeenCount) :-
     dcg_accumulate(ClauseBuf0, Trimmed, ClauseBuf1),
     ( has_complete_clause(ClauseBuf1)
     -> ( sub_atom(ClauseBuf1, 0, 2, _, '?-')
-       -> qf_loop(S, ClauseBuf1, '', answer)
+       -> qf_loop(S, ClauseBuf1, '', answer, Skip, SeenCount)
        ;  sub_atom(ClauseBuf1, 0, 2, _, ':-')
        -> sub_atom(ClauseBuf1, 2, _, 0, DirText0),
           strip_terminating_dot(DirText0, DirText),
           catch((atom_to_term(DirText, Goal, _),
                  with_output_to(atom(_), catch(call(Goal), _, true))), _, true),
-          qf_loop(S, '', '', query)
+          qf_loop(S, '', '', query, Skip, SeenCount)
        ;  strip_terminating_dot(ClauseBuf1, ClauseText),
           catch((atom_to_term(ClauseText, Term, _), assertz(Term)), _, true),
-          qf_loop(S, '', '', query)
+          qf_loop(S, '', '', query, Skip, SeenCount)
        )
-    ;  qf_loop(S, ClauseBuf1, '', query)
+    ;  qf_loop(S, ClauseBuf1, '', query, Skip, SeenCount)
     ).
 
 %****
@@ -410,26 +445,112 @@ write_testcase(Strm, Suite, Name, false, Reason, ElapsedMs) :-
     write(Strm, FailLine), nl(Strm),
     write(Strm, '  </testcase>'), nl(Strm).
 
-write_junit_xml(Path, Suite, Total, Failed, TotalMs) :-
-    ms_to_secs_atom(TotalMs, TotalTimeAtom),
-    open(Path, write, Strm),
-    write(Strm, '<?xml version="1.0" encoding="UTF-8"?>'), nl(Strm),
-    format_atom('<testsuite name="~w" tests="~w" failures="~w" errors="0" time="~w">',
-                [Suite, Total, Failed, TotalTimeAtom], Header),
-    write(Strm, Header), nl(Strm),
-    forall(quad_record(_, Name, Pass, Reason, ElapsedMs),
-          write_testcase(Strm, Suite, Name, Pass, Reason, ElapsedMs)),
-    write(Strm, '</testsuite>'), nl(Strm),
-    close(Strm).
+run_quad_file_junit(File, Dir) :- run_quad_file_junit(File, Dir, 0).
 
-run_quad_file_junit(File, Dir) :-
-    run_quad_file(File),
-    quad_stat(Total, _, Failed, TotalMs),
+% Skip > 0: resuming after a crash, so keep the existing scratch files
+% instead of truncating them.
+run_quad_file_junit(File, Dir, Skip) :-
     quad_suite_name(File, Suite),
     atom_concat(Dir, '/', D1),
     atom_concat(D1, Suite, D2),
+    atom_concat(D2, '.progress', ProgressPath),
+    atom_concat(D2, '.xml.partial', PartialPath),
+    ( Skip =:= 0
+    -> catch((open(ProgressPath, write, S1), close(S1)), _, true),
+       catch((open(PartialPath, write, S2), close(S2)), _, true)
+    ;  true
+    ),
+    retractall(quad_ckpt_ctx(_, _, _)),
+    assertz(quad_ckpt_ctx(ProgressPath, PartialPath, Suite)),
+    run_quad_file(File, Skip),
+    retractall(quad_ckpt_ctx(_, _, _)),
+    quad_finalize_junit(File, Suite, Dir).
+
+read_whole_file(Path, Whole) :-
+    open(Path, read, S),
+    rwf_loop(S, '', Whole),
+    close(S).
+
+rwf_loop(S, Acc, Whole) :-
+    read_line_to_atom(S, Line),
+    ( Line == end_of_file
+    -> Whole = Acc
+    ;  atom_concat(Line, '\n', L1),
+       atom_concat(Acc, L1, Acc1),
+       rwf_loop(S, Acc1, Whole)
+    ).
+
+% counts <testcase>/<failure> lines by prefix while reading, rather than
+% scanning the whole body afterward (that hit quad.pl's known LCO
+% slowdown on a large partial file).
+read_and_count_partial(Path, Body, TestcaseCount, FailureCount) :-
+    catch(
+        ( open(Path, read, S),
+          racp_loop(S, '', 0, 0, Body, TestcaseCount, FailureCount),
+          close(S)
+        ), _, ( Body = '', TestcaseCount = 0, FailureCount = 0 )).
+
+racp_loop(S, AccBody, AccT, AccF, Body, TotalT, TotalF) :-
+    read_line_to_atom(S, Line),
+    ( Line == end_of_file
+    -> Body = AccBody, TotalT = AccT, TotalF = AccF
+    ;  ( line_has_prefix(Line, '  <testcase ') -> AccT1 is AccT + 1 ; AccT1 = AccT ),
+       ( line_has_prefix(Line, '    <failure ') -> AccF1 is AccF + 1 ; AccF1 = AccF ),
+       atom_concat(Line, '\n', L1),
+       atom_concat(AccBody, L1, AccBody1),
+       racp_loop(S, AccBody1, AccT1, AccF1, Body, TotalT, TotalF)
+    ).
+
+line_has_prefix(Line, Prefix) :-
+    atom_length(Prefix, Len),
+    atom_length(Line, LineLen),
+    LineLen >= Len,
+    sub_atom(Line, 0, Len, _, Prefix).
+
+% appends a synthetic "crashed here" <testcase> naming the in-flight
+% query, so the next resume attempt's Skip steps past it too.
+quad_mark_crash(Suite, Dir) :-
+    atom_concat(Dir, '/', D1),
+    atom_concat(D1, Suite, D2),
+    atom_concat(D2, '.progress', ProgressPath),
+    atom_concat(D2, '.xml.partial', PartialPath),
+    ( catch(read_whole_file(ProgressPath, CrashedRaw), _, fail)
+    -> trim_trailing(CrashedRaw, CrashedDisplay)
+    ;  CrashedDisplay = 'unknown query (no checkpoint recorded)'
+    ),
+    xml_escape(CrashedDisplay, EscCrashed),
+    format_atom('  <testcase name="~w (trilog crashed here)" classname="~w" time="0.000">',
+                [EscCrashed, Suite], CrashOpen),
+    open(PartialPath, append, Strm),
+    write(Strm, CrashOpen), nl(Strm),
+    write(Strm, '    <failure message="trilog crashed while running this test (see harness log for details)"/>'), nl(Strm),
+    write(Strm, '  </testcase>'), nl(Strm),
+    close(Strm).
+
+quad_resolved_count(Suite, Dir, Count) :-
+    atom_concat(Dir, '/', D1),
+    atom_concat(D1, Suite, D2),
+    atom_concat(D2, '.xml.partial', PartialPath),
+    read_and_count_partial(PartialPath, _Body, Count, _Failed).
+
+quad_finalize_junit(File, Suite, Dir) :-
+    atom_concat(Dir, '/', D1),
+    atom_concat(D1, Suite, D2),
     atom_concat(D2, '.xml', XmlPath),
-    write_junit_xml(XmlPath, Suite, Total, Failed, TotalMs).
+    atom_concat(D2, '.progress', ProgressPath),
+    atom_concat(D2, '.xml.partial', PartialPath),
+    read_and_count_partial(PartialPath, Body, Total, Failed),
+    xml_escape(File, EscFile),
+    open(XmlPath, write, Strm),
+    write(Strm, '<?xml version="1.0" encoding="UTF-8"?>'), nl(Strm),
+    format_atom('<testsuite name="~w" file="~w" tests="~w" failures="~w" errors="0" time="0.000">',
+                [Suite, EscFile, Total, Failed], Header),
+    write(Strm, Header), nl(Strm),
+    write(Strm, Body),
+    write(Strm, '</testsuite>'), nl(Strm),
+    close(Strm),
+    catch((open(ProgressPath, write, S1), close(S1)), _, true),
+    catch((open(PartialPath, write, S2), close(S2)), _, true).
 
 %****
 %* CLI entry points: set the process exit code (0 all pass, 1 any failure)
@@ -440,7 +561,9 @@ quad_cli(File) :-
     quad_stat(_, _, Failed, _),
     ( Failed > 0 -> halt(1) ; halt(0) ).
 
-quad_cli_junit(File, Dir) :-
-    once(run_quad_file_junit(File, Dir)),
+quad_cli_junit(File, Dir) :- quad_cli_junit(File, Dir, 0).
+
+quad_cli_junit(File, Dir, Skip) :-
+    once(run_quad_file_junit(File, Dir, Skip)),
     quad_stat(_, _, Failed, _),
     ( Failed > 0 -> halt(1) ; halt(0) ).

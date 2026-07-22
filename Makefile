@@ -69,13 +69,33 @@ quad: $(TARGET)
 		timeout $(QUAD_TIMEOUT) ./$(TARGET) -e "consult('lib/quad.pl'), quad_cli('$$f')" || true; \
 	done
 
+QUAD_MAX_RESUME_ATTEMPTS := 20
+
 .PHONY: quad-junit
 quad-junit: $(TARGET)
 	@mkdir -p _build/test-results
 	@for f in test/*_quad.pl test/ulrich/*_quad.pl; do \
 		[ -f "$$f" ] || continue; \
 		[ "$$f" = "test/iso_quad.pl" ] && continue; \
-		timeout $(QUAD_TIMEOUT) ./$(TARGET) -e "consult('lib/quad.pl'), quad_cli_junit('$$f', '_build/test-results')" || true; \
+		suite=$$(basename "$$f" .pl); \
+		skip=0; \
+		attempt=0; \
+		while :; do \
+			attempt=$$((attempt + 1)); \
+			timeout $(QUAD_TIMEOUT) ./$(TARGET) -e "consult('lib/quad.pl'), quad_cli_junit('$$f', '_build/test-results', $$skip)" || true; \
+			[ -f "_build/test-results/$$suite.xml" ] && break; \
+			if [ ! -s "_build/test-results/$$suite.xml.partial" ] && [ ! -s "_build/test-results/$$suite.progress" ]; then \
+				echo "# $$f: trilog crashed with no checkpoint to recover from"; \
+				break; \
+			fi; \
+			if [ $$attempt -ge $(QUAD_MAX_RESUME_ATTEMPTS) ]; then \
+				echo "# $$f: gave up after $(QUAD_MAX_RESUME_ATTEMPTS) crashes, finalizing what ran"; \
+				./$(TARGET) -e "consult('lib/quad.pl'), quad_mark_crash('$$suite', '_build/test-results'), quad_finalize_junit('$$f', '$$suite', '_build/test-results')" || true; \
+				break; \
+			fi; \
+			skip=$$(./$(TARGET) -e "consult('lib/quad.pl'), quad_mark_crash('$$suite', '_build/test-results'), quad_resolved_count('$$suite', '_build/test-results', N), write(N), halt." 2>/dev/null); \
+			echo "# $$f: trilog crashed mid-run (attempt $$attempt), resuming after test $$skip"; \
+		done; \
 	done
 	@echo "JUnit reports written to _build/test-results/"
 
