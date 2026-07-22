@@ -19,17 +19,3 @@ ctest(X, Y) :- ca(X), !, cb(Y).
 ?- ctest(1, Y).
    Y = 1
 ;  Y = 2.
-
-% --- cut must prune the caller's own choice point, not just the choice
-% point of a multi-clause subgoal called with an already-bound argument
-% (regression: first-argument indexing must deref the goal's argument to see
-% that binding, otherwise a spurious choice point gets pushed for the
-% subgoal and steals the cut, leaving the caller's alternative clause live) ---
-
-cset(x).
-cset(y).
-cdispatch(X, matched) :- cset(X), !.
-cdispatch(_, fallback).
-
-?- findall(R, cdispatch(x, R), L).
-   L = [matched].

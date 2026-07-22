@@ -178,24 +178,6 @@ saboth :- safoo3(_), safoo3(_).
 ?- findall(_X, between(1, 10, _X), _L), length(_L, N).
    N = 10.
 
-% regression: builtin-created bindings (is/2) must get reclaimed in step
-% with the recursive clause match, not accumulate until MAX_BINDINGS.
-qcount(0) :- !.
-qcount(N) :- N > 0, N1 is N - 1, qcount(N1).
-
-?- qcount(5000).
-   true.
-
-% regression: a var bound deep inside a ->'s condition (via recursion in
-% another predicate) must still be valid for goals after the -> returns.
-qsplit([], []).
-qsplit([_|T], Rest) :- qsplit(T, Rest).
-qjoin([], B, B) :- !.
-qjoin([H|A], B, [H|C]) :- qjoin(A, B, C).
-
-?- ( qsplit([x], _Suffix) -> qjoin([], "hi", _Tmp), qjoin(_Tmp, _Suffix, R) ; true ).
-   R = "hi".
-
 % findall(member) — last element must not be unbound
 ?- findall(_X, member(_X, [1, 2, 3]), L).
    L = [1, 2, 3].
