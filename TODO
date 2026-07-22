@@ -4,23 +4,14 @@ towards some form of iso compliance:
 ease of use on the default linux target:
     - readline/history in repl
 
-wasm demo:
-    - add a site deployment
-    - some simpler non distracting style
-    - a workable terminal
-
-testing:
-    - move quad to a pl file, separate TAP and jUnit outputs
+wokwi demo:
+    - reduce binary size
+    - some more complex example
 
 ledit:
     - printing 20 lines will need 100k termpool, for what?
 
-since we are not working with that much memory, stability should be first
-
-faults:
-    - non-tail recursion segfaults (C stack overflow, no depth guard in solve_all)
-    - length(L, 200000) segfaults (same root cause)
-    - -f with missing file leaks ctx (ASAN reports 4MB leak)
+- since we are not working with that much memory, stability should be first
 
 i really shouldnt be having that dynamic array at the end of the cxt struct, c89 does not have it - i could hack it with [1] but thats ub, with malloc it could work 
 

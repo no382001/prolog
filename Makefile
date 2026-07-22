@@ -99,6 +99,7 @@ SMALL_FLAGS := \
     -DMAX_LIST_LIT=128 \
     -DMAX_CLAUSES=256 \
     -DMAX_BINDINGS=1024 \
+    -DMAX_VARS=2048 \
     -DMAX_GOALS=64 \
     -DMAX_STACK=128 \
     -DMAX_ERROR_MSG=128 \
@@ -122,35 +123,7 @@ small: format
 	    $(SMALL_FLAGS) $(SMALL_SRCS) -o $(BUILD_DIR)/trilog-small
 	@strip $(BUILD_DIR)/trilog-small
 	@size $(BUILD_DIR)/trilog-small
-	@echo "--- RAM estimate ---"
-	@echo "  term_pool:   48 KB"
-	@echo "  ctx struct: ~60 KB"
-	@echo "  stack:        4 KB"
-	@echo "  total:     ~112 KB  (of 264 KB RP2040 SRAM)"
 
-WEB_M0_FLAGS := $(SMALL_FLAGS)
-
-.PHONY: web
-web: $(WEB_DIR)/trilog.js
-
-$(WEB_DIR)/trilog.js: $(WEB_LIB_SRCS) $(WEB_ENTRY) $(HDRS) lib/core.pl lib/ledit.pl
-	emcc $(WEB_LIB_SRCS) $(WEB_ENTRY) \
-	    -o $@ \
-	    -O2 \
-	    $(WEB_M0_FLAGS) \
-	    -s WASM=1 \
-	    -s ALLOW_MEMORY_GROWTH=1 \
-	    -s ASYNCIFY=1 \
-	    -s EXPORTED_FUNCTIONS='["_trilog_web_init","_trilog_web_eval","_trilog_web_push_line","_trilog_web_is_reading","_trilog_web_is_choosing","_trilog_web_take_output","_trilog_web_set_yield","_trilog_web_get_stats","_trilog_web_get_usage"]' \
-	    -s EXPORTED_RUNTIME_METHODS='["ccall","cwrap","getValue"]' \
-	    --embed-file lib/core.pl@/core.pl \
-	    --embed-file lib/ledit.pl@/ledit.pl
-
-.PHONY: serve-web
-serve-web:
-	$(MAKE) -B web
-	-kill $$(ss -tlnp 'sport = :8080' 2>/dev/null | grep -oP 'pid=\K[0-9]+') 2>/dev/null; sleep 0.2
-	php -S localhost:8080 -t $(WEB_DIR)
 
 .PHONY: pico
 pico:
