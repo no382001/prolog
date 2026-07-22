@@ -683,6 +683,8 @@ static builtin_result_t builtin_format_bindings(trilog_ctx_t *ctx, term_t *goal,
 
   fmtb_cap_t cap;
   fmtb_start(ctx, &cap);
+  ctx->anon_rename_active = true;
+  ctx->anon_rename_count = 0;
   bool first = true;
   for (int i = 0; i < n; i++) {
     term_t *pair = pairs[i];
@@ -710,6 +712,7 @@ static builtin_result_t builtin_format_bindings(trilog_ctx_t *ctx, term_t *goal,
   }
   if (first)
     io_write_str(ctx, "true");
+  ctx->anon_rename_active = false;
   term_t *result = make_const(ctx, cap.buf);
   fmtb_end(ctx, &cap);
 

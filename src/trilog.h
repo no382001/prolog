@@ -60,6 +60,9 @@ typedef __builtin_va_list va_list;
 #ifndef MAX_VARS
 #define MAX_VARS 4194304
 #endif
+#ifndef MAX_VARS_ANON_RENAME
+#define MAX_VARS_ANON_RENAME 64
+#endif
 #ifndef MAX_GOALS
 #define MAX_GOALS 128
 #endif
@@ -321,6 +324,10 @@ struct trilog_ctx {
   bool db_dirty;        // set when assert/retract modifies the database
   bool ops_dirty;       // set when op_table is modified (prevents string pool
                         // rollback)
+
+  bool anon_rename_active;
+  int anon_rename_ids[MAX_VARS_ANON_RENAME];
+  int anon_rename_count;
 
   char string_pool[MAX_STRING_POOL];
   int string_pool_offset;

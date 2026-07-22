@@ -74,13 +74,16 @@ std_codes([0'.|Cs], out, 0, Prev, Out) :-
     ).
 std_codes([C|Cs], State, D, _, [C|Out]) :- std_codes(Cs, State, D, C, Out).
 
-% parse_expected(+AnswerRaw, -Expected): list of expected answer atoms.
-parse_expected(AnswerRaw, Expected) :-
+parse_expected(AnswerRaw, Expected, Mode) :-
     strip_terminating_dot(AnswerRaw, Answer),
     split_nl(Answer, Lines),
     pe_group(Lines, Groups),
     maplist(pe_join_trim, Groups, Expected0),
-    exclude(==(''), Expected0, Expected).
+    exclude(==(''), Expected0, Expected1),
+    ( append(Prefix, ['..., ad_infinitum'], Expected1)
+    -> Mode = ad_infinitum, Expected = Prefix
+    ;  Mode = exact, Expected = Expected1
+    ).
 
 % group consecutive lines into one alternative per group, starting a new
 % group whenever a line's first non-blank char is ';'.
@@ -153,7 +156,7 @@ strip_query_prefix(Raw, Query) :-
 run_one_test(QueryRaw, AnswerRaw, Pass) :-
     strip_query_prefix(QueryRaw, Query0),
     strip_terminating_dot(Query0, Query),
-    parse_expected(AnswerRaw, Expected),
+    parse_expected(AnswerRaw, Expected, Mode),
     quad_display(Query, Display),
     get_time_ms(T0),
     ( atom_to_term(Query, QueryTerm, NameVars)
@@ -169,7 +172,7 @@ run_one_test(QueryRaw, AnswerRaw, Pass) :-
     ),
     get_time_ms(T1),
     ElapsedMs is T1 - T0,
-    quad_judge(Expected, Got, Error, Pass, Reason),
+    quad_judge(Expected, Got, Error, Mode, Pass, Reason),
     retract(quad_stat(TN0, P0, F0, TMs0)),
     TestNum is TN0 + 1,
     ( Pass == true -> P1 is P0 + 1, F1 = F0 ; P1 = P0, F1 is F0 + 1 ),
@@ -184,7 +187,34 @@ run_one_test(QueryRaw, AnswerRaw, Pass) :-
 quad_error_type(error(Type, _), Type) :- !.
 quad_error_type(Ball, Ball).
 
-quad_judge(Expected, Got, Error, Pass, Reason) :-
+quad_judge(Expected, Got, Error, Mode, Pass, Reason) :-
+    ( Mode == ad_infinitum
+    -> quad_judge_ad_infinitum(Expected, Got, Error, Pass, Reason)
+    ;  quad_judge_exact(Expected, Got, Error, Pass, Reason)
+    ).
+
+% witness sampling for an "ad infinitum" test
+quad_ad_infinitum_witness(8).
+
+quad_judge_ad_infinitum(Expected, Got, Error, Pass, Reason) :-
+    ( Error \== none
+    -> Pass = false, format_atom('error: ~w', [Error], Reason)
+    ;  length(Expected, PrefixLen),
+       quad_ad_infinitum_witness(Witness),
+       MinLen is PrefixLen + Witness,
+       length(GotPrefix, PrefixLen),
+       append(GotPrefix, _, Got),
+       GotPrefix == Expected,
+       length(Got, GotLen),
+       GotLen >= MinLen
+    -> Pass = true, Reason = ''
+    ;  quad_ad_infinitum_witness(Witness2),
+       format_atom('expected: ~w, then ..., ad_infinitum (at least ~w more)~ngot: ~w',
+                   [Expected, Witness2, quad_got(Got,Error)], Reason),
+       Pass = false
+    ).
+
+quad_judge_exact(Expected, Got, Error, Pass, Reason) :-
     ( Expected = [false]
     -> ( Got == [], Error == none -> Pass = true, Reason = ''
        ;  Pass = false, format_atom('expected: false~ngot: ~w', [quad_got(Got,Error)], Reason)

@@ -81,6 +81,43 @@ static void print_atom(trilog_ctx_t *ctx, const char *name, bool quoted) {
 //* term printing
 //****
 
+// stable per-render name for an unnamed var (see anon_rename_active):
+// first-seen var_id -> "_A", second -> "_B", ... "_Z", "_AA", "_AB", ...
+static const char *anon_var_name(trilog_ctx_t *ctx, int var_id) {
+  static char buf[16]; // reused per call; caller writes it out immediately
+  int idx = -1;
+  for (int i = 0; i < ctx->anon_rename_count; i++) {
+    if (ctx->anon_rename_ids[i] == var_id) {
+      idx = i;
+      break;
+    }
+  }
+  if (idx < 0 && ctx->anon_rename_count < MAX_VARS_ANON_RENAME) {
+    idx = ctx->anon_rename_count;
+    ctx->anon_rename_ids[idx] = var_id;
+    ctx->anon_rename_count++;
+  }
+  if (idx < 0) {
+    // table full: fall back to the raw internal name rather than crash
+    snprintf(buf, sizeof(buf), "_G%d", var_id);
+    return buf;
+  }
+  char letters[8];
+  int len = 0;
+  int n = idx + 1; // 1-based, spreadsheet-column-style base-26
+  while (n > 0) {
+    int rem = (n - 1) % 26;
+    letters[len++] = (char)('A' + rem);
+    n = (n - 1) / 26;
+  }
+  buf[0] = '_';
+  int j = 1;
+  for (int i = len - 1; i >= 0; i--)
+    buf[j++] = letters[i];
+  buf[j] = '\0';
+  return buf;
+}
+
 void print_term(trilog_ctx_t *ctx, term_t *t, env_t *env, bool quoted) {
   assert(env != ((void *)0) && "Environment is NULL");
 
@@ -182,7 +219,9 @@ void print_term(trilog_ctx_t *ctx, term_t *t, env_t *env, bool quoted) {
   if (t->type == VAR) {
     if (t->name)
       io_write_str(ctx, t->name);
-    else {
+    else if (ctx->anon_rename_active) {
+      io_write_str(ctx, anon_var_name(ctx, t->arity));
+    } else {
       char buf[32];
       snprintf(buf, sizeof(buf), "_G%d", t->arity);
       io_write_str(ctx, buf);
@@ -226,6 +265,8 @@ void print_term(trilog_ctx_t *ctx, term_t *t, env_t *env, bool quoted) {
 
 void print_bindings(trilog_ctx_t *ctx, env_t *env) {
   bool printed = false;
+  ctx->anon_rename_active = true;
+  ctx->anon_rename_count = 0;
   for (int i = 0; i < env->count; i++) {
     const char *name = env->bindings[i].name;
     if (!name || name[0] == '_')
@@ -236,6 +277,7 @@ void print_bindings(trilog_ctx_t *ctx, env_t *env) {
     io_write_term_quoted(ctx, env->bindings[i].value, env);
     printed = true;
   }
+  ctx->anon_rename_active = false;
   if (!printed)
     io_write_str(ctx, "true");
 }
