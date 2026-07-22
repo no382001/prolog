@@ -68,7 +68,6 @@ static char *rp2040_read_line(trilog_ctx_t *ctx, char *buf, int size, void *ud) 
 static int       rp2040_read_char(trilog_ctx_t *ctx, void *ud)                  { (void)ctx;(void)ud; return getchar(); }
 static bool      rp2040_file_exists(trilog_ctx_t *ctx, const char *p, void *ud) { (void)ctx;(void)p;(void)ud; return false; }
 static long long rp2040_file_mtime(trilog_ctx_t *ctx, const char *p, void *ud)  { (void)ctx;(void)p;(void)ud; return -1; }
-static double    rp2040_clock(trilog_ctx_t *ctx, void *ud)                      { (void)ctx;(void)ud; return (double)time_us_64()/1e6; }
 
 int main(void) {
     stdio_init_all();
@@ -89,7 +88,6 @@ int main(void) {
     hooks.read_char       = rp2040_read_char;
     hooks.file_exists     = rp2040_file_exists;
     hooks.file_mtime      = rp2040_file_mtime;
-    hooks.clock_monotonic = rp2040_clock;
     io_hooks_set(g_ctx, &hooks);
 
     char *core_str = malloc(core_pl_len + 1);

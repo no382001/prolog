@@ -177,8 +177,6 @@ typedef bool (*io_file_exists_callback_t)(trilog_ctx_t *ctx, const char *path,
                                           void *userdata);
 typedef long long (*io_file_mtime_callback_t)(trilog_ctx_t *ctx,
                                               const char *path, void *userdata);
-typedef double (*io_clock_monotonic_callback_t)(trilog_ctx_t *ctx,
-                                                void *userdata);
 
 typedef struct {
   io_write_callback_t write_str;
@@ -193,7 +191,6 @@ typedef struct {
   io_file_write_callback_t file_write;
   io_file_exists_callback_t file_exists;
   io_file_mtime_callback_t file_mtime;
-  io_clock_monotonic_callback_t clock_monotonic;
   void *userdata;
 } io_hooks_t;
 
@@ -616,7 +613,6 @@ char *io_file_read_line(trilog_ctx_t *ctx, void *handle, char *buf, int size);
 bool io_file_write(trilog_ctx_t *ctx, void *handle, const char *str);
 bool io_file_exists(trilog_ctx_t *ctx, const char *path);
 long long io_file_mtime(trilog_ctx_t *ctx, const char *path);
-double io_clock_monotonic(trilog_ctx_t *ctx);
 
 // toplevel helpers (shared by cli, web, embedders)
 typedef struct {
