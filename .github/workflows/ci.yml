@@ -38,6 +38,8 @@ jobs:
     permissions:
       contents: read
       actions: read
+      checks: write
+      pull-requests: write
     steps:
       - name: checkout code
         uses: actions/checkout@v4
@@ -64,3 +66,21 @@ jobs:
         with:
           name: test-results
           path: _build/test-results/*.xml
+
+      - name: publish quad test results
+        uses: dorny/test-reporter@v1
+        if: always()
+        with:
+          name: Quad Tests
+          path: '_build/test-results/*_quad.xml'
+          reporter: java-junit
+          fail-on-error: false
+
+      - name: publish system test results
+        uses: dorny/test-reporter@v1
+        if: always()
+        with:
+          name: System Tests
+          path: '_build/test-results/report.xml'
+          reporter: java-junit
+          fail-on-error: false
