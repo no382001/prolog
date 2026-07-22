@@ -38,7 +38,7 @@ $(BUILD_DIR):
 
 .PHONY: clean
 clean:
-	rm -rf $(BUILD_DIR) $(TARGET) $(WEB_DIR)/trilog.js $(WEB_DIR)/trilog.wasm wokwi/build
+	rm -rf $(BUILD_DIR) $(TARGET) wokwi/build
 
 .PHONY: examples
 examples: $(EXAMPLE_BINS)
@@ -88,10 +88,6 @@ syscheck-junit: $(TARGET)
 
 .PHONY: test
 test: quad syscheck
-
-WEB_DIR := web
-WEB_LIB_SRCS := $(filter-out src/main.c, $(SRCS))
-WEB_ENTRY := $(WEB_DIR)/main_web.c
 
 # arm cortex-m0+ constraints (rp2040, 264kb sram)
 SMALL_FLAGS := \

@@ -23,5 +23,3 @@ compile_commands.json
 vgcore.*
 *.log
 trilog
-web/trilog.js
-web/trilog.wasm
