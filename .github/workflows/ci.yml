@@ -61,17 +61,32 @@ jobs:
         run: make syscheck-junit
 
       - name: upload test results
+        id: upload_test_results
         uses: actions/upload-artifact@v4
         if: always()
         with:
           name: test-results
           path: _build/test-results/*.xml
 
+      - name: publish test report
+        id: test_reporter
+        uses: dorny/test-reporter@v1
+        if: always()
+        with:
+          name: JUnit Test Report
+          path: '_build/test-results/*.xml'
+          reporter: java-junit
+          fail-on-error: false
+
       - name: build test summary
         if: always()
         run: |
           chmod +x test/summarize_results.sh
           test/summarize_results.sh _build/test-results > /tmp/test_summary.md
+          {
+            echo ""
+            echo "[Full JUnit report](${{ steps.test_reporter.outputs.url_html }})"
+          } >> /tmp/test_summary.md
           cat /tmp/test_summary.md
 
       - name: comment test results on PR
