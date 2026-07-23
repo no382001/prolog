@@ -83,10 +83,6 @@ jobs:
         run: |
           chmod +x test/summarize_results.sh
           test/summarize_results.sh _build/test-results > /tmp/test_summary.md
-          {
-            echo ""
-            echo "[Full JUnit report](${{ steps.test_reporter.outputs.url_html }})"
-          } >> /tmp/test_summary.md
           cat /tmp/test_summary.md
 
       - name: comment test results on PR
@@ -95,7 +91,11 @@ jobs:
         with:
           script: |
             const fs = require('fs');
-            const body = fs.readFileSync('/tmp/test_summary.md', 'utf8');
+            const reportUrl = ${{ toJSON(steps.test_reporter.outputs.url_html) }};
+            let body = fs.readFileSync('/tmp/test_summary.md', 'utf8');
+            if (reportUrl) {
+              body += `\n\n[Full JUnit report](${reportUrl})`;
+            }
             const { data: comments } = await github.rest.issues.listComments({
               owner: context.repo.owner,
               repo: context.repo.repo,

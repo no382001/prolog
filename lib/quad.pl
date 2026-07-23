@@ -485,22 +485,26 @@ rwf_loop(S, Acc, Whole) :-
 % counts <testcase>/<failure> lines by prefix while reading, rather than
 % scanning the whole body afterward (that hit quad.pl's known LCO
 % slowdown on a large partial file).
-read_and_count_partial(Path, Body, TestcaseCount, FailureCount) :-
+read_and_count_partial(Path, Body, TestcaseCount, FailureCount, TotalMs) :-
     catch(
         ( open(Path, read, S),
-          racp_loop(S, '', 0, 0, Body, TestcaseCount, FailureCount),
+          racp_loop(S, '', stat(0, 0, 0), Body, stat(TestcaseCount, FailureCount, TotalMs)),
           close(S)
-        ), _, ( Body = '', TestcaseCount = 0, FailureCount = 0 )).
+        ), _, ( Body = '', TestcaseCount = 0, FailureCount = 0, TotalMs = 0 )).
 
-racp_loop(S, AccBody, AccT, AccF, Body, TotalT, TotalF) :-
+racp_loop(S, AccBody, stat(AccT, AccF, AccMs), Body, Stat) :-
     read_line_to_atom(S, Line),
     ( Line == end_of_file
-    -> Body = AccBody, TotalT = AccT, TotalF = AccF
-    ;  ( line_has_prefix(Line, '  <testcase ') -> AccT1 is AccT + 1 ; AccT1 = AccT ),
+    -> Body = AccBody, Stat = stat(AccT, AccF, AccMs)
+    ;  ( line_has_prefix(Line, '  <testcase ')
+       -> AccT1 is AccT + 1,
+          ( line_time_ms(Line, LineMs) -> AccMs1 is AccMs + LineMs ; AccMs1 = AccMs )
+       ;  AccT1 = AccT, AccMs1 = AccMs
+       ),
        ( line_has_prefix(Line, '    <failure ') -> AccF1 is AccF + 1 ; AccF1 = AccF ),
        atom_concat(Line, '\n', L1),
        atom_concat(AccBody, L1, AccBody1),
-       racp_loop(S, AccBody1, AccT1, AccF1, Body, TotalT, TotalF)
+       racp_loop(S, AccBody1, stat(AccT1, AccF1, AccMs1), Body, Stat)
     ).
 
 line_has_prefix(Line, Prefix) :-
@@ -508,6 +512,28 @@ line_has_prefix(Line, Prefix) :-
     atom_length(Line, LineLen),
     LineLen >= Len,
     sub_atom(Line, 0, Len, _, Prefix).
+
+% pulls the time="S.mmm" attribute out of a <testcase> line and converts
+% it back to milliseconds (mirrors ms_to_secs_atom/2's "S.mmm" format).
+line_time_ms(Line, Ms) :-
+    sub_atom(Line, Before, 6, _, 'time="'),
+    !,
+    Start is Before + 6,
+    sub_atom(Line, Start, _, 0, Rest),
+    sub_atom(Rest, EndBefore, _, _, '"'),
+    !,
+    sub_atom(Rest, 0, EndBefore, _, TimeStr),
+    secs_atom_to_ms(TimeStr, Ms).
+
+secs_atom_to_ms(Atom, Ms) :-
+    ( sub_atom(Atom, B, 1, A, '.')
+    -> sub_atom(Atom, 0, B, _, SecsPart),
+       sub_atom(Atom, _, A, 0, FracPart),
+       atom_number(SecsPart, Secs),
+       atom_number(FracPart, FracMs),
+       Ms is Secs * 1000 + FracMs
+    ;  atom_number(Atom, Secs), Ms is Secs * 1000
+    ).
 
 % appends a synthetic "crashed here" <testcase> naming the in-flight
 % query, so the next resume attempt's Skip steps past it too.
@@ -533,7 +559,7 @@ quad_resolved_count(Suite, Dir, Count) :-
     atom_concat(Dir, '/', D1),
     atom_concat(D1, Suite, D2),
     atom_concat(D2, '.xml.partial', PartialPath),
-    read_and_count_partial(PartialPath, _Body, Count, _Failed).
+    read_and_count_partial(PartialPath, _Body, Count, _Failed, _TotalMs).
 
 quad_finalize_junit(File, Suite, Dir) :-
     atom_concat(Dir, '/', D1),
@@ -541,12 +567,13 @@ quad_finalize_junit(File, Suite, Dir) :-
     atom_concat(D2, '.xml', XmlPath),
     atom_concat(D2, '.progress', ProgressPath),
     atom_concat(D2, '.xml.partial', PartialPath),
-    read_and_count_partial(PartialPath, Body, Total, Failed),
+    read_and_count_partial(PartialPath, Body, Total, Failed, TotalMs),
     xml_escape(File, EscFile),
+    ms_to_secs_atom(TotalMs, TotalTimeAtom),
     open(XmlPath, write, Strm),
     write(Strm, '<?xml version="1.0" encoding="UTF-8"?>'), nl(Strm),
-    format_atom('<testsuite name="~w" file="~w" tests="~w" failures="~w" errors="0" time="0.000">',
-                [Suite, EscFile, Total, Failed], Header),
+    format_atom('<testsuite name="~w" file="~w" tests="~w" failures="~w" errors="0" time="~w">',
+                [Suite, EscFile, Total, Failed, TotalTimeAtom], Header),
     write(Strm, Header), nl(Strm),
     write(Strm, Body),
     write(Strm, '</testsuite>'), nl(Strm),
