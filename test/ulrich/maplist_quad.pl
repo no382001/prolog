@@ -51,12 +51,9 @@ maplist(R_3, [E1|E1s], [E2|E2s], [E3|E3s]) :-
 ?- maplist(>(3), [1, 2, 3]).
    false.
 
-% crashes trilog (term pool exhausted) while the quad harness collects
-% the 64 solutions it needs to confirm ad_infinitum, so commented out.
-%
-% ?- maplist(=(X), Xs).
-%    Xs = []
-% ;  Xs = [X]
-% ;  Xs = [X, X]
-% ;  Xs = [X, X, X]
-% ;  ..., ad_infinitum.
+?- maplist(=(X), Xs).
+   Xs = []
+;  Xs = [X]
+;  Xs = [X, X]
+;  Xs = [X, X, X]
+;  ..., ad_infinitum.

@@ -27,18 +27,14 @@ select(E, [X|Xs], [X|Ys]) :-
 ?- select(X, [Y|nonlist], Xs).
    X = Y, Xs = nonlist.
 
-% hangs trilog (no occurs-check, and no cycle detection either -- it
-% just builds an ever-growing list forever instead of looping cleanly or
-% terminating), so commented out.
-%
-% ?- select(E, Xs, Xs).
-%    sto, % occurs-check
-%    loops
-% |  sto, % rational trees
-%    Xs = [E|Xs]
-% ;  Xs = [_A|_B], _B = [E|_B]
-% ;  ..., ad_infinitum
-% |  sto, % literal substitutions
-%    Xs = [E,E|_A]
-% ;  Xs = [_A,E,E|_B]
-% ;  ..., ad_infinitum.
+?- select(E, Xs, Xs).
+   sto, % occurs-check
+   loops
+|  sto, % rational trees
+   Xs = [E|Xs]
+;  Xs = [_A|_B], _B = [E|_B]
+;  ..., ad_infinitum
+|  sto, % literal substitutions
+   Xs = [E,E|_A]
+;  Xs = [_A,E,E|_B]
+;  ..., ad_infinitum.

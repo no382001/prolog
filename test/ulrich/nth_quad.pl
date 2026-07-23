@@ -38,40 +38,28 @@
 ?- nth0(2, Es, E).
    Es = [_A,_B,E|_C].
 
-% crashes trilog (term pool exhausted) while the quad harness collects
-% the 64 solutions it needs to confirm ad_infinitum, so commented out.
-%
-% ?- nth0(N, Es, E).
-%    N = 0, Es = [E|_A]
-% ;  N = 1, Es = [_A,E|_B]
-% ;  N = 2, Es = [_A,_B,E|_C]
-% ;  N = 3, Es = [_A,_B,_C,E|_D]
-% ;  ..., ad_infinitum.
+?- nth0(N, Es, E).
+   N = 0, Es = [E|_A]
+;  N = 1, Es = [_A,E|_B]
+;  N = 2, Es = [_A,_B,E|_C]
+;  N = 3, Es = [_A,_B,_C,E|_D]
+;  ..., ad_infinitum.
 
-% hangs trilog forever: N stays bound to the atom non_integer, so
-% nth0/3's generate-mode clause counts 0, 1, 2, ... against it forever
-% looking for a match that can never come. Commented out.
-%
-% ?- nth0(non_integer, Es, E).
-%    type_error(integer, non_integer).
+?- nth0(non_integer, Es, E).
+   type_error(integer, non_integer).
 
 ?- nth0(-1, Es, E).
    domain_error(not_less_than_zero, -1).
 
-% crashes trilog past the first solution: no occurs-check means Es ends
-% up aliased into its own containing list, and trilog's printer recurses
-% on that cycle without a check (stack overflow in print_term). Commented
-% out.
-%
-% ?- nth0(N, [[]|Es], Es).
-%    N = 0, Es = []
-% ;  sto, % occurs-check
-%    loops
-% |  N = 0, Es = []
-% ;  sto, % rational trees
-%    N = 1, Es = [Es|_A]
-% ;  N = 2, Es = [_A,Es|_B]
-% ;  ..., ad_infinitum.
+?- nth0(N, [[]|Es], Es).
+   N = 0, Es = []
+;  sto, % occurs-check
+   loops
+|  N = 0, Es = []
+;  sto, % rational trees
+   N = 1, Es = [Es|_A]
+;  N = 2, Es = [_A,Es|_B]
+;  ..., ad_infinitum.
 
 ?- nth1(0, Es, E).
    false.

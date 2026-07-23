@@ -10,8 +10,8 @@ DIR="${1:-_build/test-results}"
 
 echo "### Test results"
 echo ""
-echo "| Suite | Tests | Passed | Failed | Crashed |"
-echo "|---|---|---|---|---|"
+echo "| Suite | File | Tests | Passed | Failed | Crashed |"
+echo "|---|---|---|---|---|---|"
 
 total=0; passed=0; failed=0; crashed=0
 suite_count=0
@@ -20,11 +20,13 @@ for f in "$DIR"/*_quad.xml; do
   [ -f "$f" ] || continue
   suite_count=$((suite_count + 1))
   name=$(basename "$f" .xml)
+  file=$(grep -oE 'file="[^"]*"' "$f" | head -1 | sed -E 's/file="(.*)"/\1/')
+  [ -n "$file" ] || file="?"
   t=$(grep -oE 'tests="[0-9]+"' "$f" | grep -oE '[0-9]+' || echo 0)
   fl=$(grep -oE 'failures="[0-9]+"' "$f" | grep -oE '[0-9]+' || echo 0)
   p=$((t - fl))
   cr=$(grep -c '(trilog crashed here)' "$f" || true)
-  echo "| $name | $t | $p | $fl | $cr |"
+  echo "| $name | $file | $t | $p | $fl | $cr |"
   total=$((total + t)); passed=$((passed + p)); failed=$((failed + fl)); crashed=$((crashed + cr))
 done
 
@@ -32,11 +34,11 @@ if [ -f "$DIR/report.xml" ]; then
   st=$(grep -ohE 'tests="[0-9]+"' "$DIR/report.xml" | grep -oE '[0-9]+' | awk '{s+=$1} END{print s+0}')
   sf=$(grep -ohE 'failures="[0-9]+"' "$DIR/report.xml" | grep -oE '[0-9]+' | awk '{s+=$1} END{print s+0}')
   sp=$((st - sf))
-  echo "| system (bats) | $st | $sp | $sf | 0 |"
+  echo "| system (bats) | test/*.bats | $st | $sp | $sf | 0 |"
   total=$((total + st)); passed=$((passed + sp)); failed=$((failed + sf))
 fi
 
-echo "| **TOTAL** | **$total** | **$passed** | **$failed** | **$crashed** |"
+echo "| **TOTAL** | | **$total** | **$passed** | **$failed** | **$crashed** |"
 
 if [ "$suite_count" -eq 0 ]; then
   echo ""

@@ -312,13 +312,12 @@
    | type_error(list,[[]|2]). 
 
 % Test: 46
-%?- L=['1'|L], number_chars(N,L). % * is default 
-%   sto, ... ; ... .
-%   sto,
-%   ( type_error(list,['1'|...]) % rational trees
-%   | false % occurs-check
-%   | representation_error(term)
-%   | instantiation_error % literal substitutions
-%   | resource_error(...)
-%   | loops
-%   ). 
+?- L=['1'|L], number_chars(N,L). % * is default
+   sto,
+   ( type_error(list,['1'|...]) % rational trees
+   | false % occurs-check
+   | representation_error(term)
+   | instantiation_error % literal substitutions
+   | resource_error(...)
+   | loops
+   ).

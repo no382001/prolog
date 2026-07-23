@@ -38,18 +38,14 @@
 ?- length(List, 5).
    List = [_A,_B,_C,_D,_E].
 
-% both of these crash trilog (term pool exhausted) while the quad
-% harness collects the 64 solutions it needs to confirm ad_infinitum, so
-% commented out.
-%
-% ?- length(List, Length).
-%    List = [], Length = 0
-% ;  List = [_A], Length = 1
-% ;  List = [_A,_B], Length = 2
-% ;  ..., ad_infinitum.
-%
-% ?- length([a|List],Length).
-%    List = [], Length = 1
-% ;  List = [_A], Length = 2
-% ;  List = [_A,_B], Length = 3
-% ;  ..., ad_infinitum.
+?- length(List, Length).
+   List = [], Length = 0
+;  List = [_A], Length = 1
+;  List = [_A,_B], Length = 2
+;  ..., ad_infinitum.
+
+?- length([a|List],Length).
+   List = [], Length = 1
+;  List = [_A], Length = 2
+;  List = [_A,_B], Length = 3
+;  ..., ad_infinitum.
