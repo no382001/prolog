@@ -377,11 +377,21 @@ qf_clause_step(S, ClauseBuf0, Line, Trimmed, Skip, SeenCount) :-
        ;  sub_atom(ClauseBuf1, 0, 2, _, ':-')
        -> sub_atom(ClauseBuf1, 2, _, 0, DirText0),
           strip_terminating_dot(DirText0, DirText),
-          catch((atom_to_term(DirText, Goal, _),
-                 with_output_to(atom(_), catch(call(Goal), _, true))), _, true),
+          % catch/3 only intercepts thrown balls, not plain failure (e.g.
+          % atom_to_term failing outright on an unrecognized operator like
+          % '@') -- wrapped in ( -> ; ) too so a malformed directive is
+          % skipped instead of silently failing the whole file's qf_loop.
+          ( catch((atom_to_term(DirText, Goal, _),
+                   with_output_to(atom(_), catch(call(Goal), _, true))), _, fail)
+          -> true
+          ;  true
+          ),
           qf_loop(S, '', '', query, Skip, SeenCount)
        ;  strip_terminating_dot(ClauseBuf1, ClauseText),
-          catch((atom_to_term(ClauseText, Term, _), assertz(Term)), _, true),
+          ( catch((atom_to_term(ClauseText, Term, _), assertz(Term)), _, fail)
+          -> true
+          ;  true
+          ),
           qf_loop(S, '', '', query, Skip, SeenCount)
        )
     ;  qf_loop(S, ClauseBuf1, '', query, Skip, SeenCount)
@@ -482,29 +492,43 @@ rwf_loop(S, Acc, Whole) :-
        rwf_loop(S, Acc1, Whole)
     ).
 
-% counts <testcase>/<failure> lines by prefix while reading, rather than
-% scanning the whole body afterward (that hit quad.pl's known LCO
-% slowdown on a large partial file).
-read_and_count_partial(Path, Body, TestcaseCount, FailureCount, TotalMs) :-
+% one line at a time, no atom_concat accumulation -- see TODO's known
+% bugs section (builtin_atom_concat) for why that matters here.
+count_partial(Path, TestcaseCount, FailureCount, TotalMs) :-
     catch(
         ( open(Path, read, S),
-          racp_loop(S, '', stat(0, 0, 0), Body, stat(TestcaseCount, FailureCount, TotalMs)),
+          cp_loop(S, stat(0, 0, 0), stat(TestcaseCount, FailureCount, TotalMs)),
           close(S)
-        ), _, ( Body = '', TestcaseCount = 0, FailureCount = 0, TotalMs = 0 )).
+        ), _, ( TestcaseCount = 0, FailureCount = 0, TotalMs = 0 )).
 
-racp_loop(S, AccBody, stat(AccT, AccF, AccMs), Body, Stat) :-
+cp_loop(S, stat(AccT, AccF, AccMs), Stat) :-
     read_line_to_atom(S, Line),
     ( Line == end_of_file
-    -> Body = AccBody, Stat = stat(AccT, AccF, AccMs)
+    -> Stat = stat(AccT, AccF, AccMs)
     ;  ( line_has_prefix(Line, '  <testcase ')
        -> AccT1 is AccT + 1,
           ( line_time_ms(Line, LineMs) -> AccMs1 is AccMs + LineMs ; AccMs1 = AccMs )
        ;  AccT1 = AccT, AccMs1 = AccMs
        ),
        ( line_has_prefix(Line, '    <failure ') -> AccF1 is AccF + 1 ; AccF1 = AccF ),
-       atom_concat(Line, '\n', L1),
-       atom_concat(AccBody, L1, AccBody1),
-       racp_loop(S, AccBody1, stat(AccT1, AccF1, AccMs1), Body, Stat)
+       cp_loop(S, stat(AccT1, AccF1, AccMs1), Stat)
+    ).
+
+% copies Path's lines verbatim to the already-open OutStrm, one line at a
+% time -- same reasoning as count_partial/4, no atom_concat accumulation.
+stream_copy_lines(Path, OutStrm) :-
+    catch(
+        ( open(Path, read, S),
+          scl_loop(S, OutStrm),
+          close(S)
+        ), _, true).
+
+scl_loop(S, OutStrm) :-
+    read_line_to_atom(S, Line),
+    ( Line == end_of_file
+    -> true
+    ;  write(OutStrm, Line), nl(OutStrm),
+       scl_loop(S, OutStrm)
     ).
 
 line_has_prefix(Line, Prefix) :-
@@ -559,15 +583,17 @@ quad_resolved_count(Suite, Dir, Count) :-
     atom_concat(Dir, '/', D1),
     atom_concat(D1, Suite, D2),
     atom_concat(D2, '.xml.partial', PartialPath),
-    read_and_count_partial(PartialPath, _Body, Count, _Failed, _TotalMs).
+    count_partial(PartialPath, Count, _Failed, _TotalMs).
 
+% two passes: counts need to be known before the opening tag is written,
+% so pass 1 counts and pass 2 streams the body across.
 quad_finalize_junit(File, Suite, Dir) :-
     atom_concat(Dir, '/', D1),
     atom_concat(D1, Suite, D2),
     atom_concat(D2, '.xml', XmlPath),
     atom_concat(D2, '.progress', ProgressPath),
     atom_concat(D2, '.xml.partial', PartialPath),
-    read_and_count_partial(PartialPath, Body, Total, Failed, TotalMs),
+    count_partial(PartialPath, Total, Failed, TotalMs),
     xml_escape(File, EscFile),
     ms_to_secs_atom(TotalMs, TotalTimeAtom),
     open(XmlPath, write, Strm),
@@ -575,7 +601,7 @@ quad_finalize_junit(File, Suite, Dir) :-
     format_atom('<testsuite name="~w" file="~w" tests="~w" failures="~w" errors="0" time="~w">',
                 [Suite, EscFile, Total, Failed, TotalTimeAtom], Header),
     write(Strm, Header), nl(Strm),
-    write(Strm, Body),
+    stream_copy_lines(PartialPath, Strm),
     write(Strm, '</testsuite>'), nl(Strm),
     close(Strm),
     catch((open(ProgressPath, write, S1), close(S1)), _, true),

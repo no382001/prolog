@@ -28,3 +28,21 @@ papers to look into:
     - Zhou, "Parameter Passing and Control Stack Management in Prolog Implementation Revisited" (1996)
 
 non-determinism support?
+
+known bugs (found via test/ulrich/ and test/iso_quad.pl):
+    - builtin_atom_concat (src/builtins.c): stack-use-after-return once the
+      concatenated atom gets large (MAX_NAME, 16k) ASAN crash
+      triggered by ulrich/select_quad.pl's self-referential select/3 case,
+      and independently by lib/quad.pl's own crash-recovery code before it
+      was rewritten to stream line-by-line instead of accumulating one
+      big atom (see count_partial/4, stream_copy_lines/2 in lib/quad.pl)
+    - term.c make_var: MAX_VARS table exhaustion is a hard assertion
+      failure (abort), hit by test/iso_quad.pl's
+      number_codes tests
+    - sub_atom/atom_concat split strings by byte offset, not UTF-8
+      character offset, can produce invalid truncated multi-byte
+      sequences (see test/iso_quad.pl's 'Pécs' test, breaks strict XML
+      parsers reading the JUnit report)
+    - no occurs-check, and no cycle detection either: self-referential
+      unification (member(X,X), select(E,Xs,Xs), nth0(N,[[]|Es],Es)) either
+      hangs forever or crashes the printer on the resulting cyclic term
