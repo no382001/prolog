@@ -12,7 +12,6 @@
 #include <stdlib.h>
 #include <string.h>
 #include <sys/stat.h>
-#include <time.h>
 
 static inline long long trilog_file_mtime(const char *path) {
   struct stat st;

@@ -3,6 +3,13 @@
 term_t *lookup(env_t *env, int var_id) {
   assert(env != NULL && "Environment is NULL");
 
+  if (env->var_index) {
+    int slot = env->var_index[var_id] - 1;
+    if (slot >= 0 && slot < env->count && env->bindings[slot].var_id == var_id)
+      return env->bindings[slot].value;
+    return NULL;
+  }
+
   for (int i = env->count - 1; i >= 0; i--) {
     if (env->bindings[i].var_id == var_id) {
       return env->bindings[i].value;
@@ -18,6 +25,7 @@ void bind(trilog_ctx_t *ctx, env_t *env, term_t *var, term_t *value) {
   assert(var->type == VAR && "bind called on non-VAR term");
   assert(value != NULL && "Value is NULL");
   assert(ctx->bind_count < MAX_BINDINGS && "Binding table full");
+  assert(var->arity < MAX_VARS && "Variable table full");
 
   if (ctx->debug_enabled) {
     if (var->name)
@@ -28,12 +36,18 @@ void bind(trilog_ctx_t *ctx, env_t *env, term_t *var, term_t *value) {
     debug(ctx, "\n");
   }
 
+  int slot = ctx->bind_count;
   ctx->bindings[ctx->bind_count++] = (binding_t){
       .var_id = var->arity,
       .name = var->name, // already interned (or null for internal vars)
       .value = value,
+      .var_ceiling = ctx->var_counter,
   };
   env->count = ctx->bind_count;
+  ctx->var_bind_index[var->arity] = slot + 1; // +1: 0 means "never bound"
+
+  if (ctx->protect_template && var->arity == ctx->protect_template_id)
+    ctx->protect_template_touched = true;
 }
 
 term_t *deref(env_t *env, term_t *t) {
@@ -59,6 +73,11 @@ static term_t *copy_to_perm(trilog_ctx_t *ctx, term_t *t) {
     int v = 0;
     term_as_int(t, &v);
     return make_int(ctx, v);
+  }
+  case FLOAT: {
+    double v = 0;
+    term_as_float(t, &v);
+    return make_float(ctx, v);
   }
   case VAR:
     return make_var(ctx, t->name, t->arity);
@@ -114,7 +133,8 @@ term_t *substitute(trilog_ctx_t *ctx, env_t *env, term_t *t) {
   if (!t)
     return NULL;
 
-  if (t->type == CONST || t->type == VAR || t->type == STR) {
+  if (t->type == CONST || t->type == VAR || t->type == STR || t->type == INT ||
+      t->type == FLOAT) {
     if (ctx->alloc_permanent && term_is_temp(ctx, t))
       return copy_to_perm(ctx, t);
     return t;

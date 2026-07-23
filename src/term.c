@@ -39,6 +39,12 @@ const char *intern_name(trilog_ctx_t *ctx, const char *name) {
   assert(ctx != NULL && "Context is NULL");
   assert(name != NULL && "Name is NULL");
 
+  // fast path: name is already a canonical pointer into this pool (e.g. a
+  // clause functor name copied during renaming) — no need to rescan.
+  if (name >= ctx->string_pool &&
+      name < ctx->string_pool + ctx->string_pool_offset)
+    return name;
+
   int len = strlen(name);
 
   // search for existing copy in string pool
@@ -86,7 +92,36 @@ term_t *make_int(trilog_ctx_t *ctx, int n) {
   return t;
 }
 
+// canonical float formatting: try increasing precision until the string
+// round-trips to the exact same double, so equal doubles always intern to
+// the same string (unify.c compares FLOATs by interned-string equality).
+// ISO requires a decimal point in the printed form, so "7" becomes "7.0".
+term_t *make_float(trilog_ctx_t *ctx, double d) {
+  char buf[64];
+  for (int prec = 15; prec <= 17; prec++) {
+    snprintf(buf, sizeof(buf), "%.*g", prec, d);
+    if (strtod(buf, NULL) == d)
+      break;
+  }
+  if (!strchr(buf, '.') && !strchr(buf, 'e') && !strchr(buf, 'E'))
+    strcat(buf, ".0");
+  term_t *t = term_alloc(ctx, sizeof(term_t));
+  if (!t)
+    return NULL;
+  t->type = FLOAT;
+  t->name = intern_name(ctx, buf);
+  return t;
+}
+
+bool term_as_float(const term_t *t, double *out) {
+  if (!t || t->type != FLOAT)
+    return false;
+  *out = strtod(t->name, NULL);
+  return true;
+}
+
 term_t *make_var(trilog_ctx_t *ctx, const char *name, int var_id) {
+  assert(var_id < MAX_VARS && "Variable table full");
   term_t *t = term_alloc(ctx, sizeof(term_t)); // no args
   if (!t)
     return NULL;
@@ -159,29 +194,35 @@ term_t *make_term(trilog_ctx_t *ctx, term_type type, const char *name,
 //* variable renaming
 //****
 
-term_t *rename_vars_mapped(trilog_ctx_t *ctx, term_t *t, var_id_map_t *map) {
+term_t *rename_vars_mapped_named(trilog_ctx_t *ctx, term_t *t,
+                                 var_id_map_t *map, bool preserve_names) {
   if (!t)
     return NULL;
-  if (t->type == CONST || t->type == INT || t->type == STR)
+  if (t->type == CONST || t->type == INT || t->type == STR || t->type == FLOAT)
     return t;
   if (t->type == VAR) {
+    const char *name = preserve_names ? t->name : NULL;
     int old_id = t->arity;
     for (int i = 0; i < map->count; i++) {
       if (map->entries[i].old_id == old_id)
-        return make_var(ctx, NULL, map->entries[i].new_id);
+        return make_var(ctx, name, map->entries[i].new_id);
     }
     int new_id = ctx->var_counter++;
     assert(map->count < MAX_CLAUSE_VARS && "Too many variables in clause");
     map->entries[map->count].old_id = old_id;
     map->entries[map->count].new_id = new_id;
     map->count++;
-    return make_var(ctx, NULL, new_id);
+    return make_var(ctx, name, new_id);
   }
   assert(t->type == FUNC && "Invalid term type in rename_vars_mapped");
   term_t *args[MAX_ARGS];
   for (int i = 0; i < t->arity; i++)
-    args[i] = rename_vars_mapped(ctx, t->args[i], map);
+    args[i] = rename_vars_mapped_named(ctx, t->args[i], map, preserve_names);
   return make_func(ctx, t->name, args, t->arity);
+}
+
+term_t *rename_vars_mapped(trilog_ctx_t *ctx, term_t *t, var_id_map_t *map) {
+  return rename_vars_mapped_named(ctx, t, map, false);
 }
 
 term_t *rename_vars(trilog_ctx_t *ctx, term_t *t) {
@@ -203,6 +244,11 @@ static term_t *copy_term_into_pool(trilog_ctx_t *ctx, term_t *t) {
     int v = 0;
     term_as_int(t, &v);
     return make_int(ctx, v);
+  }
+  case FLOAT: {
+    double v = 0;
+    term_as_float(t, &v);
+    return make_float(ctx, v);
   }
   case VAR:
     return make_var(ctx, t->name, t->arity);

@@ -9,7 +9,7 @@
 static void term_to_buf(const term_t *t, char *buf, int sz) {
   if (!t || sz <= 0)
     return;
-  if (t->type == CONST || t->type == INT) {
+  if (t->type == CONST || t->type == INT || t->type == FLOAT) {
     snprintf(buf, sz, "%s", t->name);
     return;
   }
@@ -109,6 +109,78 @@ void throw_existence_error(trilog_ctx_t *ctx, const char *object_type,
   term_t *eargs[2] = {make_const(ctx, object_type), object};
   term_t *ee = make_func(ctx, "existence_error", eargs, 2);
   throw_error(ctx, ee, context);
+}
+
+bool must_be_atom(trilog_ctx_t *ctx, term_t *t, const char *context) {
+  if (t->type == VAR) {
+    throw_instantiation_error(ctx, context);
+    return false;
+  }
+  if (t->type != CONST) {
+    throw_type_error(ctx, "atom", t, context);
+    return false;
+  }
+  return true;
+}
+
+bool must_be_integer(trilog_ctx_t *ctx, term_t *t, const char *context) {
+  if (t->type == VAR) {
+    throw_instantiation_error(ctx, context);
+    return false;
+  }
+  if (t->type != INT) {
+    throw_type_error(ctx, "integer", t, context);
+    return false;
+  }
+  return true;
+}
+
+bool must_be_number(trilog_ctx_t *ctx, term_t *t, const char *context) {
+  if (t->type == VAR) {
+    throw_instantiation_error(ctx, context);
+    return false;
+  }
+  if (t->type != INT && t->type != FLOAT) {
+    throw_type_error(ctx, "number", t, context);
+    return false;
+  }
+  return true;
+}
+
+bool must_be_atomic(trilog_ctx_t *ctx, term_t *t, const char *context) {
+  if (t->type == VAR) {
+    throw_instantiation_error(ctx, context);
+    return false;
+  }
+  if (t->type != CONST && t->type != INT && t->type != FLOAT) {
+    throw_type_error(ctx, "atomic", t, context);
+    return false;
+  }
+  return true;
+}
+
+bool must_be_compound(trilog_ctx_t *ctx, term_t *t, const char *context) {
+  if (t->type == VAR) {
+    throw_instantiation_error(ctx, context);
+    return false;
+  }
+  if (t->type != FUNC) {
+    throw_type_error(ctx, "compound", t, context);
+    return false;
+  }
+  return true;
+}
+
+bool must_be_character(trilog_ctx_t *ctx, term_t *t, const char *context) {
+  if (t->type == VAR) {
+    throw_instantiation_error(ctx, context);
+    return false;
+  }
+  if (t->type != CONST || t->name[0] == '\0' || t->name[1] != '\0') {
+    throw_type_error(ctx, "character", t, context);
+    return false;
+  }
+  return true;
 }
 
 void ctx_runtime_error(trilog_ctx_t *ctx, const char *fmt, ...) {

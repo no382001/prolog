@@ -25,17 +25,88 @@ TRILOG="./trilog"
   [[ "$output" == *"boom"* ]]
 }
 
-# --- file loading (-f) ---
+# --- file loading (positional arg) ---
 
-@test "-f loads clauses and -e can query them" {
-  run "$TRILOG" -f test/family.pl -e "parent(tom,X), write(X)."
+@test "positional file arg loads clauses and -e can query them" {
+  run "$TRILOG" test/family.pl -e "parent(tom,X), write(X)."
   [ "$status" -eq 0 ]
   [[ "$output" == *"bob"* ]]
 }
 
-@test "-f with nonexistent file exits nonzero" {
-  run "$TRILOG" -f nonexistent_file.pl -e "true."
+@test "positional file arg with nonexistent file exits nonzero" {
+  run "$TRILOG" nonexistent_file.pl -e "true."
   [ "$status" -ne 0 ]
+}
+
+@test "init file (~/.trilog) is loaded by default" {
+  fake_home="$(mktemp -d)"
+  echo "init_marker(loaded)." > "$fake_home/.trilog"
+  run env HOME="$fake_home" "$TRILOG" -e "init_marker(X), write(X)."
+  rm -rf "$fake_home"
+  [ "$status" -eq 0 ]
+  [[ "$output" == *"loaded"* ]]
+}
+
+@test "-f skips loading the init file" {
+  fake_home="$(mktemp -d)"
+  echo "init_marker(loaded)." > "$fake_home/.trilog"
+  run env HOME="$fake_home" "$TRILOG" -f -e "init_marker(X), write(X)."
+  rm -rf "$fake_home"
+  [[ "$output" == *"existence_error"* ]]
+}
+
+# --- -v (verbose startup consult) ---
+
+@test "without -v, startup consult is silent" {
+  fake_home="$(mktemp -d)"
+  echo "init_marker(loaded)." > "$fake_home/.trilog"
+  run env HOME="$fake_home" "$TRILOG" -e "init_marker(X), write(X)."
+  rm -rf "$fake_home"
+  [ "$status" -eq 0 ]
+  [[ "$output" != *"?- consult("* ]]
+  [[ "$output" == *"loaded"* ]]
+}
+
+@test "-v echoes the core.pl and init file consult" {
+  fake_home="$(mktemp -d)"
+  echo "init_marker(loaded)." > "$fake_home/.trilog"
+  run env HOME="$fake_home" "$TRILOG" -v -e "init_marker(X), write(X)."
+  rm -rf "$fake_home"
+  [ "$status" -eq 0 ]
+  [[ "$output" == *"?- consult('"*"core.pl')."* ]]
+  [[ "$output" == *"?- consult('"*".trilog')."* ]]
+  [[ "$output" == *"loaded"* ]]
+}
+
+@test "-v shows false for a missing init file" {
+  run env HOME=/tmp/trilog_no_such_home_dir_at_all "$TRILOG" -v -e "true."
+  [ "$status" -eq 0 ]
+  [[ "$output" == *"?- consult("*".trilog')."* ]]
+  [[ "$output" == *"false."* ]]
+}
+
+@test "-f -v: no init file consult attempt at all" {
+  fake_home="$(mktemp -d)"
+  echo "init_marker(loaded)." > "$fake_home/.trilog"
+  run env HOME="$fake_home" "$TRILOG" -f -v -e "true."
+  rm -rf "$fake_home"
+  [ "$status" -eq 0 ]
+  [[ "$output" != *".trilog"* ]]
+}
+
+# regression
+@test "missing input file does not leak ctx" {
+  run "$TRILOG" /tmp/trilog_does_not_exist_at_all.pl
+  [ "$status" -eq 1 ]
+  [[ "$output" != *"AddressSanitizer"* ]]
+  [[ "$output" != *"leaked"* ]]
+}
+
+@test "-h does not leak ctx" {
+  run "$TRILOG" -h
+  [ "$status" -eq 0 ]
+  [[ "$output" != *"AddressSanitizer"* ]]
+  [[ "$output" != *"leaked"* ]]
 }
 
 # --- pipe (non-interactive) mode ---
@@ -56,17 +127,20 @@ TRILOG="./trilog"
   [[ "$result" == *"world"* ]]
 }
 
-# --- quad runner (-q) ---
+# --- quad runner (quad.pl) ---
 
-@test "-q exits 0 on passing tests" {
-  run "$TRILOG" -q test/core_quad.pl
+@test "quad_cli exits 0 on passing tests" {
+  echo '?- 1 =:= 1.' > /tmp/trilog_pass_quad.pl
+  echo '   true.' >> /tmp/trilog_pass_quad.pl
+  run "$TRILOG" -e "consult('lib/quad.pl'), quad_cli('/tmp/trilog_pass_quad.pl')"
   [ "$status" -eq 0 ]
+  rm -f /tmp/trilog_pass_quad.pl
 }
 
-@test "-q exits 1 on failing test" {
+@test "quad_cli exits 1 on failing test" {
   echo '?- 1 =:= 2.' > /tmp/trilog_fail_quad.pl
   echo '   true.' >> /tmp/trilog_fail_quad.pl
-  run "$TRILOG" -q /tmp/trilog_fail_quad.pl
+  run "$TRILOG" -e "consult('lib/quad.pl'), quad_cli('/tmp/trilog_fail_quad.pl')"
   [ "$status" -eq 1 ]
   rm -f /tmp/trilog_fail_quad.pl
 }
@@ -143,17 +217,19 @@ TRILOG="./trilog"
   [[ "$output" == *"-e"* ]]
 }
 
-# --- JUnit XML output (-j) ---
+# --- JUnit XML output (quad_cli_junit) ---
 
-@test "-j produces JUnit XML" {
+@test "quad_cli_junit produces JUnit XML" {
   rm -rf /tmp/trilog_junit_test
   mkdir -p /tmp/trilog_junit_test
-  run "$TRILOG" -q test/core_quad.pl -j /tmp/trilog_junit_test
+  echo '?- 1 =:= 1.' > /tmp/trilog_junit_quad.pl
+  echo '   true.' >> /tmp/trilog_junit_quad.pl
+  run "$TRILOG" -e "consult('lib/quad.pl'), quad_cli_junit('/tmp/trilog_junit_quad.pl', '/tmp/trilog_junit_test')"
   [ "$status" -eq 0 ]
-  [ -f /tmp/trilog_junit_test/core_quad.xml ]
-  [[ "$(cat /tmp/trilog_junit_test/core_quad.xml)" == *"<testsuite"* ]]
-  [[ "$(cat /tmp/trilog_junit_test/core_quad.xml)" == *"<testcase"* ]]
-  rm -rf /tmp/trilog_junit_test
+  [ -f /tmp/trilog_junit_test/trilog_junit_quad.xml ]
+  [[ "$(cat /tmp/trilog_junit_test/trilog_junit_quad.xml)" == *"<testsuite"* ]]
+  [[ "$(cat /tmp/trilog_junit_test/trilog_junit_quad.xml)" == *"<testcase"* ]]
+  rm -rf /tmp/trilog_junit_test /tmp/trilog_junit_quad.pl
 }
 
 # --- catch/throw ---

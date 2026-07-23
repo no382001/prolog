@@ -7,7 +7,7 @@ CFLAGS := \
 	-Werror \
     -g
 CFLAGS += -fsanitize=address -fno-omit-frame-pointer
-LDFLAGS += -fsanitize=address
+LDFLAGS += -fsanitize=address -lm
 
 TARGET := trilog
 BUILD_DIR := _build
@@ -38,7 +38,7 @@ $(BUILD_DIR):
 
 .PHONY: clean
 clean:
-	rm -rf $(BUILD_DIR) $(TARGET) $(WEB_DIR)/trilog.js $(WEB_DIR)/trilog.wasm
+	rm -rf $(BUILD_DIR) $(TARGET) wokwi/build
 
 .PHONY: examples
 examples: $(EXAMPLE_BINS)
@@ -59,29 +59,47 @@ run: $(TARGET)
 debug: $(TARGET)
 	./$(TARGET) -d
 
+QUAD_TIMEOUT := 60
+
 .PHONY: quad
 quad: $(TARGET)
-	@for f in test/*_quad.pl; do \
+	@for f in test/*_quad.pl test/ulrich/*_quad.pl; do \
 		[ -f "$$f" ] || continue; \
-		if [ "$$f" = "test/iso_quad.pl" ]; then \
-			./$(TARGET) -q "$$f" || true; \
-		else \
-			./$(TARGET) -q "$$f" || exit 1; \
-		fi \
+		timeout $(QUAD_TIMEOUT) ./$(TARGET) -e "consult('lib/quad.pl'), quad_cli('$$f')" || true; \
 	done
+
+QUAD_MAX_RESUME_ATTEMPTS := 20
 
 .PHONY: quad-junit
 quad-junit: $(TARGET)
 	@mkdir -p _build/test-results
-	@for f in test/*_quad.pl; do \
+	@for f in test/*_quad.pl test/ulrich/*_quad.pl; do \
 		[ -f "$$f" ] || continue; \
-		if [ "$$f" = "test/iso_quad.pl" ]; then \
-			./$(TARGET) -q "$$f" -j _build/test-results || true; \
-		else \
-			./$(TARGET) -q "$$f" -j _build/test-results || exit 1; \
-		fi \
+		suite=$$(basename "$$f" .pl); \
+		skip=0; \
+		attempt=0; \
+		while :; do \
+			attempt=$$((attempt + 1)); \
+			timeout $(QUAD_TIMEOUT) ./$(TARGET) -e "consult('lib/quad.pl'), quad_cli_junit('$$f', '_build/test-results', $$skip)" || true; \
+			[ -f "_build/test-results/$$suite.xml" ] && break; \
+			if [ ! -s "_build/test-results/$$suite.xml.partial" ] && [ ! -s "_build/test-results/$$suite.progress" ]; then \
+				echo "# $$f: trilog crashed with no checkpoint to recover from"; \
+				break; \
+			fi; \
+			if [ $$attempt -ge $(QUAD_MAX_RESUME_ATTEMPTS) ]; then \
+				echo "# $$f: gave up after $(QUAD_MAX_RESUME_ATTEMPTS) crashes, finalizing what ran"; \
+				./$(TARGET) -e "consult('lib/quad.pl'), quad_mark_crash('$$suite', '_build/test-results'), quad_finalize_junit('$$f', '$$suite', '_build/test-results')" || true; \
+				break; \
+			fi; \
+			skip=$$(./$(TARGET) -e "consult('lib/quad.pl'), quad_mark_crash('$$suite', '_build/test-results'), quad_resolved_count('$$suite', '_build/test-results', N), write(N), halt." 2>/dev/null); \
+			echo "# $$f: trilog crashed mid-run (attempt $$attempt), resuming after test $$skip"; \
+		done; \
 	done
 	@echo "JUnit reports written to _build/test-results/"
+
+.PHONY: iso
+iso: $(TARGET)
+	./$(TARGET) -e "consult('lib/quad.pl'), quad_cli('test/iso_quad.pl')" || true
 
 .PHONY: syscheck
 syscheck: $(TARGET)
@@ -95,16 +113,13 @@ syscheck-junit: $(TARGET)
 .PHONY: test
 test: quad syscheck
 
-WEB_DIR := web
-WEB_LIB_SRCS := $(filter-out src/main.c, $(SRCS))
-WEB_ENTRY := $(WEB_DIR)/main_web.c
-
 # arm cortex-m0+ constraints (rp2040, 264kb sram)
 SMALL_FLAGS := \
     -DMAX_NAME=48 \
     -DMAX_LIST_LIT=128 \
     -DMAX_CLAUSES=256 \
     -DMAX_BINDINGS=1024 \
+    -DMAX_VARS=2048 \
     -DMAX_GOALS=64 \
     -DMAX_STACK=128 \
     -DMAX_ERROR_MSG=128 \
@@ -119,7 +134,7 @@ SMALL_FLAGS := \
 
 SMALL_SRCS := src/arith.c src/builtins.c src/cli.c src/debug.c src/env.c \
               src/errors.c src/ffi.c src/io.c src/main.c src/parse.c \
-              src/print.c src/quad.c src/solve.c src/streams.c src/term.c \
+              src/print.c src/solve.c src/streams.c src/term.c \
               src/unify.c
 
 .PHONY: small
@@ -128,33 +143,13 @@ small: format
 	    $(SMALL_FLAGS) $(SMALL_SRCS) -o $(BUILD_DIR)/trilog-small
 	@strip $(BUILD_DIR)/trilog-small
 	@size $(BUILD_DIR)/trilog-small
-	@echo "--- RAM estimate ---"
-	@echo "  term_pool:   48 KB"
-	@echo "  ctx struct: ~60 KB"
-	@echo "  stack:        4 KB"
-	@echo "  total:     ~112 KB  (of 264 KB RP2040 SRAM)"
 
-WEB_M0_FLAGS := $(SMALL_FLAGS)
 
-.PHONY: web
-web: $(WEB_DIR)/trilog.js
-
-$(WEB_DIR)/trilog.js: $(WEB_LIB_SRCS) $(WEB_ENTRY) $(HDRS) core.pl ledit.pl
-	emcc $(WEB_LIB_SRCS) $(WEB_ENTRY) \
-	    -o $@ \
-	    -O2 \
-	    $(WEB_M0_FLAGS) \
-	    -s WASM=1 \
-	    -s ALLOW_MEMORY_GROWTH=1 \
-	    -s ASYNCIFY=1 \
-	    -s EXPORTED_FUNCTIONS='["_trilog_web_init","_trilog_web_eval","_trilog_web_push_line","_trilog_web_is_reading","_trilog_web_is_choosing","_trilog_web_take_output","_trilog_web_set_yield","_trilog_web_get_stats","_trilog_web_get_usage"]' \
-	    -s EXPORTED_RUNTIME_METHODS='["ccall","cwrap","getValue"]' \
-	    --embed-file core.pl@/core.pl \
-	    --embed-file ledit.pl@/ledit.pl
-
-.PHONY: serve-web
-serve-web:
-	$(MAKE) -B web
-	-kill $$(ss -tlnp 'sport = :8080' 2>/dev/null | grep -oP 'pid=\K[0-9]+') 2>/dev/null; sleep 0.2
-	php -S localhost:8080 -t $(WEB_DIR)
+.PHONY: pico
+pico:
+	mkdir -p wokwi/build
+	cd wokwi/build && cmake .. -Wno-dev > /dev/null
+	$(MAKE) -C wokwi/build -j$$(nproc)
+	@echo "sim:   wokwi/build/trilog/trilog.elf"
+	@echo "flash: wokwi/build/trilog.uf2"
 

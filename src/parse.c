@@ -336,6 +336,33 @@ static term_t *parse_primary(trilog_ctx_t *ctx) {
     return make_const(ctx, "{}");
   }
 
+  // '{Term}' parses as the compound term '{}'(Term) (ISO 6.3.3), used by
+  // DCGs to embed a plain goal in a grammar rule body.
+  if (*ctx->input_ptr == '{') {
+    ctx->input_ptr++;
+    skip_ws(ctx);
+    term_t *inner = parse_term(ctx);
+    if (!inner) {
+      if (*ctx->input_ptr == '\0' && !parse_has_error(ctx))
+        parse_error_eof(ctx);
+      else if (!parse_has_error(ctx))
+        parse_error(ctx, "expected expression inside '{...}'");
+      return NULL;
+    }
+    skip_ws(ctx);
+    if (*ctx->input_ptr != '}') {
+      if (*ctx->input_ptr == '\0')
+        parse_error_eof(ctx);
+      else
+        parse_error(ctx, "expected '}' after expression, got '%c'",
+                    *ctx->input_ptr);
+      return NULL;
+    }
+    ctx->input_ptr++;
+    term_t *args[1] = {inner};
+    return make_func(ctx, "{}", args, 1);
+  }
+
   if (*ctx->input_ptr == '\'') {
     ctx->input_ptr++; // skip opening quote
     int avail = MAX_STRING_POOL - ctx->string_pool_offset - 1;
@@ -535,6 +562,22 @@ static term_t *parse_primary(trilog_ctx_t *ctx) {
         }
         name[i++] = *ctx->input_ptr++;
       }
+      // decimal point only counts as part of the number if followed by
+      // another digit — otherwise it's the end-of-clause '.' (or an atom).
+      if (*ctx->input_ptr == '.' && isdigit(ctx->input_ptr[1])) {
+        if (i >= avail) {
+          parse_error(ctx, "number too long");
+          return NULL;
+        }
+        name[i++] = *ctx->input_ptr++;
+        while (isdigit(*ctx->input_ptr)) {
+          if (i >= avail) {
+            parse_error(ctx, "number too long");
+            return NULL;
+          }
+          name[i++] = *ctx->input_ptr++;
+        }
+      }
     }
   } else if (isalpha(*ctx->input_ptr) || *ctx->input_ptr == '_') {
     while (isalnum(*ctx->input_ptr) || *ctx->input_ptr == '_') {
@@ -637,7 +680,8 @@ static term_t *parse_primary(trilog_ctx_t *ctx) {
     return make_var(ctx, iname, vid);
   }
   debug(ctx, "DEBUG parse_primary: constant %s\n", name);
-  // integer literal (digits only, or minus + digits)
+  // integer or float literal (digits, or minus + digits, with an optional
+  // '.' + digits for a float)
   {
     const char *p = name;
     if (*p == '-')
@@ -646,7 +690,13 @@ static term_t *parse_primary(trilog_ctx_t *ctx) {
       const char *q = p;
       while (*q >= '0' && *q <= '9')
         q++;
-      if (*q == '\0') {
+      if (*q == '.' && q[1] >= '0' && q[1] <= '9') {
+        q++;
+        while (*q >= '0' && *q <= '9')
+          q++;
+        if (*q == '\0')
+          return make_float(ctx, strtod(name, NULL));
+      } else if (*q == '\0') {
         int v = 0;
         const char *pp = name;
         int sign = 1;
@@ -808,7 +858,13 @@ void strip_line_comment(char *line) {
       else if (*p == '\'')
         in_sq = false;
     } else {
-      if (*p == '"')
+      if (*p == '0' && *(p + 1) == '\'' && *(p + 2)) {
+        // 0'c character code notation: the "'" here doesn't open a quoted
+        // atom, it's followed by exactly one (possibly escaped) char.
+        p += 2;
+        if (*p == '\\' && *(p + 1))
+          p++;
+      } else if (*p == '"')
         in_dq = true;
       else if (*p == '\'')
         in_sq = true;
@@ -837,7 +893,14 @@ bool has_complete_clause(const char *buf) {
       else if (*p == '\'')
         in_sq = false;
     } else {
-      if (*p == '"') {
+      if (*p == '0' && *(p + 1) == '\'' && *(p + 2)) {
+        // 0'c character code notation: the "'" here doesn't open a quoted
+        // atom, it's followed by exactly one (possibly escaped) char, which
+        // may itself be '.', '(', etc. without being clause structure.
+        p += 2;
+        if (*p == '\\' && *(p + 1))
+          p++;
+      } else if (*p == '"') {
         in_dq = true;
       } else if (*p == '\'') {
         in_sq = true;
@@ -846,8 +909,11 @@ bool has_complete_clause(const char *buf) {
       } else if (*p == ')' || *p == ']') {
         depth--;
       } else if (*p == '.' && depth == 0) {
+        // a '.' immediately preceded by another '.' is part of a multi-dot
+        // operator token (e.g. "=.." for univ), not a clause terminator.
+        char prev = (p == buf) ? '\0' : *(p - 1);
         char next = *(p + 1);
-        if (next == '\0' || isspace((unsigned char)next))
+        if (prev != '.' && (next == '\0' || isspace((unsigned char)next)))
           return true;
       }
     }
@@ -917,12 +983,15 @@ bool trilog_exec_query(trilog_ctx_t *ctx, char *query) {
     return false;
 
   ctx->bind_count = 0;
-  env_t env = {.bindings = ctx->bindings, .count = 0};
+  env_t env = {
+      .bindings = ctx->bindings, .count = 0, .var_index = ctx->var_bind_index};
   bool ok = solve(ctx, &goals, &env);
 
   if (ctx->has_runtime_error) {
     if (ctx->thrown_ball) {
-      env_t err_env = {.bindings = ctx->bindings, .count = 0};
+      env_t err_env = {.bindings = ctx->bindings,
+                       .count = 0,
+                       .var_index = ctx->var_bind_index};
       term_t *ball = ctx->thrown_ball;
       if (ball->type == FUNC && ball->arity == 2 &&
           strcmp(ball->name, "error") == 0)
@@ -930,6 +999,8 @@ bool trilog_exec_query(trilog_ctx_t *ctx, char *query) {
       io_write_str(ctx, "   ");
       io_write_term_quoted(ctx, ball, &err_env);
       io_write_str(ctx, ".\n");
+    } else if (ctx->runtime_error[0]) {
+      io_writef_err(ctx, "error: %s\n", ctx->runtime_error);
     }
     ctx->has_runtime_error = false;
     ok = false;
@@ -964,12 +1035,15 @@ bool trilog_exec_query_multi(trilog_ctx_t *ctx, char *query,
     return false;
 
   ctx->bind_count = 0;
-  env_t env = {.bindings = ctx->bindings, .count = 0};
+  env_t env = {
+      .bindings = ctx->bindings, .count = 0, .var_index = ctx->var_bind_index};
   bool found = solve_all(ctx, &goals, &env, cb, ud);
 
   if (ctx->has_runtime_error) {
     if (ctx->thrown_ball) {
-      env_t err_env = {.bindings = ctx->bindings, .count = 0};
+      env_t err_env = {.bindings = ctx->bindings,
+                       .count = 0,
+                       .var_index = ctx->var_bind_index};
       term_t *ball = ctx->thrown_ball;
       if (ball->type == FUNC && ball->arity == 2 &&
           strcmp(ball->name, "error") == 0)
@@ -977,6 +1051,9 @@ bool trilog_exec_query_multi(trilog_ctx_t *ctx, char *query,
       io_write_str(ctx, "   ");
       io_write_term_quoted(ctx, ball, &err_env);
       io_write_str(ctx, ".\n");
+    } else if (ctx->runtime_error[0]) {
+      // (e.g. "term pool exhausted") error with no thrown ball
+      io_writef_err(ctx, "error: %s\n", ctx->runtime_error);
     }
     // leave has_runtime_error set so the caller can suppress "false"
     found = false;

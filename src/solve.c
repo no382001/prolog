@@ -4,14 +4,59 @@
 //* last-call optimization
 //****
 
+// does t's chain of bindings pass through any slot in [from, to)? unlike a
+// plain deref (which only reports where the chain currently ends), this
+// checks every hop: reclaiming an intermediate link breaks the chain just
+// as much as reclaiming its final value would. also recurses into FUNC
+// args (not just the top-level chain) since a template like permutation/2's
+// [H|T] embeds a tail var T whose *own* chain needs the same treatment —
+// term_refs_range only checks T's own slot, not what T is bound to.
+static bool chain_hits_window(env_t *env, term_t *t, int from, int to) {
+  while (t && t->type == VAR) {
+    term_t *next = NULL;
+    if (env->var_index) {
+      int slot = env->var_index[t->arity] - 1;
+      if (slot >= 0 && slot < env->count &&
+          env->bindings[slot].var_id == t->arity) {
+        if (slot >= from && slot < to)
+          return true;
+        next = env->bindings[slot].value;
+      }
+    } else {
+      for (int i = env->count - 1; i >= 0; i--) {
+        if (env->bindings[i].var_id == t->arity) {
+          if (i >= from && i < to)
+            return true;
+          next = env->bindings[i].value;
+          break;
+        }
+      }
+    }
+    if (!next)
+      return false; // genuinely unbound: chain ends here, safely
+    t = next;
+  }
+  if (!t || t->type != FUNC)
+    return false;
+  for (int i = 0; i < t->arity; i++) {
+    if (chain_hits_window(env, t->args[i], from, to))
+      return true;
+  }
+  return false;
+}
+
 // check if lco can safely reclaim bindings in [from, to).
-// unsafe when any named (query) var is in the range — reclaiming would
-// lose assignments needed by print_bindings at solution time.
-static bool lco_safe(env_t *env, int from, int to) {
+// unsafe when any named (query) var is in the range (reclaiming would lose
+// assignments print_bindings needs) or an active findall/setof's template
+// chain passes through it (its callback observes that value after solving).
+static bool lco_safe(trilog_ctx_t *ctx, env_t *env, int from, int to) {
   for (int i = from; i < to; i++) {
     if (env->bindings[i].name)
-      return false; // named query var: must keep for print_bindings
+      return false;
   }
+  if (ctx->protect_template && ctx->protect_template_touched &&
+      chain_hits_window(env, ctx->protect_template, from, to))
+    return false;
   return true;
 }
 
@@ -48,6 +93,8 @@ bool son(trilog_ctx_t *ctx, goal_stmt_t *cn, int *clause_idx, env_t *env,
         debug(ctx, ">>> BUILTIN succeeded!\n");
         int n = cn->count - 1;
         *resolvent = goals_alloc(ctx, n > 0 ? n : 0);
+        if (n > 0 && !resolvent->goals)
+          return false;
         for (int j = 1; j < cn->count; j++)
           resolvent->goals[resolvent->count++] = cn->goals[j];
         *clause_idx = -1; // builtin match — skip lco, no backtrack
@@ -86,9 +133,19 @@ bool son(trilog_ctx_t *ctx, goal_stmt_t *cn, int *clause_idx, env_t *env,
     }
   }
 
+  term_t *goal_deref = deref(env, selected_goal);
+  const char *goal_name = goal_deref->name;
+  int goal_arity = (goal_deref->type == FUNC) ? goal_deref->arity : 0;
+
   for (int i = *clause_idx; i < ctx->db_count; i++) {
     clause_t *c = &ctx->database[i];
     assert(c->head != NULL && "Clause head is NULL");
+
+    // pre-check on interned name pointers + arity, before paying for
+    // a full rename_vars_mapped on a clause that can't possibly unify.
+    int head_arity = (c->head->type == FUNC) ? c->head->arity : 0;
+    if (c->head->name != goal_name || head_arity != goal_arity)
+      continue;
 
     env->count = ctx->bind_count = env_mark;
 
@@ -148,20 +205,42 @@ bool son(trilog_ctx_t *ctx, goal_stmt_t *cn, int *clause_idx, env_t *env,
 //* solver main loop
 //****
 
+// deref, but only following bindings created before env index `limit`.
+// used to see a goal argument's value as it was *before* the clause match
+// we're now checking alternatives for — that match may have just bound the
+// same variable (e.g. unifying p(X) with p(a) binds X=a), and that binding
+// must not make later, still-viable clauses look excluded by indexing.
+static term_t *deref_before(env_t *env, term_t *t, int limit) {
+  while (t && t->type == VAR) {
+    term_t *val = NULL;
+    for (int i = limit - 1; i >= 0; i--) {
+      if (env->bindings[i].var_id == t->arity) {
+        val = env->bindings[i].value;
+        break;
+      }
+    }
+    if (!val)
+      break;
+    t = val;
+  }
+  return t;
+}
+
 static bool has_more_alternatives(trilog_ctx_t *ctx, term_t *goal, env_t *env,
-                                  int from_clause) {
+                                  int from_clause, int env_mark) {
   if (from_clause < 0)
     return false; // builtin match
-  goal = deref(env, goal);
+  goal = deref_before(env, goal, env_mark);
   int goal_arity = (goal->type == FUNC) ? goal->arity : 0;
-  // first-argument indexing: if the goal's first arg is ground (not a var
-  // and not bound by the current unification), skip clauses whose first arg
-  // is a different ground term.  check WITHOUT deref to see the pre-unify
-  // structure — a renamed var arg would still be VAR type (only bindings
-  // make it resolve to something else).
+  // first-argument indexing: if the goal's first arg was already ground
+  // before this clause match (a literal, or a variable bound earlier in the
+  // query), skip clauses whose first arg is a different ground term.
   term_t *goal_a0 = NULL;
-  if (goal_arity > 0 && goal->args[0]->type != VAR)
-    goal_a0 = goal->args[0];
+  if (goal_arity > 0) {
+    term_t *a0 = deref_before(env, goal->args[0], env_mark);
+    if (a0->type != VAR)
+      goal_a0 = a0;
+  }
   for (int i = from_clause; i < ctx->db_count; i++) {
     clause_t *c = &ctx->database[i];
     int head_arity = (c->head->type == FUNC) ? c->head->arity : 0;
@@ -194,7 +273,7 @@ bool solve_all(trilog_ctx_t *ctx, goal_stmt_t *initial_goals, env_t *env,
   stack[sp].goals = cn;
   stack[sp].clause_index = 0;
   stack[sp].env_mark = env->count;
-  stack[sp].cut_point = 0;
+  stack[sp].cut_point = 1;
   stack[sp].term_mark = ctx->term_pool_offset;
   sp++;
   if (sp > ctx->stats.stack_peak)
@@ -202,7 +281,14 @@ bool solve_all(trilog_ctx_t *ctx, goal_stmt_t *initial_goals, env_t *env,
 
   int clause_idx;
   int env_mark;
-  int cut_point = 0;
+  // unlike env_mark (reset before every goal), reclaim_mark stays frozen
+  // across builtins so the next clause-match reclaim sweeps them up too.
+  int reclaim_mark = env->count;
+  // stack[0] is a sentinel frame the backtrack label (C) never actually
+  // resumes into (sp<=0 there means "exhausted"), so 1 is the lowest cut
+  // target that leaves it intact. a cut firing before any real choice point
+  // has been pushed must not prune sp below the sentinel.
+  int cut_point = 1;
   bool found_any = false;
 
 A:
@@ -246,6 +332,8 @@ A:
     sp = cut_point;
     int ncut = cn.count - 1;
     goal_stmt_t new_cn = goals_alloc(ctx, ncut > 0 ? ncut : 0);
+    if (ncut > 0 && !new_cn.goals)
+      return false;
     for (int i = 1; i < cn.count; i++)
       new_cn.goals[new_cn.count++] = cn.goals[i];
     cn = new_cn;
@@ -281,6 +369,8 @@ A:
         return false;
     }
     goal_stmt_t new_cn = goals_alloc(ctx, cn.count);
+    if (!new_cn.goals)
+      return false;
     new_cn.goals[new_cn.count++] = new_goal;
     for (int i = 1; i < cn.count; i++)
       new_cn.goals[new_cn.count++] = cn.goals[i];
@@ -294,6 +384,8 @@ A:
     term_t *left = deref(env, first_goal->args[0]);
     term_t *right = deref(env, first_goal->args[1]);
     goal_stmt_t new_cn = goals_alloc(ctx, cn.count + 1);
+    if (!new_cn.goals)
+      return false;
     new_cn.goals[new_cn.count++] = left;
     new_cn.goals[new_cn.count++] = right;
     for (int i = 1; i < cn.count; i++)
@@ -311,18 +403,27 @@ A:
     int emark = env->count;
 
     goal_stmt_t sub_goals = goals_alloc(ctx, 1);
+    if (!sub_goals.goals)
+      return false;
     sub_goals.goals[sub_goals.count++] = sub_goal;
 
     int bfloor_save = ctx->bind_floor;
     if (emark > ctx->bind_floor)
       ctx->bind_floor = emark;
+    ctx->nest_depth++;
     bool sub_ok = solve(ctx, &sub_goals, env);
+    ctx->nest_depth--;
     ctx->bind_floor = bfloor_save;
+    // the nested solve() may leave un-reclaimed bindings this reclaim_mark
+    // knows nothing about, so don't treat that span as spannable debt.
+    reclaim_mark = ctx->bind_count;
 
     if (sub_ok) {
       // goal succeeded — continue with remaining goals
       int nrem = cn.count - 1;
       goal_stmt_t new_cn = goals_alloc(ctx, nrem > 0 ? nrem : 0);
+      if (nrem > 0 && !new_cn.goals)
+        return false;
       for (int i = 1; i < cn.count; i++)
         new_cn.goals[new_cn.count++] = cn.goals[i];
       cn = new_cn;
@@ -339,6 +440,8 @@ A:
       if (unify(ctx, catcher, ball, env)) {
         // caught - execute recovery
         goal_stmt_t new_cn = goals_alloc(ctx, cn.count);
+        if (!new_cn.goals)
+          return false;
         new_cn.goals[new_cn.count++] = recovery;
         for (int i = 1; i < cn.count; i++)
           new_cn.goals[new_cn.count++] = cn.goals[i];
@@ -371,17 +474,24 @@ A:
       int emark = env->count;
 
       goal_stmt_t cond_goals = goals_alloc(ctx, 1);
+      if (!cond_goals.goals)
+        return false;
       cond_goals.goals[cond_goals.count++] = cond;
 
       int bfloor_save = ctx->bind_floor;
       if (emark > ctx->bind_floor)
         ctx->bind_floor = emark;
+      ctx->nest_depth++;
       bool cond_ok = solve(ctx, &cond_goals, env);
+      ctx->nest_depth--;
       ctx->bind_floor = bfloor_save;
+      reclaim_mark = ctx->bind_count;
 
       if (cond_ok) {
         // cond succeeded — commit to then branch
         goal_stmt_t new_cn = goals_alloc(ctx, cn.count);
+        if (!new_cn.goals)
+          return false;
         new_cn.goals[new_cn.count++] = then_branch;
         for (int i = 1; i < cn.count; i++)
           new_cn.goals[new_cn.count++] = cn.goals[i];
@@ -393,6 +503,8 @@ A:
         // cond failed — take else branch
         env->count = ctx->bind_count = emark;
         goal_stmt_t new_cn = goals_alloc(ctx, cn.count);
+        if (!new_cn.goals)
+          return false;
         new_cn.goals[new_cn.count++] = right;
         for (int i = 1; i < cn.count; i++)
           new_cn.goals[new_cn.count++] = cn.goals[i];
@@ -405,6 +517,8 @@ A:
     // push choice point for b, then try a
     {
       goal_stmt_t alt_cn = goals_alloc(ctx, cn.count);
+      if (!alt_cn.goals)
+        return false;
       alt_cn.goals[alt_cn.count++] = right;
       for (int i = 1; i < cn.count; i++)
         alt_cn.goals[alt_cn.count++] = cn.goals[i];
@@ -418,8 +532,11 @@ A:
       sp++;
       if (sp > ctx->stats.stack_peak)
         ctx->stats.stack_peak = sp;
+      reclaim_mark = env->count;
 
       goal_stmt_t new_cn = goals_alloc(ctx, cn.count);
+      if (!new_cn.goals)
+        return false;
       new_cn.goals[new_cn.count++] = left;
       for (int i = 1; i < cn.count; i++)
         new_cn.goals[new_cn.count++] = cn.goals[i];
@@ -436,16 +553,23 @@ A:
     int emark = env->count;
 
     goal_stmt_t cond_goals = goals_alloc(ctx, 1);
+    if (!cond_goals.goals)
+      return false;
     cond_goals.goals[cond_goals.count++] = cond;
 
     int bfloor_save = ctx->bind_floor;
     if (emark > ctx->bind_floor)
       ctx->bind_floor = emark;
+    ctx->nest_depth++;
     bool cond_ok = solve(ctx, &cond_goals, env);
+    ctx->nest_depth--;
     ctx->bind_floor = bfloor_save;
+    reclaim_mark = ctx->bind_count;
 
     if (cond_ok) {
       goal_stmt_t new_cn = goals_alloc(ctx, cn.count);
+      if (!new_cn.goals)
+        return false;
       new_cn.goals[new_cn.count++] = then_branch;
       for (int i = 1; i < cn.count; i++)
         new_cn.goals[new_cn.count++] = cn.goals[i];
@@ -472,7 +596,11 @@ B:
       assert(sp < MAX_STACK && "Stack overflow");
       debug(ctx, "*** SON succeeded, pushing frame, sp=%d ***\n", sp);
 
-      if (has_more_alternatives(ctx, cn.goals[0], env, clause_idx)) {
+      // reclaim can only reach bind_floor exactly at true top level — a
+      // nested call's caller may still hold a reference bound deep inside it.
+      bool reclaim_floor_ok =
+          reclaim_mark > ctx->bind_floor || ctx->nest_depth == 0;
+      if (has_more_alternatives(ctx, cn.goals[0], env, clause_idx, env_mark)) {
         assert(sp < MAX_STACK && "Stack overflow");
         stack[sp].goals = cn;
         stack[sp].clause_index = clause_idx;
@@ -483,30 +611,57 @@ B:
         if (sp > ctx->stats.stack_peak)
           ctx->stats.stack_peak = sp;
         cut_point = sp - 1;
-      } else if (clause_idx >= 0 && ctx->bind_count > env_mark &&
-                 resolvent.count > 0 && env_mark > ctx->bind_floor &&
-                 lco_safe(env, env_mark, ctx->bind_count)) {
-        // lco: no more alternatives — substitute bindings into resolvent
-        // and reclaim binding slots from this deterministic clause.
-        // also patch existing binding values that reference vars in the
-        // reclaimed range, so the binding chain doesn't break.
+        reclaim_mark = env_mark;
+      } else if (clause_idx >= 0 && ctx->bind_count > reclaim_mark &&
+                 resolvent.count > 0 && reclaim_floor_ok &&
+                 !lco_safe(ctx, env, reclaim_mark, ctx->bind_count) &&
+                 lco_safe(ctx, env, env_mark, ctx->bind_count)) {
+        // a named var blocks reclaiming back to reclaim_mark, but this
+        // clause's own [env_mark, bind_count) is clear — give up on the rest.
+        reclaim_mark = env_mark;
+      } else if (clause_idx >= 0 && ctx->bind_count > reclaim_mark &&
+                 resolvent.count > 0 && reclaim_floor_ok &&
+                 lco_safe(ctx, env, reclaim_mark, ctx->bind_count)) {
+        // lco: substitute into resolvent and reclaim back to reclaim_mark
+        // (may reach past env_mark), patching older refs into the range.
         for (int j = 0; j < resolvent.count; j++)
           resolvent.goals[j] = substitute(ctx, env, resolvent.goals[j]);
         // patched binding values must survive backtracking.  record the
         // offset before patching so we can ratchet the enclosing choice
         // point's term_mark only if new terms were actually allocated.
         int pre_patch = ctx->term_pool_offset;
-        for (int j = 0; j < env_mark; j++) {
-          if (!term_refs_range(env, env->bindings[j].value, env_mark,
+        // skip a binding outright once its var_ceiling can't reach this
+        // window's lowest var_id: it provably can't reference anything in it.
+        int window_min_var_id = env->bindings[reclaim_mark].var_id;
+        for (int j = reclaim_mark + 1; j < ctx->bind_count; j++)
+          if (env->bindings[j].var_id < window_min_var_id)
+            window_min_var_id = env->bindings[j].var_id;
+        for (int j = 0; j < reclaim_mark; j++) {
+          if (env->bindings[j].var_ceiling <= window_min_var_id)
+            continue;
+          if (!term_refs_range(env, env->bindings[j].value, reclaim_mark,
                                ctx->bind_count))
             continue;
           env->bindings[j].value = substitute(ctx, env, env->bindings[j].value);
+          // substitute may have chased in a newer reference, staling the old
+          // ceiling: the current allocation count is a safe new bound.
+          env->bindings[j].var_ceiling = ctx->var_counter;
         }
         if (ctx->term_pool_offset > pre_patch && sp > 1)
           stack[sp - 1].term_mark = ctx->term_pool_offset;
-        env->count = ctx->bind_count = env_mark;
+        env->count = ctx->bind_count = reclaim_mark;
+      } else if (clause_idx >= 0 && ctx->bind_count > reclaim_mark &&
+                 resolvent.count > 0 && reclaim_floor_ok) {
+        // even env_mark's own range is unsafe (a named var bound right
+        // here) — nothing to reclaim, so just give up tracking this span.
+        reclaim_mark = ctx->bind_count;
       } else if (clause_idx >= 0 && ctx->bind_count == env_mark &&
-                 resolvent.count > 0 && sp <= 1 && cn.count == 1) {
+                 resolvent.count > 0 && sp <= 1 && cn.count == 1 &&
+                 lco_safe(ctx, env,
+                          stack[0].env_mark > ctx->bind_floor
+                              ? stack[0].env_mark
+                              : ctx->bind_floor,
+                          ctx->bind_count)) {
         // deterministic tail call with no new bindings, no choice points.
         // the matched goal was the sole remaining goal (tail position).
         // reset temp pool to the initial level and rebuild the resolvent
@@ -519,9 +674,12 @@ B:
         if (base_env < ctx->bind_floor)
           base_env = ctx->bind_floor;
         env->count = ctx->bind_count = base_env;
+        reclaim_mark = base_env;
         ctx->term_pool_offset = base_term;
         var_id_map_t map = {0};
         resolvent = goals_alloc(ctx, c->body_count);
+        if (c->body_count > 0 && !resolvent.goals)
+          return false;
         for (int j = 0; j < c->body_count; j++)
           resolvent.goals[resolvent.count++] =
               rename_vars_mapped(ctx, c->body[j], &map);
@@ -564,6 +722,7 @@ C:
   assert(env_mark >= 0 && env_mark <= env->count &&
          "Invalid env_mark from stack");
   env->count = ctx->bind_count = env_mark;
+  reclaim_mark = env_mark;
 
   debug(ctx, "*** Restored: clause_idx=%d, env_mark=%d, cut_point=%d ***\n",
         clause_idx, env_mark, cut_point);

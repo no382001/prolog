@@ -398,12 +398,12 @@ bind_and_succeed(X) :- X = 42.
 % --- re-consult ---
 
 % core.pl is already auto-loaded; consulting it again should replace, not duplicate
-:- consult('core.pl').
+:- consult('lib/core.pl').
 
 ?- findall(X, member(X, [a, b, c]), L).
    L = "abc".
 
-:- consult('core.pl').
+:- consult('lib/core.pl').
 
 ?- findall(X, member(X, [a, b, c]), L).
    L = "abc".

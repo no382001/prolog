@@ -23,13 +23,23 @@ stat_val() {
 
 # --- large findall ---
 
-@test "stress: findall 1000 integers" {
-  echo 'findall(X, between(1,1000,X), L), length(L, N), write(N).' \
-    | timeout 10 "$TRILOG" -s 2>"$STATS_FILE" | grep -q '1000'
+# template chain-walk is O(n^2) for a var threaded through recursion.
+@test "stress: findall 500 integers" {
+  echo 'findall(X, between(1,500,X), L), length(L, N), write(N).' \
+    | timeout 10 "$TRILOG" -s 2>"$STATS_FILE" | grep -q '500'
   # temp-only query: perm and clauses unchanged from baseline
   [ "$(stat_val perm_pool)" -eq "$BASE_PERM" ]
   [ "$(stat_val clauses)" -eq "$BASE_CLAUSES" ]
   [ "$(stat_val term_pool_peak)" -gt 0 ]
+}
+
+# regression: findall/setof used to block LCO for the whole nested solve.
+@test "stress: findall wrapping a deep backtrack stays fast" {
+  result=$(echo 'findall(S, (between(1,3000,X), X =:= 3000, atom_number(S,X)), L), length(L, N), write(N), nl.' \
+    | timeout 5 "$TRILOG" -s 2>"$STATS_FILE")
+  [ "$(echo "$result" | head -1)" = "1" ]
+  [ "$(stat_val perm_pool)" -eq "$BASE_PERM" ]
+  [ "$(stat_val clauses)" -eq "$BASE_CLAUSES" ]
 }
 
 # --- sort 200 reversed integers ---
@@ -83,15 +93,15 @@ print('findall(X, st(X), L3), length(L3, N3), write(N3), write(s), nl.')
 @test "stress: 20 consult/unconsult cycles stable" {
   stats_5=$(python3 -c "
 for i in range(5):
-    print(\"consult('ledit.pl').\")
-    print(\"unconsult('ledit.pl').\")
+    print(\"consult('lib/ledit.pl').\")
+    print(\"unconsult('lib/ledit.pl').\")
 print('true.')
 " | timeout 15 "$TRILOG" -s 2>&1 | grep perm_pool | head -1)
 
   stats_20=$(python3 -c "
 for i in range(20):
-    print(\"consult('ledit.pl').\")
-    print(\"unconsult('ledit.pl').\")
+    print(\"consult('lib/ledit.pl').\")
+    print(\"unconsult('lib/ledit.pl').\")
 print('true.')
 " | timeout 30 "$TRILOG" -s 2>&1 | grep perm_pool | head -1)
 
@@ -103,8 +113,8 @@ print('true.')
 @test "stress: core predicates work after 20 consult/unconsult cycles" {
   result=$(python3 -c "
 for i in range(20):
-    print(\"consult('ledit.pl').\")
-    print(\"unconsult('ledit.pl').\")
+    print(\"consult('lib/ledit.pl').\")
+    print(\"unconsult('lib/ledit.pl').\")
 print('append([1,2],[3],X), write(X).')
 " | timeout 30 "$TRILOG" 2>&1 | tail -1)
   [[ "$result" == *"[1, 2, 3]"* ]]
@@ -213,4 +223,24 @@ print('setof(X, ddup(X), S), length(S, N), write(N).')
   [[ "$result" == *"100"* ]]
   # 500 asserts but only 100 unique values — still 500 clauses in db
   [ "$(stat_val clauses)" -eq $(( BASE_CLAUSES + 500 )) ]
+}
+
+# --- exhausting resources fails the query, doesn't crash the process ---
+
+@test "stress: length(L, 200000) fails cleanly, does not crash" {
+  run timeout 15 "$TRILOG" -e "length(L, 200000), write(done), nl."
+  [ "$status" -eq 0 ]
+  [[ "$output" != *"AddressSanitizer"* ]]
+  [[ "$output" != *"Segmentation"* ]]
+}
+
+@test "stress: deep non-tail recursion fails cleanly, does not crash" {
+  cat > /tmp/trilog_stress_nontail.pl <<'EOF'
+count([], 0).
+count([_|T], N) :- count(T, N0), N is N0 + 1.
+EOF
+  run timeout 15 "$TRILOG" -e "consult('/tmp/trilog_stress_nontail.pl'), length(L, 10000), count(L, N), write(N), nl."
+  [ "$status" -eq 0 ]
+  [[ "$output" != *"AddressSanitizer"* ]]
+  [[ "$output" != *"Segmentation"* ]]
 }

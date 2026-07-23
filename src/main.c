@@ -3,13 +3,45 @@
 #include <getopt.h>
 #include <libgen.h>
 #include <termios.h>
+#include <time.h>
 #include <unistd.h>
 
 #define CORE_PATH_MAX 8192
 
+static builtin_result_t ffi_get_time_ms(trilog_ctx_t *ctx, term_t *goal,
+                                        env_t *env) {
+  if (goal->arity != 1)
+    return BUILTIN_FAIL;
+
+  static long long epoch_ms = -1;
+  struct timespec ts;
+  clock_gettime(CLOCK_MONOTONIC, &ts);
+  long long now_ms = (long long)ts.tv_sec * 1000 + ts.tv_nsec / 1000000;
+  if (epoch_ms < 0)
+    epoch_ms = now_ms;
+
+  term_t *t = make_int(ctx, (int)(now_ms - epoch_ms));
+  return unify(ctx, goal->args[0], t, env) ? BUILTIN_OK : BUILTIN_FAIL;
+}
+
 //****
 //* core library loading
 //****
+
+static bool g_verbose = false;
+
+static void consult_path(trilog_ctx_t *ctx, const char *path) {
+  char query[CORE_PATH_MAX + 16];
+  snprintf(query, sizeof(query), "consult('%s').", path);
+  if (g_verbose) {
+    io_write_str(ctx, "?- ");
+    io_write_str(ctx, query);
+    io_write_str(ctx, "\n");
+    toplevel_query(ctx, query); // this will print `true`
+    return;
+  }
+  trilog_load_file(ctx, path);
+}
 
 static void try_load_core(trilog_ctx_t *ctx, const char *argv0) {
   char exe[CORE_PATH_MAX];
@@ -27,12 +59,31 @@ static void try_load_core(trilog_ctx_t *ctx, const char *argv0) {
   dirname(dir);
 
   char path[CORE_PATH_MAX];
-  strncpy(path, dir, sizeof(path) - 9);
-  path[sizeof(path) - 9] = '\0';
-  strcat(path, "/core.pl");
+  strncpy(path, dir, sizeof(path) - 13);
+  path[sizeof(path) - 13] = '\0';
+  strcat(path, "/lib/core.pl");
 
+  consult_path(ctx, path);
+}
+
+static void try_load_init_file(trilog_ctx_t *ctx) {
+  const char *home = getenv("HOME");
+  if (!home)
+    return;
+
+  char path[CORE_PATH_MAX];
+  snprintf(path, sizeof(path), "%s/.trilog", home);
+  if (g_verbose) {
+    char query[CORE_PATH_MAX + 16];
+    snprintf(query, sizeof(query), "consult('%s').", path);
+    io_write_str(ctx, "?- ");
+    io_write_str(ctx, query);
+    io_write_str(ctx, "\n");
+    toplevel_query(ctx, query); // this will print `true`
+    return;
+  }
   if (io_file_exists(ctx, path))
-    trilog_load_file(ctx, path);
+    consult_path(ctx, path);
 }
 
 //****
@@ -56,16 +107,14 @@ static int read_key_hook(trilog_ctx_t *ctx, void *ud) {
 }
 
 static void print_usage(trilog_ctx_t *ctx, const char *prog) {
-  io_writef_err(ctx,
-                "Usage: %s [-d] [-s] [-f <file>] [-e <expression>] [-q <file>] "
-                "[-j <dir>]\n",
-                prog);
+  io_writef_err(
+      ctx, "Usage: %s [-d] [-s] [-f] [-v] [-e <expression>] [file.pl]\n", prog);
+  io_writef_err(ctx, "  file.pl       Load clauses from file\n");
   io_writef_err(ctx, "  -d            Enable debug mode\n");
   io_writef_err(ctx, "  -s            Print stats to stderr on exit\n");
-  io_writef_err(ctx, "  -f <file>     Load clauses from file\n");
+  io_writef_err(ctx, "  -f            Fast startup: do not load ~/.trilog\n");
+  io_writef_err(ctx, "  -v            Echo core.pl/.trilog startup consult\n");
   io_writef_err(ctx, "  -e <expr>     Execute expression and exit\n");
-  io_writef_err(ctx, "  -q <file>     Run quad tests from file\n");
-  io_writef_err(ctx, "  -j <dir>      Write JUnit XML reports to directory\n");
   io_writef_err(ctx, "  -h            Show this help\n");
   io_writef_err(ctx, "\nInteractive commands:\n");
   io_writef_err(ctx, "  debug.        Toggle debug mode\n");
@@ -78,6 +127,8 @@ static void print_exit_stats(trilog_ctx_t *ctx) {
   fprintf(stderr, "string_pool=%d\n", ctx->string_pool_offset);
   fprintf(stderr, "clauses=%d\n", ctx->db_count);
   fprintf(stderr, "term_pool_peak=%d\n", ctx->term_pool_peak);
+  fprintf(stderr, "var_counter=%d\n", ctx->var_counter);
+  fprintf(stderr, "bind_count=%d\n", ctx->bind_count);
 }
 
 static void process_line(trilog_ctx_t *ctx, char *line, bool *should_exit,
@@ -126,21 +177,20 @@ int main(int argc, char *argv[]) {
 
   io_hooks_init_default(ctx);
 
+  ffi_register_builtin(ctx, "get_time_ms", 1, ffi_get_time_ms, NULL);
+
   // raw single-keypress for interactive solution prompting
   io_hooks_t hooks = {0};
   hooks.read_char = read_key_hook;
   io_hooks_set(ctx, &hooks);
 
-  try_load_core(ctx, argv[0]);
-
   const char *input_file = NULL;
   const char *expression = NULL;
-  const char *quad_file = NULL;
-  const char *junit_dir = NULL;
   bool exit_stats = false;
+  bool fast_startup = false;
   int opt;
 
-  while ((opt = getopt(argc, argv, "dsf:e:q:j:h")) != -1) {
+  while ((opt = getopt(argc, argv, "dsfve:h")) != -1) {
     switch (opt) {
     case 'd':
       ctx->debug_enabled = true;
@@ -150,28 +200,35 @@ int main(int argc, char *argv[]) {
       exit_stats = true;
       break;
     case 'f':
-      input_file = optarg;
+      fast_startup = true;
+      break;
+    case 'v':
+      g_verbose = true;
       break;
     case 'e':
       expression = optarg;
       break;
-    case 'q':
-      quad_file = optarg;
-      break;
-    case 'j':
-      junit_dir = optarg;
-      break;
     case 'h':
       print_usage(ctx, argv[0]);
+      free(ctx);
       return 0;
     default:
       print_usage(ctx, argv[0]);
+      free(ctx);
       return 1;
     }
   }
 
+  if (optind < argc)
+    input_file = argv[optind];
+
+  try_load_core(ctx, argv[0]);
+  if (!fast_startup)
+    try_load_init_file(ctx);
+
   if (input_file) {
     if (!load_file(ctx, input_file)) {
+      free(ctx);
       return 1;
     }
   }
@@ -186,17 +243,6 @@ int main(int argc, char *argv[]) {
       print_exit_stats(ctx);
     free(ctx);
     return rc;
-  }
-
-  if (quad_file) {
-    quad_results_t res;
-    if (junit_dir)
-      res = trilog_run_quad_file_junit(ctx, quad_file, junit_dir);
-    else
-      res = trilog_run_quad_file(ctx, quad_file);
-
-    free(ctx);
-    return res.failed > 0 ? 1 : 0;
   }
 
   char line[1024];

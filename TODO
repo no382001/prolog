@@ -4,27 +4,19 @@ towards some form of iso compliance:
 ease of use on the default linux target:
     - readline/history in repl
 
-wasm demo:
-    - add a site deployment
-    - some simpler non distracting style
-    - a workable terminal
-
-testing:
-    - move quad to a pl file, separate TAP and jUnit outputs
+wokwi demo:
+    - reduce binary size
+    - some more complex example
 
 ledit:
     - printing 20 lines will need 100k termpool, for what?
 
-since we are not working with that much memory, stability should be first
+modules:
+    - the includes are getting confusing, i should try to implement this aswell, or is this too much instrumentation for the small target?
 
-faults:
-    - non-tail recursion segfaults (C stack overflow, no depth guard in solve_all)
-    - length(L, 200000) segfaults (same root cause)
-    - -f with missing file leaks ctx (ASAN reports 4MB leak)
+- since we are not working with that much memory, stability should be first
 
-i really shouldnt be having that dynamic array at the end of the cxt struct, c89 does not have it - i could hack it with [1] but thats ub, with malloc it could work 
-
-strings get deduplicated, so when i read a string its a list of atoms that are actually just chars, and they are deduped, but they are functor/2 ',' with 2 members, the first and the rest list of atoms
+- i really shouldnt be having that dynamic array at the end of the ctx struct, c89 does not have it - i could hack it with [1] but thats ub, with malloc it could work
 
 papers to look into:
     - Aït-Kaci, "Warren's Abstract Machine: A Tutorial Reconstruction" (1991)
@@ -34,3 +26,23 @@ papers to look into:
     - Tarau & Dahl, "Logic Programming and Logic Grammars with First-Order Continuations"
     - Lindholm, "Unification and the Efficient Execution of Prolog"
     - Zhou, "Parameter Passing and Control Stack Management in Prolog Implementation Revisited" (1996)
+
+non-determinism support?
+
+known bugs (found via test/ulrich/ and test/iso_quad.pl):
+    - builtin_atom_concat (src/builtins.c): stack-use-after-return once the
+      concatenated atom gets large (MAX_NAME, 16k) ASAN crash
+      triggered by ulrich/select_quad.pl's self-referential select/3 case,
+      and independently by lib/quad.pl's own crash-recovery code before it
+      was rewritten to stream line-by-line instead of accumulating one
+      big atom (see count_partial/4, stream_copy_lines/2 in lib/quad.pl)
+    - term.c make_var: MAX_VARS table exhaustion is a hard assertion
+      failure (abort), hit by test/iso_quad.pl's
+      number_codes tests
+    - sub_atom/atom_concat split strings by byte offset, not UTF-8
+      character offset, can produce invalid truncated multi-byte
+      sequences (see test/iso_quad.pl's 'Pécs' test, breaks strict XML
+      parsers reading the JUnit report)
+    - no occurs-check, and no cycle detection either: self-referential
+      unification (member(X,X), select(E,Xs,Xs), nth0(N,[[]|Es],Es)) either
+      hangs forever or crashes the printer on the resulting cyclic term

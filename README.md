@@ -11,7 +11,7 @@ A Prolog interpreter aiming to be embeddable, based on van Emden's ABC algorithm
   - [Arithmetic](#arithmetic)
   - [ISO built-ins](#iso-built-ins)
   - [Extensions](#extensions)
-  - [Standard library](#standard-library-corepl)
+  - [Standard library](#standard-library-libcorepl)
 - [Embedding](#embedding)
   - [Context allocation](#context-allocation)
   - [Custom builtins (FFI)](#custom-builtins-ffi)
@@ -22,17 +22,21 @@ A Prolog interpreter aiming to be embeddable, based on van Emden's ABC algorithm
 ## Build
 
 ```sh
-make
+make        # native build (trilog)
+make small  # size-constrained build (see Embedding)
+make pico   # RP2040 build for the wokwi/ simulator, see wokwi/
 ```
 
 ## Usage
 
 ```sh
 ./trilog                  # interactive REPL
-./trilog -f file.pl       # load file
+./trilog file.pl          # load file
+./trilog -f file.pl       # load file, skip ~/.trilog (fast startup)
 ./trilog -e "goal."       # evaluate and exit
-./trilog -q tests.pl      # run quad tests
 ```
+
+On startup, trilog loads `~/.trilog` if it exists, unless `-f` (fast startup) is given.
 
 ## Language
 
@@ -62,7 +66,7 @@ Integer arithmetic via `is/2`. Operators: `+ - * / // mod max min >> << /\ \/ xo
 
 | Predicate | Notes |
 |-----------|-------|
-| `true` `fail` `!` | basics |
+| `true` `fail` `!` `halt/0` `halt/1` | basics |
 | `\+(G)` `call(G)` `once(G)` | meta-call |
 | `,(G,G)` `;(G,G)` `->(G,G)` | control |
 | `throw(T)` `catch(G,C,R)` | exceptions (`error(Formal, Context)` convention) |
@@ -96,9 +100,9 @@ These are non-ISO predicates
 | `write_term_to_chars/3` | write a term to a char list with options |
 | `atom_to_term/3` `term_to_atom/2` | term <-> atom |
 
-### Standard library (`core.pl`)
+### Standard library (`lib/core.pl`)
 
-Loaded automatically. Provides: `false/0`, `repeat/0`, `succ/2`, `plus/3`, `between/3`, `forall/2`, `member/2`, `select/3`, `append/3`, `length/2`, `reverse/2`, `last/2`, `nth0/3`, `nth1/3`, `maplist/2-4`, `foldl/4-6`, `countall/3`.
+Loaded automatically. Provides: `false/0`, `repeat/0`, `halt/0`, `succ/2`, `plus/3`, `between/3`, `forall/2`, `member/2`, `memberchk/2`, `select/3`, `append/3`, `length/2`, `reverse/2`, `last/2`, `nth0/3`, `nth1/3`, `numlist/3`, `permutation/2`, `delete/3`, `subtract/3`, `intersection/3`, `union/3`, `list_to_set/2`, `flatten/2`, `sum_list/2`, `max_list/2`, `min_list/2`, `max_member/2`, `min_member/2`, `include/3`, `exclude/3`, `partition/4`, `maplist/2-4`, `foldl/4-6`, `countall/3`, `must_be/2`.
 
 ## Embedding
 
@@ -114,7 +118,7 @@ io_hooks_init_default(ctx);
 free(ctx);
 ```
 
-`TERM_POOL_BYTES` defaults to 4 MB. Override at compile time for constrained targets (e.g. `-DTERM_POOL_BYTES=(128*1024)` for RP2040).
+`TERM_POOL_BYTES` defaults to 256 MB — sized for the `quad.pl` test harness, which runs every test query through `findall/3` inside one long-lived process and needs the headroom. Override at compile time for constrained targets (e.g. `-DTERM_POOL_BYTES=(128*1024)` for RP2040); see `make small` and `wokwi/` for a complete constrained-target build targeting the RP2040 (simulated via [wokwi](https://wokwi.com)).
 
 ### Custom builtins (FFI)
 
@@ -147,7 +151,6 @@ hooks.file_read_line = my_freadline;
 hooks.file_write     = my_fwrite;
 hooks.file_exists    = my_exists;
 hooks.file_mtime     = my_mtime;
-hooks.clock_monotonic = my_clock; // for test timing
 hooks.userdata = my_state;
 io_hooks_set(ctx, &hooks);
 ```

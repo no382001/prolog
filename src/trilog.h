@@ -43,7 +43,7 @@ typedef __builtin_va_list va_list;
 //****
 
 #ifndef MAX_NAME
-#define MAX_NAME 64
+#define MAX_NAME 16384
 #endif
 #ifndef MAX_ARGS
 #define MAX_ARGS 8
@@ -55,7 +55,13 @@ typedef __builtin_va_list va_list;
 #define MAX_CLAUSES 1024
 #endif
 #ifndef MAX_BINDINGS
-#define MAX_BINDINGS 4096
+#define MAX_BINDINGS 2097152
+#endif
+#ifndef MAX_VARS
+#define MAX_VARS 4194304
+#endif
+#ifndef MAX_VARS_ANON_RENAME
+#define MAX_VARS_ANON_RENAME 64
 #endif
 #ifndef MAX_GOALS
 #define MAX_GOALS 128
@@ -70,7 +76,7 @@ typedef __builtin_va_list va_list;
 #define MAX_CUSTOM_BUILTINS 64
 #endif
 #ifndef MAX_STRING_POOL
-#define MAX_STRING_POOL 65536
+#define MAX_STRING_POOL (2 * 1024 * 1024)
 #endif
 #ifndef MAX_FILE_PATH
 #define MAX_FILE_PATH 512
@@ -94,7 +100,7 @@ typedef __builtin_va_list va_list;
 #define MAX_OPS 128
 #endif
 #ifndef TERM_POOL_BYTES
-#define TERM_POOL_BYTES (4 * 1024 * 1024)
+#define TERM_POOL_BYTES (256 * 1024 * 1024)
 #endif
 #define TRILOG_CTX_SIZE(pool_bytes) (sizeof(trilog_ctx_t) + (pool_bytes))
 
@@ -174,8 +180,6 @@ typedef bool (*io_file_exists_callback_t)(trilog_ctx_t *ctx, const char *path,
                                           void *userdata);
 typedef long long (*io_file_mtime_callback_t)(trilog_ctx_t *ctx,
                                               const char *path, void *userdata);
-typedef double (*io_clock_monotonic_callback_t)(trilog_ctx_t *ctx,
-                                                void *userdata);
 
 typedef struct {
   io_write_callback_t write_str;
@@ -190,7 +194,6 @@ typedef struct {
   io_file_write_callback_t file_write;
   io_file_exists_callback_t file_exists;
   io_file_mtime_callback_t file_mtime;
-  io_clock_monotonic_callback_t clock_monotonic;
   void *userdata;
 } io_hooks_t;
 
@@ -198,7 +201,7 @@ typedef struct {
 //* term representation
 //****
 
-typedef enum { CONST, VAR, FUNC, INT, STR } term_type;
+typedef enum { CONST, VAR, FUNC, INT, STR, FLOAT } term_type;
 
 // escape sequence table used by both the parser (decode) and printer (encode).
 // each entry maps a raw byte to its two-character escape sequence.
@@ -228,6 +231,9 @@ typedef struct {
   int var_id;       // variable identity (matches term_t.arity for var terms)
   const char *name; // display name only; null for internal renamed vars
   term_t *value;
+  // ctx->var_counter when this binding was made; no VAR embedded in `value`
+  // can have var_id >= var_ceiling, letting LCO skip provably-old bindings.
+  int var_ceiling;
 } binding_t;
 
 typedef struct {
@@ -243,6 +249,10 @@ typedef struct {
 struct env {
   binding_t *bindings; // points into ctx->bindings
   int count;
+  // points into ctx->var_bind_index: var_index[var_id] is (binding slot)+1
+  // where var_id was last bound, or 0 if never bound — O(1) lookup instead
+  // of scanning ctx->bindings backward.
+  int *var_index;
 };
 
 typedef struct {
@@ -283,6 +293,11 @@ struct trilog_ctx {
   binding_t bindings[MAX_BINDINGS]; // centralized trail
   int bind_count;
   int var_counter;
+  // var_id -> (binding slot in `bindings`)+1, or 0 if that var_id was never
+  // bound. 0-init (via memset in trilog_ctx_init) is already the correct
+  // "never bound" state, so no separate init pass is needed. See bind()
+  // and lookup() in env.c.
+  int var_bind_index[MAX_VARS];
   char *input_ptr;
   char *input_start;
   int input_line;
@@ -294,10 +309,25 @@ struct trilog_ctx {
   int term_pool_perm;   // perm: grows down from term_pool_size
   int term_pool_floor;  // backtrack cannot reclaim below this
   int bind_floor;       // lco cannot reclaim bindings below this
+  int nest_depth;       // active nested solve() calls (->/catch/;) — bind_floor
+                  // alone can't tell that apart from top level (both can be 0)
+  // findall/setof set this around their nested solve so LCO won't reclaim
+  // any binding the template's chain passes through — reclaiming it would
+  // corrupt the value the collector callback observes after solving.
+  term_t *protect_template;
+  int protect_template_id; // protect_template's own var_id, cached
+  // set the instant bind() touches protect_template_id — until then the
+  // chain-walk in lco_safe is skipped outright: the template can't be
+  // anywhere in a reclaim window if nothing has bound it yet.
+  bool protect_template_touched;
   bool alloc_permanent; // when true, allocate from perm end
   bool db_dirty;        // set when assert/retract modifies the database
   bool ops_dirty;       // set when op_table is modified (prevents string pool
                         // rollback)
+
+  bool anon_rename_active;
+  int anon_rename_ids[MAX_VARS_ANON_RENAME];
+  int anon_rename_count;
 
   char string_pool[MAX_STRING_POOL];
   int string_pool_offset;
@@ -403,6 +433,10 @@ static inline bool term_as_int(const term_t *t, int *out) {
   return true;
 }
 
+// defined in term.c (needs strtod, which the header's hosted include set
+// doesn't pull in before platform_impl.h needs it).
+bool term_as_float(const term_t *t, double *out);
+
 //****
 //* forward declarations
 //****
@@ -434,6 +468,7 @@ term_t *make_term(trilog_ctx_t *ctx, term_type type, const char *name,
                   term_t **args, int arity);
 term_t *make_const(trilog_ctx_t *ctx, const char *name);
 term_t *make_int(trilog_ctx_t *ctx, int n);
+term_t *make_float(trilog_ctx_t *ctx, double d);
 // for var terms, arity field stores the var_id (unique integer per variable).
 // name may be null for internal renamed variables (not shown in output).
 term_t *make_var(trilog_ctx_t *ctx, const char *name, int var_id);
@@ -462,8 +497,16 @@ bool unify(trilog_ctx_t *ctx, term_t *a, term_t *b, env_t *env);
 
 // rename_vars_mapped: rename all vars in t, mapping old var_ids to fresh ones.
 // the map is shared across multiple calls for the same clause instance so that
-// the same variable in head and body gets the same renamed id.
+// the same variable in head and body gets the same renamed id. renamed vars
+// are always anonymous (name=NULL) — fine for clause-internal variables,
+// which were never meant to be individually observable from outside.
 term_t *rename_vars_mapped(trilog_ctx_t *ctx, term_t *t, var_id_map_t *map);
+// same, but keeps each var's original name when preserve_names is true —
+// needed when the renamed copy must stay independently displayable/printable
+// (findall/setof renaming a goal that still carries the outer query's named
+// variables; see collect_solutions/builtin_setof in builtins.c).
+term_t *rename_vars_mapped_named(trilog_ctx_t *ctx, term_t *t,
+                                 var_id_map_t *map, bool preserve_names);
 // convenience wrapper: creates a fresh map for single-term rename.
 term_t *rename_vars(trilog_ctx_t *ctx, term_t *t);
 
@@ -512,8 +555,26 @@ void throw_permission_error(trilog_ctx_t *ctx, const char *operation,
 void throw_existence_error(trilog_ctx_t *ctx, const char *object_type,
                            term_t *object, const char *context);
 
-// arithmetic (arith.c)
-bool eval_arith(trilog_ctx_t *ctx, term_t *t, env_t *env, int *result,
+// must_be_*: combined instantiation_error/type_error check, iso library(error)
+// style. t must already be dereferenced. returns true if t satisfies the
+// type; otherwise throws the appropriate error and returns false.
+bool must_be_atom(trilog_ctx_t *ctx, term_t *t, const char *context);
+bool must_be_integer(trilog_ctx_t *ctx, term_t *t, const char *context);
+bool must_be_number(trilog_ctx_t *ctx, term_t *t, const char *context);
+bool must_be_atomic(trilog_ctx_t *ctx, term_t *t, const char *context);
+bool must_be_compound(trilog_ctx_t *ctx, term_t *t, const char *context);
+bool must_be_character(trilog_ctx_t *ctx, term_t *t, const char *context);
+
+// arithmetic (arith.c): tagged int/float result of evaluating an expression.
+typedef struct {
+  bool is_float;
+  union {
+    int i;
+    double f;
+  };
+} arith_val_t;
+
+bool eval_arith(trilog_ctx_t *ctx, term_t *t, env_t *env, arith_val_t *result,
                 const char *pred);
 builtin_result_t builtin_is(trilog_ctx_t *ctx, term_t *goal, env_t *env);
 builtin_result_t builtin_lt(trilog_ctx_t *ctx, term_t *goal, env_t *env);
@@ -572,7 +633,6 @@ char *io_file_read_line(trilog_ctx_t *ctx, void *handle, char *buf, int size);
 bool io_file_write(trilog_ctx_t *ctx, void *handle, const char *str);
 bool io_file_exists(trilog_ctx_t *ctx, const char *path);
 long long io_file_mtime(trilog_ctx_t *ctx, const char *path);
-double io_clock_monotonic(trilog_ctx_t *ctx);
 
 // toplevel helpers (shared by cli, web, embedders)
 typedef struct {
@@ -623,16 +683,3 @@ bool ffi_register_builtin(trilog_ctx_t *ctx, const char *name, int arity,
                           builtin_handler_t handler, void *userdata);
 void ffi_clear_builtins(trilog_ctx_t *ctx);
 custom_builtin_t *ffi_get_builtin_userdata(trilog_ctx_t *ctx, term_t *goal);
-
-// quad tests
-typedef struct {
-  int total;
-  int passed;
-  int failed;
-  double total_time;
-} quad_results_t;
-
-quad_results_t trilog_run_quad_file(trilog_ctx_t *ctx, const char *filename);
-quad_results_t trilog_run_quad_file_junit(trilog_ctx_t *ctx,
-                                          const char *filename,
-                                          const char *junit_dir);

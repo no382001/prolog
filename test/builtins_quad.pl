@@ -583,10 +583,10 @@ bcapply(G) :- call(G).
    V = chars.
 
 ?- current_prolog_flag(max_integer, V).
-   V = '2147483647'.
+   V = 2147483647.
 
 ?- current_prolog_flag(min_integer, V).
-   V = '-2147483648'.
+   V = -2147483648.
 
 % enumeration: all flags must be produced
 ?- findall(F, current_prolog_flag(F, _), Fs), length(Fs, N), N > 0.
