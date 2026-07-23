@@ -84,6 +84,8 @@ jobs:
           chmod +x test/summarize_results.sh
           test/summarize_results.sh _build/test-results > /tmp/test_summary.md
           cat /tmp/test_summary.md
+          echo "test_reporter url_html output: '${{ steps.test_reporter.outputs.url_html }}'"
+          echo "test_reporter conclusion output: '${{ steps.test_reporter.outputs.conclusion }}'"
 
       - name: comment test results on PR
         if: always() && github.event_name == 'pull_request'
@@ -92,9 +94,12 @@ jobs:
           script: |
             const fs = require('fs');
             const reportUrl = ${{ toJSON(steps.test_reporter.outputs.url_html) }};
+            const artifactUrl = `${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}/artifacts/${{ steps.upload_test_results.outputs.artifact-id }}`;
             let body = fs.readFileSync('/tmp/test_summary.md', 'utf8');
             if (reportUrl) {
               body += `\n\n[Full JUnit report](${reportUrl})`;
+            } else {
+              body += `\n\n[Full JUnit report (raw XML, dorny/test-reporter link unavailable this run)](${artifactUrl})`;
             }
             const { data: comments } = await github.rest.issues.listComments({
               owner: context.repo.owner,
